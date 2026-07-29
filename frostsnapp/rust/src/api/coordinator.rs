@@ -262,4 +262,11 @@ impl Coordinator {
     pub fn get_device_case_color(&self, id: DeviceId) -> Option<CaseColor> {
         self.0.get_device_case_color(id)
     }
+
+    /// Whether this build runs the genuine check (a genuine cert key was baked in).
+    /// When false, every device stays `Unknown`.
+    #[frb(sync)]
+    pub fn genuine_check_enabled(&self) -> bool {
+        cfg!(genuine_cert_key)
+    }
 }

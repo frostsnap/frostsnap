@@ -226,9 +226,20 @@ class _DeviceDetailsState extends State<DeviceDetails> {
       ),
     ];
 
+    final genuineRow = colors.genuineRow(context);
+
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
+        if (genuineRow != null)
+          ListTile(
+            contentPadding: EdgeInsets.symmetric(horizontal: 16),
+            leading: Icon(genuineRow.icon, color: genuineRow.color),
+            title: Text(genuineRow.title),
+            subtitle: Text(genuineRow.subtitle),
+            trailing: Icon(Icons.chevron_right_rounded),
+            onTap: () => colors.showGenuineExplanation(context),
+          ),
         ...(isEmpty ? emptyRows : nonEmptyRows),
         CopyListTile(
           data: device.firmware.digest.toString(),

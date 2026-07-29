@@ -76,6 +76,12 @@ impl Certificate {
     pub fn unverified_raw_serial(&self) -> String {
         self.body.raw_serial()
     }
+
+    /// The case colour claimed by the certificate, without verifying it (colour
+    /// is cosmetic identity, shown regardless of genuine status).
+    pub fn unverified_case_color(&self) -> CaseColor {
+        self.body.case_color()
+    }
 }
 
 #[derive(bincode::Encode, bincode::Decode, Debug, Copy, Clone, PartialEq)]
@@ -182,14 +188,10 @@ pub fn verify_certificate(
 /// Tag for the device-identity (schnorr) proof-of-possession over the challenge.
 pub const GENUINE_IDENTITY_MESSAGE_TAG: &str = "frostsnap-genuine-identity";
 
-/// The message the device's DS (RSA) key signs for a genuine check: the random
-/// coordinator challenge concatenated with the responding device's own DeviceId
-/// (33-byte compressed pubkey).
-///
-/// Binding the DeviceId is what defeats the relay/MITM: a malicious device cannot
-/// obtain a genuine device's signature on *its* behalf, because a genuine device
-/// only ever signs over its own id. So `RSA_DS(challenge ‖ id)` proves "genuine
-/// hardware attests to DeviceId `id`", not merely "some genuine device exists".
+/// The message the device's DS (RSA) key signs: the coordinator challenge
+/// concatenated with the responder's own DeviceId. Binding the id is what defeats
+/// relay/MITM: a genuine device only ever signs over its own id, so its proof
+/// can't be replayed for another id.
 pub fn genuine_challenge_message(
     challenge: crate::GenuineChallenge,
     device_id: frostsnap_core::DeviceId,
@@ -200,13 +202,9 @@ pub fn genuine_challenge_message(
     message
 }
 
-/// Sign the genuine-check challenge with the device's identity (DeviceId) keypair,
-/// proving the responder actually holds the DeviceId secret and that the response
-/// is fresh. BIP340 schnorr over the even-y form of the device key — the same
-/// primitive keygen already trusts for device identity.
-///
-/// This is the device-side counterpart to [`verify_identity`]. Callable from
-/// firmware (no `coordinator` feature required).
+/// Sign the challenge with the device's identity (DeviceId) keypair, proving the
+/// responder holds the DeviceId secret. Device-side counterpart to
+/// [`verify_identity`].
 pub fn sign_identity_challenge<NG: NonceGen>(
     schnorr: &Schnorr<Sha256, NG>,
     device_keypair: &KeyPair,
@@ -217,9 +215,8 @@ pub fn sign_identity_challenge<NG: NonceGen>(
     schnorr.sign(&xonly_keypair, message)
 }
 
-/// Why a genuine check failed. Distinguishing these helps diagnostics: an unknown
-/// factory key (a device from a factory whose key we don't ship) is very different
-/// from a bad signature (a counterfeit or a relay attempt).
+/// Why a genuine check failed. Worth distinguishing: an unknown factory key is a
+/// device we can't judge, quite different from a bad signature.
 #[cfg(feature = "coordinator")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GenuineError {
@@ -256,15 +253,12 @@ impl core::fmt::Display for GenuineError {
 #[cfg(feature = "coordinator")]
 impl core::error::Error for GenuineError {}
 
-/// Verify a full *bound* genuine proof in one step:
-/// 1. the certificate is signed by the expected factory key,
-/// 2. the DS (RSA) key certified therein signed `challenge ‖ device_id` — genuine
-///    hardware, bound to this specific DeviceId (defeats relay/MITM), and
-/// 3. the DeviceId key itself signed the challenge — proof the responder holds the
-///    DeviceId secret, so the `from` we're talking to is authenticated.
+/// Verify a full *bound* genuine proof: the factory-signed certificate, the DS
+/// (RSA) signature over `challenge ‖ device_id`, and the DeviceId's own signature
+/// over the challenge.
 ///
-/// `device_id` must be the id of the device the coordinator is actually talking to
-/// (the connection's `from`), not a value taken from the message body.
+/// `device_id` must be the connection's `from` (the device we're actually talking
+/// to), never a value from the message body.
 #[cfg(feature = "coordinator")]
 pub fn verify_genuine_bound(
     certificate: &Certificate,
@@ -436,7 +430,6 @@ mod test {
             factory_keypair,
         );
 
-        // The genuine device and its id.
         let device_keypair = KeyPair::new(Scalar::random(&mut test_rng));
         let device_id = frostsnap_core::DeviceId::new(device_keypair.public_key());
 
@@ -486,10 +479,8 @@ mod test {
             Err(GenuineError::ChallengeSignatureInvalid),
         );
 
-        // Genuine hardware proof present but identity proof forged (attacker holds
-        // the DS relay but not the DeviceId secret): the identity signature won't
-        // verify against the claimed id. Simulate by using a valid RSA sig for
-        // `device_id` but an identity sig from a different key.
+        // Genuine RSA proof but a forged identity proof (a relay holder lacks the
+        // DeviceId secret): the identity signature fails against the claimed id.
         let bad_identity = {
             let s = schnorr_fun::new_with_deterministic_nonces::<sha2::Sha256>();
             sign_identity_challenge(&s, &attacker_keypair, challenge)

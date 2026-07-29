@@ -155,11 +155,24 @@ impl DeviceList {
                 }
             }
             DeviceChange::AppMessage(_) => { /* not relevant */ }
-            DeviceChange::GenuineDevice { id, certificate } => {
+            // Case colour is cosmetic identity, set whenever we learn it,
+            // independent of the genuine status (set separately below).
+            DeviceChange::CaseColor { id, color } => {
                 let index = self.index_of(id);
                 if let Some(connected) = self.connected.get_mut(&id) {
-                    connected.case_color =
-                        Some(api::CaseColor::from_comms(certificate.case_color()));
+                    connected.case_color = Some(api::CaseColor::from_comms(color));
+                    if let Some(index) = index {
+                        self.outbox.push(api::DeviceListChange {
+                            kind: api::DeviceListChangeKind::GenuineCheck,
+                            index: index as u32,
+                            device: connected.clone(),
+                        });
+                    }
+                }
+            }
+            DeviceChange::GenuineDevice { id, .. } => {
+                let index = self.index_of(id);
+                if let Some(connected) = self.connected.get_mut(&id) {
                     connected.genuine = api::GenuineStatus::Genuine;
                     if let Some(index) = index {
                         self.outbox.push(api::DeviceListChange {
@@ -171,10 +184,10 @@ impl DeviceList {
                 }
             }
             DeviceChange::GenuineCheckFailed { id } => {
+                // Status only; leave the case colour as-is.
                 let index = self.index_of(id);
                 if let Some(connected) = self.connected.get_mut(&id) {
                     connected.genuine = api::GenuineStatus::Failed;
-                    connected.case_color = None;
                     if let Some(index) = index {
                         self.outbox.push(api::DeviceListChange {
                             kind: api::DeviceListChangeKind::GenuineCheck,

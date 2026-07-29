@@ -5,6 +5,10 @@ import 'package:frostsnap/src/rust/api/device_list.dart';
 
 /// Colors and styling for a device based on its case color
 class DeviceColorScheme {
+  /// Caution amber (not panic red) for a device that failed verification: even a
+  /// failed device can't compromise a multi-device wallet on its own.
+  static const Color failedColor = Color(0xFFD98A00);
+
   final Color deviceColor;
   final CaseColor? caseColor;
   final GenuineStatus? genuine;
@@ -25,7 +29,6 @@ class DeviceColorScheme {
       connectedDevice = null;
     }
 
-    // Try connected device color, then fall back to persisted color
     final caseColor =
         connectedDevice?.caseColor ?? coord.getDeviceCaseColor(id: deviceId);
 
@@ -49,44 +52,162 @@ class DeviceColorScheme {
     );
   }
 
-  /// True when the device responded to the genuine check but did not verify —
-  /// counterfeit hardware, a relay/MITM attempt, or an unknown factory key.
+  /// True when the device responded but its proof did not verify (counterfeit or
+  /// a relay attempt).
   bool get genuineFailed => genuine == GenuineStatus.failed;
 
-  /// Device color for icon tinting; null if device has no color
+  /// Device color for icon tinting.
   Color? get accent => caseColor != null ? deviceColor : null;
 
-  /// A warning banner to show for a device that failed the genuine check, or
-  /// null if the device is fine. Callers place this near the device's title.
-  Widget? genuineWarning(BuildContext context) {
-    if (!genuineFailed) return null;
+  /// Compact status pill (Genuine / Unknown / Not genuine). Null when this build
+  /// doesn't run the check, so we never imply authenticity we didn't verify.
+  Widget? genuineBadge(BuildContext context) {
+    if (!coord.genuineCheckEnabled()) return null;
     final scheme = Theme.of(context).colorScheme;
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(Icons.gpp_bad_rounded, size: 16, color: scheme.error),
-        const SizedBox(width: 4),
-        Flexible(
-          child: Text(
-            'Could not verify authenticity',
-            style: TextStyle(color: scheme.error, fontSize: 12),
-          ),
+    final (icon, color) = _statusIconColor(scheme);
+    // Unknown is neutral by design: usually benign (old firmware, no cert, a
+    // third-party device) and never something the user must act on.
+    final label = switch (genuine) {
+      GenuineStatus.genuine => 'Genuine',
+      GenuineStatus.failed => 'Not genuine',
+      _ => 'Unknown',
+    };
+    // Opens the same explanation dialog as the device-details Authenticity row.
+    return GestureDetector(
+      onTap: () => showGenuineExplanation(context),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: color.withValues(alpha: 0.4)),
         ),
-      ],
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 14, color: color),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: TextStyle(
+                color: color,
+                fontSize: 11,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
-  /// Card with colored border and glow effect. A device that failed the genuine
-  /// check is bordered/glowed in the theme error color instead of its case color.
+  /// Icon + colour for the current status. Shared by badge, row, and dialog.
+  (IconData, Color) _statusIconColor(ColorScheme scheme) => switch (genuine) {
+    GenuineStatus.genuine => (
+      Icons.verified_rounded,
+      caseColor != null ? deviceColor : scheme.primary,
+    ),
+    GenuineStatus.failed => (Icons.gpp_bad_rounded, failedColor),
+    _ => (Icons.gpp_maybe_rounded, scheme.onSurfaceVariant),
+  };
+
+  /// Show the status explanation dialog. Shared by the badge and the
+  /// device-details Authenticity row. Styled to match the app's dialogs
+  /// (see `showErrorDialog` in theme.dart).
+  void showGenuineExplanation(BuildContext context) {
+    final (title, body) = genuineExplanation();
+    showDialog(
+      context: context,
+      builder: (context) {
+        final theme = Theme.of(context);
+        final cs = theme.colorScheme;
+        final (icon, color) = _statusIconColor(cs);
+        return AlertDialog(
+          constraints: const BoxConstraints(maxWidth: 560),
+          icon: Icon(icon, color: color, size: 28),
+          iconPadding: const EdgeInsets.only(top: 24),
+          title: Text(
+            title,
+            style: theme.textTheme.headlineSmall?.copyWith(color: cs.onSurface),
+          ),
+          content: Text(
+            body,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: cs.onSurfaceVariant,
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Got it'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  /// User-facing (title, body) explaining the current genuine status.
+  (String, String) genuineExplanation() {
+    switch (genuine) {
+      case GenuineStatus.genuine:
+        return (
+          'Genuine Device',
+          'This device proved it is genuine Frostsnap hardware, signed by the '
+              'factory.',
+        );
+      case GenuineStatus.failed:
+        return (
+          'Not Genuine',
+          'This device answered the authenticity challenge but its proof did '
+              'not verify. It may be counterfeit or tampered with.\n\n'
+              'Be cautious about relying on it, and get in touch if you did '
+              'not expect this.',
+        );
+      default:
+        return (
+          'Unverified Device',
+          'The device has not proven that it was manufactured by Frostsnap.\n\n'
+              'If you are a developer, or using an open-source or third-party '
+              'device, or a device on older firmware, this is expected.\n\n'
+              'Otherwise, treat it with caution.',
+        );
+    }
+  }
+
+  /// Content for the device-details authenticity row, where the status itself
+  /// is the title. Null when the check isn't active in this build.
+  ({IconData icon, Color color, String title, String subtitle})? genuineRow(
+    BuildContext context,
+  ) {
+    if (!coord.genuineCheckEnabled()) return null;
+    final scheme = Theme.of(context).colorScheme;
+    final (icon, color) = _statusIconColor(scheme);
+    final (title, subtitle) = switch (genuine) {
+      GenuineStatus.genuine => (
+        'Genuine Device',
+        'Verified genuine Frostsnap hardware.',
+      ),
+      GenuineStatus.failed => (
+        'Not Genuine',
+        'This device may be counterfeit or tampered with.',
+      ),
+      _ => (
+        'Unknown Device',
+        'Could not verify this is a genuine Frostsnap device.',
+      ),
+    };
+    return (icon: icon, color: color, title: title, subtitle: subtitle);
+  }
+
+  /// Card with a coloured border and glow in the device's case colour. The glow
+  /// is identity, not trust (the badge carries that).
   Widget buildGlowCard({
     required Widget child,
     EdgeInsets margin = EdgeInsets.zero,
     Clip clipBehavior = Clip.hardEdge,
-    Color? errorColor,
   }) {
-    final glowColor = genuineFailed
-        ? errorColor
-        : (caseColor != null ? deviceColor : null);
+    final glowColor = caseColor != null ? deviceColor : null;
     if (glowColor == null) {
       return Card.filled(
         margin: margin,

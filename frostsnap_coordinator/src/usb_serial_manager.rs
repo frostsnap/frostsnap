@@ -2,12 +2,9 @@
 const USB_VID: u16 = 12346;
 const USB_PID: u16 = 4097;
 
-// The genuine check binds the device's own DeviceId into both proofs it returns
-// (see `genuine_certificate::verify_genuine_bound`): the DS (RSA) signature is
-// over `challenge ‖ device_id`, and the device also schnorr-signs the challenge
-// with its DeviceId key. This defeats the relay/MITM where a malicious device
-// forwards a challenge to a genuine device — a genuine device only ever signs
-// over its own id, so the relayed proof won't verify against the attacker's id.
+// The genuine check binds each device's DeviceId into the proof it returns, so a
+// relayed proof won't verify against the relayer's id (see
+// `genuine_certificate::verify_genuine_bound`).
 const DO_GENUINE_CHECK: bool = true;
 
 use crate::firmware::ValidatedFirmwareBin;
@@ -414,14 +411,17 @@ impl UsbSerialManager {
                                         body: AppMessageBody::Misc(inner),
                                     }))
                                 }
-                                DeviceSendBody::_LegacyGenuineProof { .. } => {
-                                    // Legacy unbound genuine response from pre-
-                                    // DeviceId-binding firmware. It can't be
-                                    // verified safely (the signature isn't bound
-                                    // to the device's id, so it's relay-able), so
-                                    // we neither trust nor fail it — the device
-                                    // needs a firmware upgrade to be verifiable.
+                                DeviceSendBody::_LegacyGenuineProof { certificate, .. } => {
+                                    // Legacy unbound response from pre-binding
+                                    // firmware: relay-able, so we neither trust nor
+                                    // fail it. The device needs a firmware upgrade.
+                                    // Case colour is cosmetic, so still surface it
+                                    // (badge stays Unknown).
                                     self.challenges.remove(&message.from);
+                                    device_changes.push(DeviceChange::CaseColor {
+                                        id: message.from,
+                                        color: certificate.unverified_case_color(),
+                                    });
                                     event!(
                                         Level::INFO,
                                         device = message.from.to_string(),
@@ -434,6 +434,12 @@ impl UsbSerialManager {
                                     identity_signature,
                                     certificate,
                                 } => {
+                                    // Surface the case colour up front, independent
+                                    // of the genuine-check outcome below.
+                                    device_changes.push(DeviceChange::CaseColor {
+                                        id: message.from,
+                                        color: certificate.unverified_case_color(),
+                                    });
                                     let Some(challenge) = self.challenges.remove(&message.from)
                                     else {
                                         event!(
@@ -446,9 +452,8 @@ impl UsbSerialManager {
                                     let Some(key) = self.genuine_cert_key else {
                                         continue;
                                     };
-                                    // Verify against `message.from` — the id of the
-                                    // device we're actually talking to, not a value
-                                    // from the message body.
+                                    // Verify against `message.from`, the device
+                                    // we're actually talking to, not the message body.
                                     match frostsnap_comms::genuine_certificate::verify_genuine_bound(
                                         &certificate,
                                         key,
@@ -464,6 +469,18 @@ impl UsbSerialManager {
                                                 id: message.from,
                                                 certificate: certificate_body,
                                             });
+                                        }
+                                        // An unknown factory key isn't a failure,
+                                        // just a device we can't judge (third-party,
+                                        // or a different Frostsnap factory); leave
+                                        // it Unknown. Only a bad signature fails.
+                                        Err(frostsnap_comms::genuine_certificate::GenuineError::UnknownFactoryKey) => {
+                                            event!(
+                                                Level::INFO,
+                                                device = message.from.to_string(),
+                                                "genuine check: certificate from an unrecognised \
+                                                 factory key, leaving status unknown"
+                                            );
                                         }
                                         Err(e) => {
                                             event!(
@@ -881,9 +898,14 @@ pub enum DeviceChange {
         id: DeviceId,
         certificate: frostsnap_comms::genuine_certificate::CertificateBody,
     },
-    /// The device responded to the genuine challenge but the proof did not verify
-    /// (counterfeit hardware, a relay/MITM attempt, or an unknown factory key —
-    /// see the WARN log for the specific reason).
+    /// The device's case colour from its (unverified) certificate. Emitted for any
+    /// certificate-bearing response, so colour shows regardless of genuine status.
+    CaseColor {
+        id: DeviceId,
+        color: frostsnap_comms::genuine_certificate::CaseColor,
+    },
+    /// The device responded but its proof did not verify (counterfeit or a relay
+    /// attempt; see the WARN log for the reason).
     GenuineCheckFailed {
         id: DeviceId,
     },

@@ -784,6 +784,9 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
         (enabled
             ? cs.onSurfaceVariant
             : cs.onSurfaceVariant.withValues(alpha: 0.5));
+    // Genuine status matters here: you're about to trust these devices with a key
+    // share. Right-aligned to match the device list.
+    final genuineBadge = colors.genuineBadge(context);
     return colors.buildGlowCard(
       margin: const EdgeInsets.symmetric(vertical: 4),
       child: ListTile(
@@ -791,7 +794,13 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
         enabled: enabled,
         leading: Icon(Icons.key, color: iconColor),
         title: title,
-        trailing: trailing,
+        trailing: genuineBadge == null
+            ? trailing
+            : Row(
+                mainAxisSize: MainAxisSize.min,
+                spacing: 8,
+                children: [genuineBadge, trailing],
+              ),
         contentPadding: const EdgeInsets.symmetric(horizontal: 16),
       ),
     );
