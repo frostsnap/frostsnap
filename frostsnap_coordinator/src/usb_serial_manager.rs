@@ -61,6 +61,10 @@ pub struct UsbSerialManager {
     challenges: HashMap<DeviceId, frostsnap_comms::GenuineChallenge>,
     /// Devices that passed genuine certificate verification
     genuine_devices: HashMap<DeviceId, frostsnap_comms::genuine_certificate::CertificateBody>,
+    /// Device ids already known genuine, from a persisted verdict or this
+    /// session. We skip re-challenging these; failures are never recorded here,
+    /// so Unknown/Failed devices are retried on every connect.
+    known_genuine: HashSet<DeviceId>,
 }
 
 pub struct DevicePort {
@@ -97,6 +101,7 @@ impl UsbSerialManager {
             genuine_cert_key: None,
             challenges: Default::default(),
             genuine_devices: Default::default(),
+            known_genuine: Default::default(),
         }
     }
 
@@ -108,6 +113,12 @@ impl UsbSerialManager {
     pub fn with_genuine_cert_key(mut self, key: Point<EvenY>) -> Self {
         self.genuine_cert_key = Some(key);
         self
+    }
+
+    /// Seed the ids we already consider genuine (from persisted verdicts) so we
+    /// don't re-challenge them on connect.
+    pub fn set_known_genuine(&mut self, ids: impl IntoIterator<Item = DeviceId>) {
+        self.known_genuine.extend(ids);
     }
 
     pub fn usb_sender(&self) -> UsbSender {
@@ -465,6 +476,7 @@ impl UsbSerialManager {
                                         Ok(certificate_body) => {
                                             self.genuine_devices
                                                 .insert(message.from, certificate_body.clone());
+                                            self.known_genuine.insert(message.from);
                                             device_changes.push(DeviceChange::GenuineDevice {
                                                 id: message.from,
                                                 certificate: certificate_body,
@@ -651,7 +663,12 @@ impl UsbSerialManager {
             ))
             .unwrap();
 
-        if DO_GENUINE_CHECK && self.genuine_cert_key.is_some() {
+        // Already-verified devices are trusted from their persisted verdict and
+        // not re-challenged; Unknown/Failed devices (never recorded) are retried.
+        if DO_GENUINE_CHECK
+            && self.genuine_cert_key.is_some()
+            && !self.known_genuine.contains(&from)
+        {
             let challenge = frostsnap_comms::GenuineChallenge::random(&mut rand::thread_rng());
             self.challenges.insert(from, challenge);
             self.outbox_sender

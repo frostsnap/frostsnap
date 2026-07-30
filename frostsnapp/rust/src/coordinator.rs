@@ -75,7 +75,7 @@ type Signal = Box<dyn Sink<()>>;
 impl FfiCoordinator {
     pub fn new(
         db: Arc<Mutex<rusqlite::Connection>>,
-        usb_manager: UsbSerialManager,
+        mut usb_manager: UsbSerialManager,
     ) -> anyhow::Result<Self> {
         let mut db_ = db.lock().unwrap();
 
@@ -85,6 +85,9 @@ impl FfiCoordinator {
         let device_names = Persisted::<DeviceNames>::new(&mut db_, ())?;
         event!(Level::DEBUG, "loading genuine device info");
         let genuine_info = Persisted::<GenuineDeviceInfo>::new(&mut db_, ())?;
+        // Trust persisted genuine verdicts: don't re-challenge devices we've
+        // already verified.
+        usb_manager.set_known_genuine(genuine_info.device_ids());
         event!(Level::DEBUG, "loading backup state");
         let backup_state = Persisted::<BackupState>::new(&mut db_, ())?;
 
@@ -202,17 +205,19 @@ impl FfiCoordinator {
                         device_list.consume_manager_event(change.clone());
                         match change {
                             DeviceChange::Connected { id, .. } => {
-                                // Pre-populate persisted case color so known
-                                // devices show their color immediately without
-                                // waiting for the genuine challenge round-trip.
-                                // (This is only a visual hint; the live genuine
-                                // check re-establishes the trusted status.)
-                                if let Some(color_str) =
-                                    genuine_info.lock().unwrap().get_case_color(id)
+                                // Restore case colour and genuine status from the
+                                // persisted verdict. A device we've verified before
+                                // isn't re-challenged (see UsbSerialManager); only
+                                // Unknown/Failed devices are re-checked on connect.
+                                let genuine_info = genuine_info.lock().unwrap();
+                                if let Some(color) = genuine_info
+                                    .get_case_color(id)
+                                    .and_then(|s| parse_case_color_str(&s))
                                 {
-                                    if let Some(color) = parse_case_color_str(&color_str) {
-                                        device_list.set_case_color(id, color);
-                                    }
+                                    device_list.set_case_color(id, color);
+                                }
+                                if genuine_info.get(id).is_some() {
+                                    device_list.set_genuine_cached(id);
                                 }
                             }
                             DeviceChange::Registered { id, .. } => {

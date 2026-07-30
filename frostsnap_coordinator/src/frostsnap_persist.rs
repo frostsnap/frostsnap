@@ -293,6 +293,11 @@ impl GenuineDeviceInfo {
     pub fn get_case_color(&self, device_id: DeviceId) -> Option<String> {
         self.info.get(&device_id).map(|r| r.case_color.clone())
     }
+
+    /// Ids of all devices with a stored genuine verdict.
+    pub fn device_ids(&self) -> impl Iterator<Item = DeviceId> + '_ {
+        self.info.keys().copied()
+    }
 }
 
 impl TakeStaged<VecDeque<(DeviceId, GenuineRecord)>> for GenuineDeviceInfo {

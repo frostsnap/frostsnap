@@ -232,6 +232,17 @@ impl DeviceList {
         }
     }
 
+    /// Mark a device genuine from a persisted verdict, when the live challenge
+    /// was skipped. Only upgrades an Unknown status; never overrides a live
+    /// Genuine/Failed result from this session.
+    pub fn set_genuine_cached(&mut self, id: DeviceId) {
+        if let Some(connected) = self.connected.get_mut(&id) {
+            if connected.genuine == api::GenuineStatus::Unknown {
+                connected.genuine = api::GenuineStatus::Genuine;
+            }
+        }
+    }
+
     pub fn set_recovery_mode(&mut self, id: DeviceId, recovery_mode: bool) {
         if let Some(connected_device) = self.connected.get_mut(&id) {
             if connected_device.recovery_mode != recovery_mode {
