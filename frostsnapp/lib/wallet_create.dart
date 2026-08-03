@@ -990,97 +990,163 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
 
           if (!state.allAcks) continue;
 
-          final keygenCodeMatches =
-              await showDialog<bool>(
-                context: context,
-                barrierDismissible: false,
-                builder: (context) {
-                  final theme = Theme.of(context);
-                  return BackdropFilter(
-                    filter: blurFilter,
-                    child: AlertDialog(
-                      title: Text('Final check'),
-                      content: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        spacing: 16,
-                        children: [
-                          Text('Do all devices show this code?'),
-                          Card.filled(
-                            child: Center(
-                              child: Padding(
-                                padding: EdgeInsets.symmetric(
-                                  vertical: 12,
-                                  horizontal: 16,
-                                ),
-                                child: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Text(
-                                      '${form.threshold}-of-${form.selectedDevices.length}',
-                                      style: theme.textTheme.labelLarge,
-                                    ),
-                                    Text(
-                                      _controller.keygenChecksum,
-                                      style: theme.textTheme.headlineLarge
-                                          ?.copyWith(
-                                            fontFamily:
-                                                monospaceTextStyle.fontFamily,
+          final deviceNames = [
+            for (final id in state.devices)
+              if (_controller.form.deviceNames[id] != null)
+                DeviceNameCommit(
+                  id: id,
+                  name: _controller.form.deviceNames[id]!,
+                ),
+          ];
+
+          // The "Final check" dialog owns the finalize itself: tapping Yes
+          // shows an in-button spinner while it saves to devices, then pops
+          // the resulting AccessStructureRef (null if the user tapped No or
+          // the save failed).
+          final asRef = await showDialog<AccessStructureRef>(
+            context: context,
+            barrierDismissible: false,
+            builder: (dialogContext) {
+              final theme = Theme.of(dialogContext);
+              var saving = false;
+              return StatefulBuilder(
+                builder: (_, setDialogState) {
+                  Future<void> finalize() async {
+                    if (saving) return;
+                    setDialogState(() => saving = true);
+                    try {
+                      final encryptionKey =
+                          await SecureKeyProvider.getEncryptionKey();
+                      final asRef = await coord.finalizeKeygen(
+                        keygenId: state.keygenId,
+                        encryptionKey: encryptionKey,
+                        deviceNames: deviceNames,
+                      );
+                      await Future<void>.delayed(const Duration(seconds: 1));
+                      if (dialogContext.mounted) {
+                        Navigator.pop(dialogContext, asRef);
+                      }
+                    } catch (e) {
+                      if (dialogContext.mounted) {
+                        Navigator.pop(dialogContext, null);
+                      }
+                      if (context.mounted) {
+                        showErrorSnackbar(
+                          context,
+                          'Failed to finalize keygen: $e',
+                        );
+                      }
+                    }
+                  }
+
+                  return PopScope(
+                    canPop: !saving,
+                    child: BackdropFilter(
+                      filter: blurFilter,
+                      child: AlertDialog(
+                        title: Text('Final check'),
+                        content: Stack(
+                          children: [
+                            Column(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              spacing: 16,
+                              children: [
+                                Text('Do all devices show this code?'),
+                                Card.filled(
+                                  child: Center(
+                                    child: Padding(
+                                      padding: EdgeInsets.symmetric(
+                                        vertical: 12,
+                                        horizontal: 16,
+                                      ),
+                                      child: Column(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Text(
+                                            '${form.threshold}-of-${form.selectedDevices.length}',
+                                            style: theme.textTheme.labelLarge,
                                           ),
+                                          Text(
+                                            _controller.keygenChecksum,
+                                            style: theme.textTheme.headlineLarge
+                                                ?.copyWith(
+                                                  fontFamily: monospaceTextStyle
+                                                      .fontFamily,
+                                                ),
+                                          ),
+                                        ],
+                                      ),
                                     ),
-                                  ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                            // Announce the saving state to screen readers while
+                            // the inline spinner runs. A zero-size Positioned.fill
+                            // overlay so it never adds height to the dialog.
+                            if (saving)
+                              Positioned.fill(
+                                child: Semantics(
+                                  container: true,
+                                  liveRegion: true,
+                                  label: 'Saving wallet to devices',
+                                  child: const SizedBox.shrink(),
                                 ),
                               ),
+                          ],
+                        ),
+                        actionsAlignment: MainAxisAlignment.spaceBetween,
+                        actions: [
+                          TextButton(
+                            onPressed: saving
+                                ? null
+                                : () => Navigator.pop(dialogContext, null),
+                            child: Text('No'),
+                          ),
+                          TextButton(
+                            onPressed: saving ? null : finalize,
+                            // The always-present (transparent) 'Yes' label is the
+                            // ONLY child that sizes the button; the spinner is a
+                            // Positioned.fill overlay, so it can never change the
+                            // button's width or height — no jump on press.
+                            child: Stack(
+                              alignment: Alignment.center,
+                              children: [
+                                Opacity(
+                                  opacity: saving ? 0 : 1,
+                                  child: const Text('Yes'),
+                                ),
+                                if (saving)
+                                  const Positioned.fill(
+                                    child: Center(
+                                      child: SizedBox.square(
+                                        dimension: 16,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                              ],
                             ),
                           ),
                         ],
                       ),
-                      actionsAlignment: MainAxisAlignment.spaceBetween,
-                      actions: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(context, false),
-                          child: Text('No'),
-                        ),
-                        TextButton(
-                          onPressed: () => Navigator.pop(context, true),
-                          child: Text('Yes'),
-                        ),
-                      ],
                     ),
                   );
                 },
-              ) ??
-              false;
-          if (!keygenCodeMatches) {
+              );
+            },
+          );
+
+          if (asRef == null) {
             _controller._keygenState = null;
             _controller.notifyListeners();
             return;
           }
-
-          try {
-            final encryptionKey = await SecureKeyProvider.getEncryptionKey();
-            final deviceNames = [
-              for (final id in state.devices)
-                if (_controller.form.deviceNames[id] != null)
-                  DeviceNameCommit(
-                    id: id,
-                    name: _controller.form.deviceNames[id]!,
-                  ),
-            ];
-            final asRef = await coord.finalizeKeygen(
-              keygenId: state.keygenId,
-              encryptionKey: encryptionKey,
-              deviceNames: deviceNames,
-            );
-            _controller._asRef = asRef;
-            if (context.mounted) Navigator.pop(context, asRef);
-          } catch (e) {
-            _controller._keygenState = null;
-            _controller.notifyListeners();
-            if (context.mounted) {
-              showErrorSnackbar(context, 'Failed to finalize keygen: $e');
-            }
-          }
+          _controller._asRef = asRef;
+          if (context.mounted) Navigator.pop(context, asRef);
           return;
         }
       } finally {
