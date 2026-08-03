@@ -283,6 +283,18 @@ mod tests {
     const TEST_CERT1: &[u8] = include_bytes!("../../../tests/certs/test1.der");
     const TEST_CERT2: &[u8] = include_bytes!("../../../tests/certs/test2.der");
 
+    /// A fixed verification time inside the `test1.der`/`test2.der` validity window
+    /// (2025-07-25 .. 2026-07-25). These tests exercise TOFU handling of an
+    /// *otherwise-valid* self-signed certificate, so the verifier's `now` is a test
+    /// input and must not depend on the wall clock — otherwise the fixtures "expire"
+    /// and the base verifier returns cert-expired instead of the unknown-issuer path
+    /// the TOFU capture relies on. (Certificate-expiry behaviour, if ever needed,
+    /// belongs in its own test with its own chosen time.)
+    fn test_now() -> UnixTime {
+        // 2026-01-01T00:00:00Z — inside the test fixtures' validity window
+        UnixTime::since_unix_epoch(std::time::Duration::from_secs(1_767_225_600))
+    }
+
     #[test]
     fn test_certificate_fingerprint_format() {
         const ELECTRUM_CERT: &[u8] = include_bytes!("../tofu/certs/electrum.frostsn.app.der");
@@ -304,7 +316,7 @@ mod tests {
         let trusted_certs = TrustedCertificates::new_for_test(bdk_chain::bitcoin::Network::Bitcoin);
         let test_cert1 = CertificateDer::from(TEST_CERT1.to_vec());
         let server_name = ServerName::try_from("test.example.com").unwrap();
-        let now = UnixTime::now();
+        let now = test_now();
 
         let mut root_store = rustls::RootCertStore::empty();
         root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
@@ -336,7 +348,7 @@ mod tests {
 
         let test_cert1 = CertificateDer::from(TEST_CERT1.to_vec());
         let server_name = ServerName::try_from("test.example.com").unwrap();
-        let now = UnixTime::now();
+        let now = test_now();
 
         trusted_certs.add_certificate(
             test_cert1.clone(),
@@ -365,7 +377,7 @@ mod tests {
         let test_cert1 = CertificateDer::from(TEST_CERT1.to_vec());
         let test_cert2 = CertificateDer::from(TEST_CERT2.to_vec());
         let server_name = ServerName::try_from("test.example.com").unwrap();
-        let now = UnixTime::now();
+        let now = test_now();
 
         trusted_certs.add_certificate(
             test_cert1.clone(),
@@ -425,7 +437,7 @@ mod tests {
 
         // Step 2: Attacker tries to use the same certificate for bank.com
         let bank_server_name = ServerName::try_from("bank.com").unwrap();
-        let now = UnixTime::now();
+        let now = test_now();
 
         let result = tofu_verifier.verify_server_cert(&cert, &[], &bank_server_name, &[], now);
 
@@ -504,7 +516,7 @@ mod tests {
         const EMZY_CERT: &[u8] = include_bytes!("../../../tests/certs/emzy.der");
         let emzy_cert = CertificateDer::from(EMZY_CERT.to_vec());
         let server_name = ServerName::try_from("electrum.emzy.de").unwrap();
-        let now = UnixTime::now();
+        let now = test_now();
 
         let trusted_certs = TrustedCertificates::new_for_test(bdk_chain::bitcoin::Network::Bitcoin);
 
