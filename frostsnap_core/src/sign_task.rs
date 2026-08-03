@@ -60,20 +60,25 @@ impl WireSignTask {
                     KeyPurpose::Bitcoin(network) => network,
                     _ => return Err(SignTaskError::WrongPurpose),
                 };
-                let non_matching_key = tx_template.inputs().iter().find_map(|input| {
-                    let owner = input.owner().local_owner()?;
-                    if owner.master_appkey != master_appkey {
-                        Some(owner.master_appkey)
-                    } else {
-                        None
-                    }
-                });
+                let input_owners = tx_template
+                    .inputs()
+                    .iter()
+                    .filter_map(|input| Some((input.owner().local_owner()?, "input")));
+                let output_owners = tx_template
+                    .outputs()
+                    .iter()
+                    .filter_map(|output| Some((output.owner().local_owner()?, "output")));
 
-                if let Some(non_matching_key) = non_matching_key {
-                    return Err(SignTaskError::WrongKey {
-                        got: Box::new(non_matching_key),
-                        expected: Box::new(master_appkey),
-                    });
+                let owners = input_owners.chain(output_owners);
+
+                for (owner, kind) in owners {
+                    if owner.master_appkey != master_appkey {
+                        return Err(SignTaskError::WrongKey {
+                            got: Box::new(owner.master_appkey),
+                            expected: Box::new(master_appkey),
+                            kind,
+                        });
+                    }
                 }
 
                 if !tx_template.has_any_inputs_to_sign() {
@@ -171,6 +176,7 @@ pub enum SignTaskError {
     WrongKey {
         got: Box<MasterAppkey>,
         expected: Box<MasterAppkey>,
+        kind: &'static str,
     },
     WrongPurpose,
     InvalidBitcoinTransaction,
@@ -180,9 +186,13 @@ pub enum SignTaskError {
 impl core::fmt::Display for SignTaskError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            SignTaskError::WrongKey { got, expected } => write!(
+            SignTaskError::WrongKey {
+                got,
+                expected,
+                kind,
+            } => write!(
                 f,
-                "sign task was for key {expected} but got an item for key {got}",
+                "sign task was for key {expected} but got an {kind} for key {got}",
             ),
             SignTaskError::InvalidBitcoinTransaction => {
                 write!(f, "Bitcoin transaction input value was less than outputs")
@@ -202,3 +212,118 @@ impl core::fmt::Display for SignTaskError {
 
 #[cfg(feature = "std")]
 impl std::error::Error for SignTaskError {}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::bitcoin_transaction::{LocalSpk, TransactionTemplate};
+    use crate::tweak::BitcoinBip32Path;
+    use bitcoin::{Amount, Network, ScriptBuf, TxOut};
+    use schnorr_fun::fun::prelude::*;
+
+    // Two distinct appkeys derived from cheap fixed points: the one we sign with
+    // and a different one.
+    fn signing_key() -> MasterAppkey {
+        MasterAppkey::derive_from_rootkey(g!(2 * G).normalize())
+    }
+
+    fn other_key() -> MasterAppkey {
+        MasterAppkey::derive_from_rootkey(g!(3 * G).normalize())
+    }
+
+    /// A locally-owned output under a different key must be rejected.
+    #[test]
+    fn output_owned_by_wrong_key_is_rejected() {
+        let signing = signing_key();
+        let other = other_key();
+
+        let mut tx_template = TransactionTemplate::new();
+        tx_template.push_imaginary_owned_input(
+            LocalSpk {
+                master_appkey: signing,
+                bip32_path: BitcoinBip32Path::external(0),
+            },
+            Amount::from_sat(100_000),
+        );
+        tx_template.push_owned_output(
+            Amount::from_sat(90_000),
+            LocalSpk {
+                master_appkey: other,
+                bip32_path: BitcoinBip32Path::internal(0),
+            },
+        );
+
+        let result = WireSignTask::BitcoinTransaction(tx_template)
+            .check(signing, KeyPurpose::Bitcoin(Network::Bitcoin));
+
+        match result {
+            Err(SignTaskError::WrongKey {
+                got,
+                expected,
+                kind,
+            }) => {
+                assert_eq!(kind, "output");
+                assert_eq!(*got, other);
+                assert_eq!(*expected, signing);
+            }
+            other => panic!("expected WrongKey output error, got {other:?}"),
+        }
+    }
+
+    /// A locally-owned input under a different key must be rejected.
+    #[test]
+    fn input_owned_by_wrong_key_is_rejected() {
+        let signing = signing_key();
+        let other = other_key();
+
+        let mut tx_template = TransactionTemplate::new();
+        tx_template.push_imaginary_owned_input(
+            LocalSpk {
+                master_appkey: other,
+                bip32_path: BitcoinBip32Path::external(0),
+            },
+            Amount::from_sat(100_000),
+        );
+
+        let result = WireSignTask::BitcoinTransaction(tx_template)
+            .check(signing, KeyPurpose::Bitcoin(Network::Bitcoin));
+
+        match result {
+            Err(SignTaskError::WrongKey {
+                got,
+                expected,
+                kind,
+            }) => {
+                assert_eq!(kind, "input");
+                assert_eq!(*got, other);
+                assert_eq!(*expected, signing);
+            }
+            other => panic!("expected WrongKey input error, got {other:?}"),
+        }
+    }
+
+    /// A send to an external (non-local) recipient is accepted: the owner check
+    /// only applies to locally-owned outputs.
+    #[test]
+    fn external_recipient_output_is_accepted() {
+        let signing = signing_key();
+
+        let mut tx_template = TransactionTemplate::new();
+        tx_template.push_imaginary_owned_input(
+            LocalSpk {
+                master_appkey: signing,
+                bip32_path: BitcoinBip32Path::external(0),
+            },
+            Amount::from_sat(100_000),
+        );
+        tx_template.push_foreign_output(TxOut {
+            value: Amount::from_sat(90_000),
+            script_pubkey: ScriptBuf::new(),
+        });
+
+        let checked = WireSignTask::BitcoinTransaction(tx_template)
+            .check(signing, KeyPurpose::Bitcoin(Network::Bitcoin))
+            .expect("a send to an external recipient must be accepted");
+        assert_eq!(checked.master_appkey, signing);
+    }
+}
