@@ -1,7 +1,7 @@
 use bitcoin::bip32::DerivationPath;
 use bitcoin::secp256k1;
 use bitcoin::{Address, Network};
-use frost_backup::generate_xpriv;
+use frost_backup::{generate_descriptor, generate_xpriv};
 use frostsnap_coordinator::bitcoin::{descriptor_for_account_keychain, wallet::KeychainId};
 use frostsnap_core::{
     tweak::{AccountKind, BitcoinAccount, BitcoinAccountKeychain, Keychain},
@@ -80,5 +80,25 @@ fn test_addresses_match() {
     assert_eq!(
         frost_backup_address_1, frostsnap_address_1,
         "Second address from frost_backup xpriv should match frostsnap_core descriptor"
+    );
+}
+#[test]
+fn test_descriptor_has_valid_checksum() {
+    let secret = Scalar::random(&mut rand::thread_rng());
+    let network = bitcoin::NetworkKind::Test;
+
+    let descriptor = generate_descriptor(&secret, network);
+
+    let (descriptor_without_checksum, checksum) = descriptor
+        .split_once('#')
+        .expect("descriptor should contain a checksum");
+
+    let expected_checksum =
+        miniscript::descriptor::checksum::desc_checksum(descriptor_without_checksum)
+            .expect("descriptor should be valid");
+
+    assert_eq!(
+        checksum, expected_checksum,
+        "descriptor checksum should match BIP380 checksum"
     );
 }

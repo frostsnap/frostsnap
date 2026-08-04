@@ -13,16 +13,33 @@ rand = { workspace = true, optional = true }
 clap = { version = "4", optional = true, features = ["derive"] }
 bitcoin = { workspace = true, optional = true }
 bincode = { workspace = true, optional = true }
+miniscript = { version = "12.3", optional = true }
 
 [features]
-cli = ["clap", "std", "rand", "bitcoin"]
-std = ["schnorr_fun/std", "sha2/std", "bitcoin?/std"]
+cli = [
+    "clap",
+    "std",
+    "rand",
+    "bitcoin",
+    "miniscript",
+]
+
+std = [
+    "schnorr_fun/std",
+    "sha2/std",
+    "bitcoin?/std",
+]
+
 default = ["cli"]
-bincode = [ "dep:bincode", "schnorr_fun/bincode" ]
+
+bincode = [
+    "dep:bincode",
+    "schnorr_fun/bincode"
+]
 
 [[bin]]
 name = "frost_backup"
-required-features = ["cli" ]
+required-features = ["cli"]
 
 [dev-dependencies]
 proptest = { workspace = true }
