@@ -958,18 +958,23 @@ impl FrostCoordinator {
         }
     }
 
-    pub fn has_backups_that_need_to_be_consolidated(&self, device_id: DeviceId) -> bool {
+    /// The wallet this device has a physical backup waiting to be consolidated into.
+    pub fn pending_physical_consolidation(
+        &self,
+        device_id: DeviceId,
+    ) -> Option<AccessStructureRef> {
         self.restoration
             .pending_physical_consolidations
             .iter()
-            .any(|consolidation| consolidation.device_id == device_id)
+            .find(|consolidation| consolidation.device_id == device_id)
+            .map(|consolidation| consolidation.access_structure_ref)
     }
 
     pub fn consolidate_pending_physical_backups(
         &self,
         device_id: DeviceId,
         encryption_key: SymmetricKey,
-    ) -> impl IntoIterator<Item = CoordinatorSend> {
+    ) -> Result<Vec<CoordinatorSend>, ConsolidateError> {
         let consolidations = self
             .restoration
             .pending_physical_consolidations
@@ -979,12 +984,17 @@ impl FrostCoordinator {
         let mut messages = vec![];
 
         for consolidation in consolidations {
+            let access_structure_ref = consolidation.access_structure_ref;
             let root_shared_key = self
-                .root_shared_key(consolidation.access_structure_ref, encryption_key)
-                .expect("invariant");
-            let frost_key = self
-                .get_frost_key(consolidation.access_structure_ref.key_id)
-                .expect("invariant");
+                .root_shared_key(access_structure_ref, encryption_key)
+                .ok_or(ConsolidateError::CannotDecrypt {
+                    access_structure_ref,
+                })?;
+            let frost_key = self.get_frost_key(access_structure_ref.key_id).ok_or(
+                ConsolidateError::CannotDecrypt {
+                    access_structure_ref,
+                },
+            )?;
 
             messages.push(CoordinatorSend::ToDevice {
                 message: CoordinatorToDeviceMessage::Restoration(
@@ -999,7 +1009,7 @@ impl FrostCoordinator {
             });
         }
 
-        messages
+        Ok(messages)
     }
 
     pub fn request_device_display_backup(
@@ -1302,6 +1312,29 @@ impl fmt::Display for CheckBackupError {
 }
 
 impl std::error::Error for CheckBackupError {}
+
+#[derive(Debug, Clone)]
+pub enum ConsolidateError {
+    /// The application provided a key that doesn't decrypt this wallet.
+    CannotDecrypt {
+        access_structure_ref: AccessStructureRef,
+    },
+}
+
+impl fmt::Display for ConsolidateError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ConsolidateError::CannotDecrypt {
+                access_structure_ref,
+            } => write!(
+                f,
+                "The application provided the wrong decryption key for {access_structure_ref:?} so we couldn't consolidate its backup."
+            ),
+        }
+    }
+}
+
+impl std::error::Error for ConsolidateError {}
 
 #[derive(Debug, Clone)]
 pub enum RestorationError {

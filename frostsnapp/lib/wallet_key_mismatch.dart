@@ -19,16 +19,12 @@ Future<SymmetricKey?> existingWalletKey({
   BuildContext? context,
   required AccessStructureRef accessStructureRef,
   required String action,
-  @visibleForTesting Future<SymmetricKey> Function()? getKey,
-  @visibleForTesting bool Function(SymmetricKey key)? canDecrypt,
-  @visibleForTesting Future<void> Function()? showRecovery,
 }) async {
-  getKey ??= SecureKeyProvider.getExistingEncryptionKey;
-  canDecrypt ??= (key) => coord.canDecryptWallet(
+  bool canDecrypt(SymmetricKey key) => coord.canDecryptWallet(
     accessStructureRef: accessStructureRef,
     encryptionKey: key,
   );
-  showRecovery ??= () =>
+  showRecovery() =>
       showWalletKeyMismatchDialog(context: context, action: action);
 
   // The empty-key fallback (see AndroidSecureKeyProvider) isn't persisted, so
@@ -36,12 +32,12 @@ Future<SymmetricKey?> existingWalletKey({
   // before giving up.
   SymmetricKey? emptyKeyIfDecrypts() {
     final emptyKey = SecureKeyProvider.emptyKey;
-    return canDecrypt!(emptyKey) ? emptyKey : null;
+    return canDecrypt(emptyKey) ? emptyKey : null;
   }
 
   final SymmetricKey key;
   try {
-    key = await getKey();
+    key = await SecureKeyProvider.getExistingEncryptionKey();
   } on WalletKeyUnavailable {
     final emptyKey = emptyKeyIfDecrypts();
     if (emptyKey != null) return emptyKey;

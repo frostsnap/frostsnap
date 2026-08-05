@@ -197,8 +197,14 @@ impl FfiCoordinator {
                         device_list.consume_manager_event(change.clone());
                         match change {
                             DeviceChange::Registered { id, .. } => {
-                                if coordinator.has_backups_that_need_to_be_consolidated(id) {
-                                    device_list.set_recovery_mode(id, true);
+                                if let Some(access_structure_ref) =
+                                    coordinator.pending_physical_consolidation(id)
+                                {
+                                    device_list.set_recovery_mode(
+                                        id,
+                                        true,
+                                        Some(access_structure_ref),
+                                    );
                                 }
 
                                 ui_stack.connected(
@@ -1081,7 +1087,7 @@ impl FfiCoordinator {
                 device_list
                     .lock()
                     .unwrap()
-                    .set_recovery_mode(device_id, true);
+                    .set_recovery_mode(device_id, true, None);
 
                 let coordinator = coordinator.lock().unwrap();
                 // We need to update the recovering key's state the ui gets updated
@@ -1167,7 +1173,7 @@ impl FfiCoordinator {
             self.device_list
                 .lock()
                 .unwrap()
-                .set_recovery_mode(phase.from, true);
+                .set_recovery_mode(phase.from, true, None);
 
             self.emit_key_state();
         }
@@ -1245,10 +1251,19 @@ impl FfiCoordinator {
 
         let msgs = {
             let coord = self.coordinator.lock().unwrap();
-            coord
-                .consolidate_pending_physical_backups(device_id, encryption_key)
-                .into_iter()
-                .collect::<Vec<_>>()
+            match coord.consolidate_pending_physical_backups(device_id, encryption_key) {
+                Ok(msgs) => msgs,
+                Err(e) => {
+                    event!(
+                        Level::ERROR,
+                        id = device_id.to_string(),
+                        name = device.name,
+                        error = e.to_string(),
+                        "unable to consolidate backups to take device out of recovery mode"
+                    );
+                    return;
+                }
+            }
         };
 
         if msgs.is_empty() {
@@ -1283,7 +1298,7 @@ impl FfiCoordinator {
             self.device_list
                 .lock()
                 .unwrap()
-                .set_recovery_mode(device_id, false);
+                .set_recovery_mode(device_id, false, None);
 
             self.ui_stack
                 .lock()

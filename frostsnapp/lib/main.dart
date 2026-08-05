@@ -14,13 +14,12 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:frostsnap/contexts.dart';
 import 'package:frostsnap/copy_feedback.dart';
 import 'package:frostsnap/global.dart';
-import 'package:frostsnap/secure_key_provider.dart';
 import 'package:frostsnap/serialport.dart';
-import 'package:frostsnap/snackbar.dart';
 import 'package:frostsnap/settings.dart';
 import 'package:frostsnap/stream_ext.dart';
 import 'package:frostsnap/theme.dart';
 import 'package:frostsnap/wallet.dart';
+import 'package:frostsnap/wallet_key_mismatch.dart';
 import 'package:frostsnap/wallet_list_controller.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/device_list.dart';
@@ -91,31 +90,17 @@ Future<void> main() async {
       // ASAP. Right now we don't confirm with the user this action but maybe in
       // the future we will.
       for (var change in update.changes) {
+        final accessStructureRef = change.pendingConsolidation;
         if (change.kind == DeviceListChangeKind.recoveryMode &&
-            change.device.recoveryMode) {
+            change.device.recoveryMode &&
+            accessStructureRef != null) {
           final deviceId = change.device.id;
           () async {
-            final SymmetricKey encryptionKey;
-            try {
-              encryptionKey = await SecureKeyProvider.getEncryptionKey();
-            } on PlatformException catch (e) {
-              final expected = e.code == 'NO_LOCK_SCREEN';
-              log(
-                level: expected ? LogLevel.info : LogLevel.error,
-                message:
-                    "skipping exitRecoveryMode for $deviceId: ${e.code} (${e.message})",
-              );
-              final ctx = rootNavKey.currentContext;
-              if (ctx != null) {
-                showErrorSnackbar(
-                  ctx,
-                  expected
-                      ? "Couldn't take device out of recovery mode: screen lock required."
-                      : "Couldn't take device out of recovery mode: ${e.message ?? e.code}",
-                );
-              }
-              return;
-            }
+            final encryptionKey = await existingWalletKey(
+              accessStructureRef: accessStructureRef,
+              action: 'take this device out of recovery mode',
+            );
+            if (encryptionKey == null) return;
             coord.exitRecoveryMode(
               deviceId: deviceId,
               encryptionKey: encryptionKey,

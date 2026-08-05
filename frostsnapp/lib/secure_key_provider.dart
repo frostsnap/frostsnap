@@ -184,13 +184,6 @@ class AndroidSecureKeyProvider extends SecureKeyProvider {
 
   AndroidSecureKeyProvider._();
 
-  /// Build a provider that talks to the real `com.frostsnap/secure_key`
-  /// [MethodChannel], for tests that mock that channel. On desktop hosts
-  /// [SecureKeyProvider.create] returns the desktop provider, so tests can't
-  /// otherwise exercise the Android channel path.
-  @visibleForTesting
-  factory AndroidSecureKeyProvider.forTesting() = AndroidSecureKeyProvider._;
-
   @override
   Future<SymmetricKey> getOrCreateKey() async {
     try {

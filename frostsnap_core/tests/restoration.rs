@@ -199,11 +199,13 @@ fn restore_2_of_3_with_physical_backups_propagates_threshold() {
     for &device_id in &devices {
         if run
             .coordinator
-            .has_backups_that_need_to_be_consolidated(device_id)
+            .pending_physical_consolidation(device_id)
+            .is_some()
         {
             let consolidate_messages = run
                 .coordinator
-                .consolidate_pending_physical_backups(device_id, TEST_ENCRYPTION_KEY);
+                .consolidate_pending_physical_backups(device_id, TEST_ENCRYPTION_KEY)
+                .unwrap();
             run.extend(consolidate_messages);
         }
     }
@@ -213,8 +215,9 @@ fn restore_2_of_3_with_physical_backups_propagates_threshold() {
     // Verify all devices now have properly encrypted shares
     for (i, &device_id) in devices.iter().enumerate() {
         assert!(
-            !run.coordinator
-                .has_backups_that_need_to_be_consolidated(device_id),
+            run.coordinator
+                .pending_physical_consolidation(device_id)
+                .is_none(),
             "Device {:?} should have all backups consolidated",
             device_id
         );
