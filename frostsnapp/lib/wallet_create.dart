@@ -12,6 +12,7 @@ import 'package:frostsnap/settings.dart';
 import 'package:frostsnap/snackbar.dart';
 import 'package:frostsnap/threshold_selector.dart';
 import 'package:frostsnap/src/rust/api.dart';
+import 'package:frostsnap/bitcoin_network_ext.dart';
 import 'package:frostsnap/src/rust/api/bitcoin.dart';
 import 'package:frostsnap/src/rust/api/device_list.dart';
 import 'package:frostsnap/src/rust/api/keygen.dart';
@@ -1263,7 +1264,7 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
     final network = _controller.form.network;
     final appBarTrailingText = network.isMainnet()
         ? ''
-        : ' (${network.name()})';
+        : ' (${network.displayName})';
 
     final header = TopBarSliver(
       title: Text('${_controller.title}$appBarTrailingText'),
@@ -1409,7 +1410,7 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
                     (network) => ButtonSegment(
                       value: network.name(),
                       label: Text(
-                        network.name(),
+                        network.displayName,
                         overflow: TextOverflow.fade,
                         softWrap: false,
                       ),
@@ -1450,7 +1451,7 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
                   if (!_controller.form.network.isMainnet())
                     InputChip(
                       surfaceTintColor: theme.colorScheme.error,
-                      label: Text(_controller.form.network.name()),
+                      label: Text(_controller.form.network.displayName),
                       deleteIcon: Icon(Icons.clear_rounded),
                       onDeleted: () {
                         _isAdvancedOptionsHidden = true;

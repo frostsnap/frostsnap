@@ -15,6 +15,7 @@ import 'package:frostsnap/global.dart';
 import 'package:frostsnap/id_ext.dart';
 import 'package:frostsnap/logs.dart';
 import 'package:frostsnap/src/rust/api.dart';
+import 'package:frostsnap/bitcoin_network_ext.dart';
 import 'package:frostsnap/src/rust/api/bitcoin.dart';
 import 'package:frostsnap/src/rust/api/settings.dart';
 import 'package:frostsnap/theme.dart';
@@ -1175,7 +1176,9 @@ class BitcoinNetworkChooser extends StatelessWidget {
             final name = network.name();
             return DropdownMenuItem<String>(
               value: name,
-              child: Text(name == "bitcoin" ? "Bitcoin (BTC)" : network.name()),
+              child: Text(
+                name == "bitcoin" ? "Bitcoin (BTC)" : network.displayName,
+              ),
             );
           }).toList(),
         ),
