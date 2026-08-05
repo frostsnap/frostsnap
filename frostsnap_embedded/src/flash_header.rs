@@ -1,9 +1,14 @@
+use crate::{AbSlot, FlashPartition};
 use embedded_storage::nor_flash::NorFlash;
 use frostsnap_comms::{HasMagicBytes, MagicBytes, MAGIC_BYTES_LEN};
 use frostsnap_core::schnorr_fun::fun::{KeyPair, Scalar};
-use frostsnap_embedded::{AbSlot, FlashPartition};
 
-use crate::efuse::EfuseHmacKey;
+/// A domain-separated keyed hash over a device secret (the eFuse-derived
+/// fixed-entropy key on hardware). The HAL impl supplies the key; the core only
+/// needs the primitive. (On esp it's the HMAC peripheral; on host, software HMAC.)
+pub trait KeyedHash {
+    fn keyed_hash(&mut self, domain: &str, input: &[u8]) -> [u8; 32];
+}
 
 #[derive(Debug, Clone, bincode::Encode, bincode::Decode)]
 pub struct HeaderMagicBytes;
@@ -19,12 +24,11 @@ pub struct Header {
 }
 
 impl Header {
-    pub fn device_keypair(&self, hmac: &mut EfuseHmacKey) -> KeyPair {
+    pub fn device_keypair<K: KeyedHash + ?Sized>(&self, hmac: &mut K) -> KeyPair {
         KeyPair::new(match self.body {
             HeaderBody::V0 { device_id_seed } => {
-                let secret_scalar_bytes = hmac
-                    .hash("frostsnap-device-keypair", &device_id_seed)
-                    .unwrap();
+                let secret_scalar_bytes =
+                    hmac.keyed_hash("frostsnap-device-keypair", &device_id_seed);
                 Scalar::from_slice_mod_order(&secret_scalar_bytes)
                     .expect("just got 32 bytes from fixed entropy hash")
                     .non_zero()
