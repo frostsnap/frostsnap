@@ -57,9 +57,13 @@ jobs:
           path: target/riscv32imc-unknown-none-elf/release/legacy.bin
 
       - uses: dtolnay/rust-toolchain@nightly
+        if: matrix.board == 'frontier'
         with:
           components: rust-src
+      # The analyzer defaults to the frontier binary, so running it in the
+      # legacy leg just checked frontier twice.
       - name: Stack check
+        if: matrix.board == 'frontier'
         working-directory: .
         run: just stack-check
 

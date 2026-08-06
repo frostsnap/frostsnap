@@ -1,7 +1,6 @@
 use crate::DISPLAY_REFRESH_MS;
 use alloc::{boxed::Box, string::ToString};
 use embedded_graphics::prelude::*;
-use esp_hal::prelude::*;
 use frostsnap_cst816s::interrupt::TouchReceiver;
 use frostsnap_widgets::palette::PALETTE;
 use frostsnap_widgets::{
@@ -21,7 +20,8 @@ use crate::{
 
 // Type alias for the display to match factory
 type DeviceDisplay<'a> = mipidsi::Display<
-    display_interface_spi::SPIInterface<
+    mipidsi::interface::SpiInterface<
+        'a,
         embedded_hal_bus::spi::ExclusiveDevice<
             esp_hal::spi::master::Spi<'a, esp_hal::Blocking>,
             crate::peripherals::NoCs,
@@ -44,25 +44,17 @@ pub struct FrostyUi<'a> {
     pub last_redraw_time: Instant,
     pub downstream_connection_state: DownstreamConnectionState,
     pub upstream_connection_state: Option<UpstreamConnectionState>,
-    pub timer: esp_hal::timer::timg::Timer<
-        esp_hal::timer::timg::Timer0<esp_hal::peripherals::TIMG1>,
-        esp_hal::Blocking,
-    >,
     pub busy_task: Option<BusyTask>,
     pub current_widget_index: usize,
     default_workflow: Option<Workflow>,
 }
 
 impl<'a> FrostyUi<'a> {
-    /// Create a new FrostyUi instance
-    pub fn new(
-        display: DeviceDisplay<'a>,
-        touch_receiver: TouchReceiver,
-        timer: esp_hal::timer::timg::Timer<
-            esp_hal::timer::timg::Timer0<esp_hal::peripherals::TIMG1>,
-            esp_hal::Blocking,
-        >,
-    ) -> Self {
+    /// Create a new FrostyUi instance. Never inlined: the widget-tree
+    /// construction is stack-heavy and merging it into the init functions'
+    /// frames pushes them over the CI stack-check limit.
+    #[inline(never)]
+    pub fn new(display: DeviceDisplay<'a>, touch_receiver: TouchReceiver) -> Self {
         use embedded_graphics::geometry::Size;
         use frostsnap_widgets::debug::EnabledDebug;
 
@@ -82,9 +74,8 @@ impl<'a> FrostyUi<'a> {
             downstream_connection_state: DownstreamConnectionState::Disconnected,
             upstream_connection_state: None,
             last_touch: None,
-            last_redraw_time: Instant::from_ticks(0),
+            last_redraw_time: Instant::EPOCH,
             current_widget_index: 0,
-            timer,
             busy_task: Default::default(),
             default_workflow: None,
         }
@@ -373,9 +364,9 @@ impl<'a> UserInteraction for FrostyUi<'a> {
     }
 
     fn poll(&mut self) -> Option<UiEvent> {
-        let now = self.timer.now();
+        let now = Instant::now();
         let now_ms =
-            frostsnap_widgets::Instant::from_millis(now.duration_since_epoch().to_millis());
+            frostsnap_widgets::Instant::from_millis(now.duration_since_epoch().as_millis());
 
         // Handle touch input
         touch_handler::process_all_touch_events(
@@ -387,7 +378,7 @@ impl<'a> UserInteraction for FrostyUi<'a> {
         );
 
         // Only redraw if enough time has passed since last redraw
-        let elapsed_ms = (now - self.last_redraw_time).to_millis();
+        let elapsed_ms = (now - self.last_redraw_time).as_millis();
         if elapsed_ms >= DISPLAY_REFRESH_MS {
             // Update last redraw time
             self.last_redraw_time = now;
@@ -411,20 +402,24 @@ impl<'a> UserInteraction for FrostyUi<'a> {
                 widget: sign_prompt,
                 phase,
             } => {
-                if sign_prompt.is_confirmed() {
-                    if let Some(phase_data) = phase.take() {
-                        return Some(UiEvent::SigningConfirm { phase: phase_data });
-                    }
+                if let Some(phase_data) = if sign_prompt.is_confirmed() {
+                    phase.take()
+                } else {
+                    None
+                } {
+                    return Some(UiEvent::SigningConfirm { phase: phase_data });
                 }
                 if phase.is_none() && sign_prompt.is_finished() {
                     self.go_to_default();
                 }
             }
             WidgetTree::SignTestPrompt { widget, phase } => {
-                if widget.is_confirmed() {
-                    if let Some(phase_data) = phase.take() {
-                        return Some(UiEvent::SigningConfirm { phase: phase_data });
-                    }
+                if let Some(phase_data) = if widget.is_confirmed() {
+                    phase.take()
+                } else {
+                    None
+                } {
+                    return Some(UiEvent::SigningConfirm { phase: phase_data });
                 }
                 if phase.is_none() && widget.is_finished() {
                     self.go_to_default();
@@ -496,9 +491,9 @@ impl<'a> UserInteraction for FrostyUi<'a> {
     }
 
     fn force_redraw(&mut self) {
-        let now = self.timer.now();
+        let now = Instant::now();
         let now_ms =
-            frostsnap_widgets::Instant::from_millis(now.duration_since_epoch().to_millis());
+            frostsnap_widgets::Instant::from_millis(now.duration_since_epoch().as_millis());
         self.last_redraw_time = now;
         let _ = self.widget.draw(&mut self.display, now_ms);
     }
