@@ -16,7 +16,7 @@ use frostsnap_coordinator::firmware_upgrade::{
 use frostsnap_coordinator::frostsnap_comms::{
     CoordinatorSendBody, CoordinatorSendMessage, Destination, Sha256Digest,
 };
-use frostsnap_coordinator::frostsnap_persist::DeviceNames;
+use frostsnap_coordinator::frostsnap_persist::{DeviceNames, GenuineDeviceInfo, GenuineRecord};
 use frostsnap_coordinator::nonce_replenish::NonceReplenishState;
 use frostsnap_coordinator::persist::Persisted;
 use frostsnap_coordinator::signing::SigningState;
@@ -63,6 +63,7 @@ pub struct FfiCoordinator {
     // // persisted things
     pub(crate) db: Arc<Mutex<rusqlite::Connection>>,
     device_names: Arc<Mutex<Persisted<DeviceNames>>>,
+    genuine_info: Arc<Mutex<Persisted<GenuineDeviceInfo>>>,
     pub(crate) coordinator: Arc<Mutex<Persisted<FrostCoordinator>>>,
     // backup management
     pub(crate) backup_state: Arc<Mutex<Persisted<BackupState>>>,
@@ -74,7 +75,7 @@ type Signal = Box<dyn Sink<()>>;
 impl FfiCoordinator {
     pub fn new(
         db: Arc<Mutex<rusqlite::Connection>>,
-        usb_manager: UsbSerialManager,
+        mut usb_manager: UsbSerialManager,
     ) -> anyhow::Result<Self> {
         let mut db_ = db.lock().unwrap();
 
@@ -82,6 +83,11 @@ impl FfiCoordinator {
         let coordinator = Persisted::<FrostCoordinator>::new(&mut db_, ())?;
         event!(Level::DEBUG, "loading device names");
         let device_names = Persisted::<DeviceNames>::new(&mut db_, ())?;
+        event!(Level::DEBUG, "loading genuine device info");
+        let genuine_info = Persisted::<GenuineDeviceInfo>::new(&mut db_, ())?;
+        // Trust persisted genuine verdicts: don't re-challenge devices we've
+        // already verified.
+        usb_manager.set_known_genuine(genuine_info.device_ids());
         event!(Level::DEBUG, "loading backup state");
         let backup_state = Persisted::<BackupState>::new(&mut db_, ())?;
 
@@ -105,6 +111,7 @@ impl FfiCoordinator {
             db,
             coordinator: Arc::new(Mutex::new(coordinator)),
             device_names: Arc::new(Mutex::new(device_names)),
+            genuine_info: Arc::new(Mutex::new(genuine_info)),
             backup_state: Arc::new(Mutex::new(backup_state)),
             backup_run_streams: Default::default(),
         })
@@ -130,6 +137,7 @@ impl FfiCoordinator {
         let ui_stack = self.ui_stack.clone();
         let db_loop = self.db.clone();
         let device_names = self.device_names.clone();
+        let genuine_info = self.genuine_info.clone();
         let usb_sender = self.usb_sender.clone();
         let firmware_upgrade_progress = self.firmware_upgrade_progress.clone();
         let device_list = self.device_list.clone();
@@ -196,6 +204,22 @@ impl FfiCoordinator {
                     for change in device_changes {
                         device_list.consume_manager_event(change.clone());
                         match change {
+                            DeviceChange::Connected { id, .. } => {
+                                // Restore case colour and genuine status from the
+                                // persisted verdict. A device we've verified before
+                                // isn't re-challenged (see UsbSerialManager); only
+                                // Unknown/Failed devices are re-checked on connect.
+                                let genuine_info = genuine_info.lock().unwrap();
+                                if let Some(color) = genuine_info
+                                    .get_case_color(id)
+                                    .and_then(|s| parse_case_color_str(&s))
+                                {
+                                    device_list.set_case_color(id, color);
+                                }
+                                if genuine_info.get(id).is_some() {
+                                    device_list.set_genuine_cached(id);
+                                }
+                            }
                             DeviceChange::Registered { id, .. } => {
                                 if coordinator.has_backups_that_need_to_be_consolidated(id) {
                                     device_list.set_recovery_mode(id, true);
@@ -261,6 +285,26 @@ impl FfiCoordinator {
                                     serial = certificate.serial_number(),
                                     "device passed genuine check"
                                 );
+                                // Persist the attested info immediately (see
+                                // `GenuineDeviceInfo` for why it's keyed by id, not name).
+                                let record = GenuineRecord {
+                                    case_color: certificate.case_color().to_string(),
+                                    serial: certificate.raw_serial(),
+                                    revision: certificate.revision().to_string(),
+                                };
+                                if let Err(e) =
+                                    genuine_info.lock().unwrap().staged_mutate(&mut *db, |g| {
+                                        g.set(id, record.clone());
+                                        Ok(())
+                                    })
+                                {
+                                    event!(
+                                        Level::ERROR,
+                                        device = id.to_string(),
+                                        error = e.to_string(),
+                                        "failed to persist genuine device info"
+                                    );
+                                }
                             }
                             _ => { /* ignore rest */ }
                         }
@@ -639,6 +683,14 @@ impl FfiCoordinator {
 
     pub fn get_device_name(&self, id: DeviceId) -> Option<String> {
         self.device_names.lock().unwrap().get(id)
+    }
+
+    pub fn get_device_case_color(
+        &self,
+        id: DeviceId,
+    ) -> Option<crate::api::device_list::CaseColor> {
+        let color_str = self.genuine_info.lock().unwrap().get_case_color(id)?;
+        parse_case_color_str(&color_str)
     }
 
     /// Persist a user-typed device name into the coord's local `device_names` store without
@@ -1372,6 +1424,13 @@ impl FfiCoordinator {
             .unwrap();
         Ok(())
     }
+}
+
+fn parse_case_color_str(color_str: &str) -> Option<crate::api::device_list::CaseColor> {
+    let comms_color =
+        frostsnap_coordinator::frostsnap_comms::genuine_certificate::CaseColor::from_str(color_str)
+            .ok()?;
+    Some(crate::api::device_list::CaseColor::from_comms(comms_color))
 }
 
 fn key_state(coordinator: &FrostCoordinator) -> api::coordinator::KeyState {

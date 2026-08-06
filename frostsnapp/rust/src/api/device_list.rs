@@ -12,6 +12,46 @@ pub enum DeviceListChangeKind {
     Removed,
     Named,
     RecoveryMode,
+    GenuineCheck,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum CaseColor {
+    Black,
+    Orange,
+    Silver,
+    Blue,
+    Red,
+}
+
+impl CaseColor {
+    #[frb(ignore)]
+    pub fn from_comms(
+        color: frostsnap_coordinator::frostsnap_comms::genuine_certificate::CaseColor,
+    ) -> Self {
+        use frostsnap_coordinator::frostsnap_comms::genuine_certificate::CaseColor as C;
+        match color {
+            C::Black => CaseColor::Black,
+            C::Orange => CaseColor::Orange,
+            C::Silver => CaseColor::Silver,
+            C::Blue => CaseColor::Blue,
+            C::Red => CaseColor::Red,
+            _ => CaseColor::Black,
+        }
+    }
+}
+
+/// Whether a connected device has passed the genuine (authenticity) check.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GenuineStatus {
+    /// Not yet checked, or can't be checked (e.g. no genuine key baked in, or
+    /// old firmware that can't produce a bound proof).
+    Unknown,
+    /// The device produced a valid bound genuine proof.
+    Genuine,
+    /// The device responded but the proof did not verify: counterfeit, or a relay
+    /// attempt.
+    Failed,
 }
 
 #[derive(Clone, Debug)]
@@ -40,6 +80,8 @@ pub struct ConnectedDevice {
     pub latest_firmware: Option<FirmwareVersion>,
     pub id: DeviceId,
     pub recovery_mode: bool,
+    pub case_color: Option<CaseColor>,
+    pub genuine: GenuineStatus,
 }
 
 impl ConnectedDevice {

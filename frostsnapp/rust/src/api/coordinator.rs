@@ -15,6 +15,7 @@ use frostsnap_core::{
 use std::collections::BTreeMap;
 use tracing::{event, Level};
 
+use super::device_list::CaseColor;
 use crate::{coordinator::FfiCoordinator, frb_generated::StreamSink};
 
 pub use super::backup_run::{BackupDevice, BackupRun};
@@ -255,5 +256,17 @@ impl Coordinator {
     #[frb(sync)]
     pub fn get_device_name(&self, id: DeviceId) -> Option<String> {
         self.0.get_device_name(id)
+    }
+
+    #[frb(sync)]
+    pub fn get_device_case_color(&self, id: DeviceId) -> Option<CaseColor> {
+        self.0.get_device_case_color(id)
+    }
+
+    /// Whether this build runs the genuine check (a genuine cert key was baked in).
+    /// When false, every device stays `Unknown`.
+    #[frb(sync)]
+    pub fn genuine_check_enabled(&self) -> bool {
+        cfg!(genuine_cert_key)
     }
 }

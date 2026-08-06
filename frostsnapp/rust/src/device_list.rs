@@ -94,6 +94,8 @@ impl DeviceList {
                         name: None,
                         id,
                         recovery_mode: false,
+                        case_color: None,
+                        genuine: api::GenuineStatus::Unknown,
                     },
                 );
             }
@@ -153,7 +155,48 @@ impl DeviceList {
                 }
             }
             DeviceChange::AppMessage(_) => { /* not relevant */ }
-            DeviceChange::GenuineDevice { .. } => { /* not displayed in app yet */ }
+            // Case colour is cosmetic identity, set whenever we learn it,
+            // independent of the genuine status (set separately below).
+            DeviceChange::CaseColor { id, color } => {
+                let index = self.index_of(id);
+                if let Some(connected) = self.connected.get_mut(&id) {
+                    connected.case_color = Some(api::CaseColor::from_comms(color));
+                    if let Some(index) = index {
+                        self.outbox.push(api::DeviceListChange {
+                            kind: api::DeviceListChangeKind::GenuineCheck,
+                            index: index as u32,
+                            device: connected.clone(),
+                        });
+                    }
+                }
+            }
+            DeviceChange::GenuineDevice { id, .. } => {
+                let index = self.index_of(id);
+                if let Some(connected) = self.connected.get_mut(&id) {
+                    connected.genuine = api::GenuineStatus::Genuine;
+                    if let Some(index) = index {
+                        self.outbox.push(api::DeviceListChange {
+                            kind: api::DeviceListChangeKind::GenuineCheck,
+                            index: index as u32,
+                            device: connected.clone(),
+                        });
+                    }
+                }
+            }
+            DeviceChange::GenuineCheckFailed { id } => {
+                // Status only; leave the case colour as-is.
+                let index = self.index_of(id);
+                if let Some(connected) = self.connected.get_mut(&id) {
+                    connected.genuine = api::GenuineStatus::Failed;
+                    if let Some(index) = index {
+                        self.outbox.push(api::DeviceListChange {
+                            kind: api::DeviceListChangeKind::GenuineCheck,
+                            index: index as u32,
+                            device: connected.clone(),
+                        });
+                    }
+                }
+            }
         }
     }
 
@@ -176,6 +219,27 @@ impl DeviceList {
                 index: (self.devices.len() - 1) as u32,
                 device: self.get_device(id).expect("invariant"),
             });
+        }
+    }
+
+    /// Pre-populate a device's case color (e.g. from persisted DB state at
+    /// connect time) without overwriting a color already learned this session.
+    pub fn set_case_color(&mut self, id: DeviceId, color: api::CaseColor) {
+        if let Some(connected) = self.connected.get_mut(&id) {
+            if connected.case_color.is_none() {
+                connected.case_color = Some(color);
+            }
+        }
+    }
+
+    /// Mark a device genuine from a persisted verdict, when the live challenge
+    /// was skipped. Only upgrades an Unknown status; never overrides a live
+    /// Genuine/Failed result from this session.
+    pub fn set_genuine_cached(&mut self, id: DeviceId) {
+        if let Some(connected) = self.connected.get_mut(&id) {
+            if connected.genuine == api::GenuineStatus::Unknown {
+                connected.genuine = api::GenuineStatus::Genuine;
+            }
         }
     }
 
