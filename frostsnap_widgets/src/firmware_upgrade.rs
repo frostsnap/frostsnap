@@ -1,11 +1,15 @@
 use crate::HOLD_TO_CONFIRM_TIME_SHORT_MS;
 use crate::{
-    gray4_style::Gray4TextStyle, palette::PALETTE, prelude::*, HoldToConfirm, Padding,
-    ProgressIndicator,
+    gray4_style::Gray4TextStyle, palette::PALETTE, prelude::*, GrayToAlpha, HoldToConfirm, Image,
+    Padding, ProgressIndicator,
 };
 use alloc::{boxed::Box, format, string::String, string::ToString};
 use embedded_graphics::geometry::Size;
+use embedded_graphics::pixelcolor::{Gray8, Rgb565};
 use frostsnap_fonts::{NOTO_SANS_17_REGULAR, NOTO_SANS_18_MEDIUM, NOTO_SANS_MONO_17_REGULAR};
+use tinybmp::Bmp;
+
+const WARNING_ICON_DATA: &[u8] = include_bytes!("../assets/warning-icon-24x24.bmp");
 
 #[derive(frostsnap_macros::Widget)]
 pub struct FirmwareUpgradeConfirm {
@@ -132,6 +136,21 @@ pub enum FirmwareUpgradeProgress {
     Passive {
         widget: Box<Center<Padding<Column<(Text<Gray4TextStyle>, Text<Gray4TextStyle>)>>>>,
     },
+    /// Upgrade was refused - warning icon, title, reason, recovery instruction
+    Rejected {
+        widget: Box<
+            Center<
+                Padding<
+                    Column<(
+                        Image<GrayToAlpha<Bmp<'static, Gray8>, Rgb565>>,
+                        Text<Gray4TextStyle>,
+                        Text<Gray4TextStyle>,
+                        Text<Gray4TextStyle>,
+                    )>,
+                >,
+            >,
+        >,
+    },
 }
 
 impl FirmwareUpgradeProgress {
@@ -188,6 +207,48 @@ impl FirmwareUpgradeProgress {
         let widget = Center::new(padded);
 
         Self::Passive {
+            widget: Box::new(widget),
+        }
+    }
+
+    /// A refusal must read as a failure, not a neutral status: warning icon and
+    /// red title, with the reason in primary text so it carries the information.
+    /// The device parks on this screen, so it also says how to recover.
+    pub fn rejected(status: &str) -> Self {
+        let warning_bmp =
+            Bmp::<Gray8>::from_slice(WARNING_ICON_DATA).expect("Failed to load warning icon BMP");
+        let icon = Image::new(GrayToAlpha::new(warning_bmp, PALETTE.error));
+
+        let title = Text::new(
+            "Upgrade failed".to_string(),
+            Gray4TextStyle::new(&NOTO_SANS_18_MEDIUM, PALETTE.error),
+        );
+
+        let status = Text::new(
+            status.to_string(),
+            Gray4TextStyle::new(&NOTO_SANS_17_REGULAR, PALETTE.on_background),
+        );
+
+        let instruction = Text::new(
+            "Unplug to try again".to_string(),
+            Gray4TextStyle::new(&NOTO_SANS_17_REGULAR, PALETTE.text_secondary),
+        );
+
+        let column = Column::builder()
+            .push(icon)
+            .gap(12)
+            .push(title)
+            .gap(6)
+            .push(status)
+            .gap(16)
+            .push(instruction)
+            .with_main_axis_alignment(MainAxisAlignment::Center)
+            .with_cross_axis_alignment(CrossAxisAlignment::Center);
+
+        let padded = Padding::symmetric(20, 20, column);
+        let widget = Center::new(padded);
+
+        Self::Rejected {
             widget: Box::new(widget),
         }
     }

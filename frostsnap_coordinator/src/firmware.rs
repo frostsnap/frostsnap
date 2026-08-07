@@ -1,22 +1,6 @@
-use bincode::{Decode, Encode};
 use frostsnap_comms::{Sha256Digest, FIRMWARE_UPGRADE_CHUNK_LEN};
 
-#[derive(Encode, Decode, Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct FirmwareFeatures {
-    /// Device supports firmware digest verification without signature block
-    pub upgrade_digest_no_sig: bool,
-    /// Device supports the check backup quiz workflow
-    pub check_backup: bool,
-}
-
-impl FirmwareFeatures {
-    pub const fn all() -> Self {
-        Self {
-            upgrade_digest_no_sig: true,
-            check_backup: true,
-        }
-    }
-}
+pub use frostsnap_comms::firmware_version::{FirmwareFeatures, VersionNumber, EARLIEST_ACCEPTABLE};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FirmwareVersion {
@@ -185,7 +169,7 @@ impl std::fmt::Display for FirmwareValidationError {
             FirmwareValidationError::UnknownSignedFirmware { digest } => {
                 write!(
                     f,
-                    "Unknown signed firmware with digest: {}. Signed firmware must be in KNOWN_FIRMWARE_VERSIONS",
+                    "Unknown signed firmware with digest: {}. Signed firmware must be a registered release",
                     digest
                 )
             }
@@ -288,85 +272,3 @@ impl ValidatedFirmwareBin {
         self.firmware_version.version
     }
 }
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct VersionNumber {
-    pub major: u8,
-    pub minor: u8,
-    pub patch: u8,
-}
-
-impl std::fmt::Display for VersionNumber {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}.{}.{}", self.major, self.minor, self.patch)
-    }
-}
-
-impl VersionNumber {
-    pub const fn new(major: u8, minor: u8, patch: u8) -> Self {
-        Self {
-            major,
-            minor,
-            patch,
-        }
-    }
-
-    pub fn from_digest(digest: &Sha256Digest) -> Option<Self> {
-        KNOWN_FIRMWARE_VERSIONS
-            .iter()
-            .find(|(d, _)| d == digest)
-            .map(|(_, v)| *v)
-    }
-
-    pub fn features(&self) -> FirmwareFeatures {
-        const V0_0_1: VersionNumber = VersionNumber::new(0, 0, 1);
-        const V0_3_0: VersionNumber = VersionNumber::new(0, 3, 0);
-
-        FirmwareFeatures {
-            upgrade_digest_no_sig: *self > V0_0_1,
-            check_backup: *self >= V0_3_0,
-        }
-    }
-}
-
-// Known firmware versions indexed by their digest
-//
-// NOTE: v0.0.1 has both signed and unsigned entries because we didn't have a proper
-// digest-to-version system yet. Devices announced their full digest (including signature),
-// so signed and unsigned builds had different digests. Starting with future versions, we
-// should only track the firmware-only (deterministic) digest.
-use frostsnap_macros::hex;
-pub const KNOWN_FIRMWARE_VERSIONS: &[(Sha256Digest, VersionNumber)] = &[
-    (
-        Sha256Digest(hex!(
-            "6273dc08ca7c805fa70ac8feeb98c62f7b6fcb337fb1cd8412f24f0d6dda51f7"
-        )),
-        VersionNumber::new(0, 3, 0),
-    ),
-    (
-        Sha256Digest(hex!(
-            "e432d313c7698b1e8843b10ba95efa8c28e66a5723b966c56c156687d09d16e0"
-        )),
-        VersionNumber::new(0, 2, 0),
-    ),
-    (
-        Sha256Digest(hex!(
-            "5ff7bd280b96d645b2c739a6b91bfc6c27197e213302770f1a7180678ca4f720"
-        )),
-        VersionNumber::new(0, 1, 0),
-    ),
-    /*signed*/
-    (
-        Sha256Digest(hex!(
-            "57161f80b41413b1053e272f9c3da8d16ecfce44793345be69f7fe03d93f4eb0"
-        )),
-        VersionNumber::new(0, 0, 1),
-    ),
-    /*unsigned*/
-    (
-        Sha256Digest(hex!(
-            "8f45ae6b72c241a20798acbd3c6d3e54071cae73e335df1785f2d485a915da4c"
-        )),
-        VersionNumber::new(0, 0, 1),
-    ),
-];
