@@ -1,0 +1,29 @@
+[package]
+name = "secp256k1-sys"
+version = "0.10.1"
+edition = "2021"
+publish = false
+description = "Stand-in for secp256k1-sys that needs no C compiler on riscv32"
+
+[features]
+default = []
+std = ["c_sys/std"]
+alloc = ["c_sys/alloc"]
+recovery = ["c_sys/recovery"]
+lowmemory = ["c_sys/lowmemory"]
+
+[dependencies]
+# The arithmetic behind the pure backend: the k256 field and point code that
+# secp256kfun vendors, split into its own crate (LLFourn/secp256kfun#250).
+secp256kfun_k256 = { git = "https://github.com/nickfarrow/secp256kfun", rev = "ba7e23bb616f3594404623a8de77d2a4c9768de0", default-features = false }
+
+# The real crate, for every target that has a C compiler. A git source is not
+# touched by the workspace [patch.crates-io] entry that points at this crate.
+[target.'cfg(not(target_arch = "riscv32"))'.dependencies]
+c_sys = { package = "secp256k1-sys", version = "0.10.1", git = "https://github.com/rust-bitcoin/rust-secp256k1", tag = "secp256k1-sys-0.10.1", default-features = false }
+
+[dev-dependencies]
+secp256k1 = { version = "0.29", default-features = false, features = ["alloc"] }
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(secp256k1_pure)'] }
