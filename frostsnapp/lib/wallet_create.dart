@@ -200,11 +200,17 @@ class WalletCreateController extends ChangeNotifier {
                 ),
               ),
               Text(
-                'The security check code confirms that all devices have behaved honestly during key generation.',
+                'This check guarantees every device (including this phone) '
+                'has contributed randomness and acted honestly during key '
+                'generation.',
                 textAlign: TextAlign.center,
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: theme.colorScheme.onSurfaceVariant,
                 ),
+              ),
+              TextButton(
+                onPressed: () => _showSecurityCheckInfo(context),
+                child: const Text('Learn more'),
               ),
             ],
           );
@@ -263,6 +269,46 @@ class WalletCreateController extends ChangeNotifier {
 
   void _onCancel() async {
     await coord.cancelProtocol();
+  }
+
+  /// Shows an in-app explainer for the security check. Deliberately an
+  /// in-app dialog rather than an external link (url_launcher): this screen is
+  /// shown while the user is actively comparing a code across devices, and
+  /// navigating away mid-comparison is a bad UX and a security risk.
+  void _showSecurityCheckInfo(BuildContext context) {
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        final theme = Theme.of(dialogContext);
+        return BackdropFilter(
+          filter: blurFilter,
+          child: AlertDialog(
+            scrollable: true,
+            title: const Text('Security check'),
+            content: DefaultTextStyle(
+              style: theme.textTheme.bodyMedium!.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+              child: const Text(
+                'Every device contributing to this wallet generates its own '
+                'random data during key generation. The security check '
+                'displays a short code derived from that combined randomness.\n\n'
+                'If the code is identical on every device, it confirms every '
+                'device (including this phone) contributed randomness and no '
+                'device behaved dishonestly or was swapped during setup.\n\n'
+                'If the codes differ, cancel and try again.',
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(),
+                child: const Text('Got it'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   Future<void> resetDeviceNames(Iterable<ConnectedDevice> devices) async {
