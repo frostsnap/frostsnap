@@ -23,6 +23,11 @@ frostsnap_comms = { workspace = true }
 frostsnap_embedded = { workspace = true }
 frost_backup = { workspace = true, features = ["bincode"] }
 bitcoin.workspace = true
+# Not used directly: selects the pure Rust backend of the secp256k1 that `bitcoin`
+# pulls in, so the firmware needs no C compiler. Named here rather than in
+# frostsnap_core so out-of-tree users of that crate, who get no [patch.crates-io],
+# can still build it.
+secp256k1 = { version = "0.29", default-features = false, features = ["pure"] }
 esp-hal = { workspace = true, features = ["esp32c3", "digest"] }
 rand_core.workspace = true
 esp-alloc = "0.5.0"

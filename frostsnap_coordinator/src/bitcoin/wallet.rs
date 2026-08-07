@@ -658,7 +658,7 @@ mod test {
         assert_eq!(
             desc_spk,
             bitcoin::ScriptBuf::new_p2tr_tweaked(TweakedPublicKey::dangerous_assume_tweaked(
-                xonly.into()
+                frostsnap_core::tweak::point_to_libsecp_xonly(xonly)
             )),
         );
     }

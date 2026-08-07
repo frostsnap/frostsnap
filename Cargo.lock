@@ -1869,6 +1869,7 @@ dependencies = [
  "rand_chacha 0.3.1",
  "rand_core 0.6.4",
  "reed-solomon",
+ "secp256k1 0.29.1",
 ]
 
 [[package]]
@@ -4060,11 +4061,11 @@ dependencies = [
 [[package]]
 name = "secp256k1"
 version = "0.29.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9465315bc9d4566e1724f0fffcbcc446268cb522e60f9a27bcded6b19c108113"
+source = "git+https://github.com/nickfarrow/rust-secp256k1?rev=8b797e7d41bc3fd9153d987418879eff0a759e3c#8b797e7d41bc3fd9153d987418879eff0a759e3c"
 dependencies = [
  "bitcoin_hashes 0.14.1",
  "secp256k1-sys 0.10.1",
+ "secp256kfun_k256",
  "serde",
 ]
 
@@ -4099,8 +4100,7 @@ dependencies = [
 [[package]]
 name = "secp256k1-sys"
 version = "0.10.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d4387882333d3aa8cb20530a17c69a3752e97837832f34f6dccc760e715001d9"
+source = "git+https://github.com/nickfarrow/rust-secp256k1?rev=8b797e7d41bc3fd9153d987418879eff0a759e3c#8b797e7d41bc3fd9153d987418879eff0a759e3c"
 dependencies = [
  "cc",
 ]
@@ -4132,6 +4132,15 @@ checksum = "5d48abcff68cafcdb4469dc1204542c336a748f365a224c6acacea66f98185ff"
 dependencies = [
  "proc-macro2",
  "quote",
+]
+
+[[package]]
+name = "secp256kfun_k256"
+version = "0.1.0"
+source = "git+https://github.com/nickfarrow/secp256kfun?rev=5b3a9053fd51c7e0289a7de21ec7c4ceb083b1c3#5b3a9053fd51c7e0289a7de21ec7c4ceb083b1c3"
+dependencies = [
+ "generic-array 0.14.7",
+ "subtle-ng",
 ]
 
 [[package]]
