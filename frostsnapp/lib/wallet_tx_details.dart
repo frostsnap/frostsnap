@@ -11,7 +11,6 @@ import 'package:frostsnap/copy_feedback.dart';
 import 'package:frostsnap/device_action_fullscreen_dialog.dart';
 import 'package:frostsnap/global.dart';
 import 'package:frostsnap/id_ext.dart';
-import 'package:frostsnap/secure_key_provider.dart';
 import 'package:frostsnap/psbt.dart';
 import 'package:frostsnap/snackbar.dart';
 import 'package:frostsnap/src/rust/api.dart';
@@ -21,6 +20,7 @@ import 'package:frostsnap/src/rust/api/psbt_manager.dart';
 import 'package:frostsnap/src/rust/api/signing.dart';
 import 'package:frostsnap/src/rust/api/super_wallet.dart';
 import 'package:frostsnap/theme.dart';
+import 'package:frostsnap/wallet_key_mismatch.dart';
 import 'package:frostsnap/wallet.dart';
 import 'package:glowy_borders/glowy_borders.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -380,14 +380,20 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
       if (psbt != null) this.psbt = psbt;
     });
 
-    final encryptionKey = await SecureKeyProvider.getEncryptionKey();
-    data.connectedButNeedRequest.forEach(
-      (id) => coord.requestDeviceSign(
-        deviceId: id,
-        sessionId: data.sessionId,
-        encryptionKey: encryptionKey,
-      ),
+    final encryptionKey = await existingWalletKey(
+      context: mounted ? context : null,
+      accessStructureRef: widget.signingParams!.accessStructureRef,
+      action: 'sign this transaction',
     );
+    if (encryptionKey != null) {
+      data.connectedButNeedRequest.forEach(
+        (id) => coord.requestDeviceSign(
+          deviceId: id,
+          sessionId: data.sessionId,
+          encryptionKey: encryptionKey,
+        ),
+      );
+    }
     await actionDialogController?.batchRemoveActionNeeded(data.gotShares);
 
     return null;

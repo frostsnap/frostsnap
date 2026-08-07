@@ -10,9 +10,9 @@ import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/coordinator.dart';
 import 'package:frostsnap/src/rust/api/device_list.dart';
 import 'package:frostsnap/src/rust/api/signing.dart';
-import 'package:frostsnap/secure_key_provider.dart';
 import 'package:frostsnap/src/rust/api/transaction.dart';
 import 'package:frostsnap/theme.dart';
+import 'package:frostsnap/wallet_key_mismatch.dart';
 
 const satoshisInOneBtc = 100000000;
 
@@ -494,7 +494,16 @@ class SigningSessionController with ChangeNotifier {
 
   void maybeRequestDeviceSign() async {
     if (_state != null) {
-      final encryptionKey = await SecureKeyProvider.getEncryptionKey();
+      final asRef = coord
+          .activeSigningSession(sessionId: _state!.sessionId)
+          ?.accessStructureRef();
+      if (asRef == null) return;
+      // no BuildContext here; the dialog falls back to the root navigator
+      final encryptionKey = await existingWalletKey(
+        accessStructureRef: asRef,
+        action: 'sign this transaction',
+      );
+      if (encryptionKey == null) return;
       for (final neededFrom in _state!.connectedButNeedRequest) {
         if (_connectedDevices.contains(neededFrom)) {
           coord.requestDeviceSign(

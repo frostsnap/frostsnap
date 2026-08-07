@@ -18,6 +18,7 @@ import 'package:frostsnap/secure_key_provider.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/recovery.dart';
 import 'package:frostsnap/stream_ext.dart';
+import 'package:frostsnap/wallet_key_mismatch.dart';
 import 'package:frostsnap/maybe_fullscreen_dialog.dart';
 import 'package:frostsnap/theme.dart';
 
@@ -95,22 +96,37 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
   Future<void> _completeDeviceShareEnrollment(RecoverShare candidate) async {
     try {
       RestorationId? restorationId;
-      final encryptionKey = await SecureKeyProvider.getEncryptionKey();
 
       switch (recoveryContext) {
         case ContinuingRestorationContext(:final restorationId):
+          // Adds a share to a restoration in progress — plaintext accumulated
+          // state, so this establishes the finished key rather than decrypting
+          // existing data. Uses the establish surface, like finishRestoring.
           await coord.continueRestoringWalletFromDeviceShare(
             restorationId: restorationId,
             recoverShare: candidate,
-            encryptionKey: encryptionKey,
+            encryptionKey: await SecureKeyProvider.getEncryptionKey(),
           );
         case AddingToWalletContext(:final accessStructureRef):
+          // Recovers a share INTO an existing wallet, decrypting its data — so
+          // it needs the existing key. Guard it: on an unavailable/wrong key
+          // the guard shows delete-and-recover and we abort.
+          final key = await existingWalletKey(
+            context: mounted ? context : null,
+            accessStructureRef: accessStructureRef,
+            action: 'recover this key into the wallet',
+          );
+          if (key == null) {
+            if (mounted) Navigator.pop(context);
+            return;
+          }
           await coord.recoverShare(
             accessStructureRef: accessStructureRef,
             recoverShare: candidate,
-            encryptionKey: encryptionKey,
+            encryptionKey: key,
           );
         case NewRestorationContext():
+          // Establishes a new restoration; needs no encryption key.
           restorationId = await coord.startRestoringWalletFromDeviceShare(
             recoverShare: candidate,
           );
@@ -299,8 +315,15 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
             try {
               switch (recoveryContext) {
                 case AddingToWalletContext(:final accessStructureRef):
-                  final encryptionKey =
-                      await SecureKeyProvider.getEncryptionKey();
+                  final encryptionKey = await existingWalletKey(
+                    context: mounted ? context : null,
+                    accessStructureRef: accessStructureRef,
+                    action: 'add this backup to the wallet',
+                  );
+                  if (encryptionKey == null) {
+                    if (mounted) Navigator.pop(context);
+                    return;
+                  }
                   final isValid = await coord.checkPhysicalBackup(
                     accessStructureRef: accessStructureRef,
                     phase: backupPhase,
@@ -367,6 +390,7 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
                   });
 
                 case ContinuingRestorationContext(:final restorationId):
+                  // Restoration in progress → establish surface (see above).
                   final encryptionKey =
                       await SecureKeyProvider.getEncryptionKey();
                   final error = await coord.checkPhysicalBackupForRestoration(

@@ -1,6 +1,9 @@
 #![allow(unused)]
 use crate::api::device_list as api;
-use frostsnap_coordinator::{frostsnap_core::DeviceId, DeviceChange};
+use frostsnap_coordinator::{
+    frostsnap_core::{AccessStructureRef, DeviceId},
+    DeviceChange,
+};
 use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, Clone, Default)]
@@ -105,6 +108,7 @@ impl DeviceList {
                         kind: api::DeviceListChangeKind::Named,
                         index: index as u32,
                         device: connected.clone(),
+                        pending_consolidation: None,
                     });
                 }
             }
@@ -132,6 +136,7 @@ impl DeviceList {
                                 kind: api::DeviceListChangeKind::Named,
                                 index: index as u32,
                                 device: connected.clone(),
+                                pending_consolidation: None,
                             });
                         }
                     }
@@ -149,6 +154,7 @@ impl DeviceList {
                         kind: api::DeviceListChangeKind::Removed,
                         index: index as u32,
                         device: device.expect("invariant"),
+                        pending_consolidation: None,
                     })
                 }
             }
@@ -175,11 +181,17 @@ impl DeviceList {
                 kind: api::DeviceListChangeKind::Added,
                 index: (self.devices.len() - 1) as u32,
                 device: self.get_device(id).expect("invariant"),
+                pending_consolidation: None,
             });
         }
     }
 
-    pub fn set_recovery_mode(&mut self, id: DeviceId, recovery_mode: bool) {
+    pub fn set_recovery_mode(
+        &mut self,
+        id: DeviceId,
+        recovery_mode: bool,
+        pending_consolidation: Option<AccessStructureRef>,
+    ) {
         if let Some(connected_device) = self.connected.get_mut(&id) {
             if connected_device.recovery_mode != recovery_mode {
                 connected_device.recovery_mode = recovery_mode;
@@ -188,6 +200,7 @@ impl DeviceList {
                     kind: api::DeviceListChangeKind::RecoveryMode,
                     index: self.index_of(id).expect("invariant") as u32,
                     device: connected_device,
+                    pending_consolidation,
                 })
             }
         }

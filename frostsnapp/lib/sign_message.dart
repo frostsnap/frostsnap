@@ -6,12 +6,12 @@ import 'package:frostsnap/animated_check.dart';
 import 'package:frostsnap/device_action.dart';
 import 'package:frostsnap/id_ext.dart';
 import 'package:frostsnap/global.dart';
-import 'package:frostsnap/secure_key_provider.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/coordinator.dart';
 import 'package:frostsnap/src/rust/api/signing.dart';
 import 'package:frostsnap/stream_ext.dart';
 import 'package:frostsnap/theme.dart';
+import 'package:frostsnap/wallet_key_mismatch.dart';
 import 'hex.dart';
 
 class SignMessagePage extends StatelessWidget {
@@ -227,7 +227,16 @@ Future<List<EncodedSignature>?> showSigningProgressDialog(
 
   stream.forEach((signingState) async {
     sessionId = signingState.sessionId;
-    final encryptionKey = await SecureKeyProvider.getEncryptionKey();
+    final asRef = coord
+        .activeSigningSession(sessionId: sessionId!)
+        ?.accessStructureRef();
+    if (asRef == null) return;
+    final encryptionKey = await existingWalletKey(
+      context: context.mounted ? context : null,
+      accessStructureRef: asRef,
+      action: 'sign this message',
+    );
+    if (encryptionKey == null) return;
     for (final deviceId in signingState.connectedButNeedRequest) {
       coord.requestDeviceSign(
         deviceId: deviceId,
