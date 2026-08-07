@@ -19,6 +19,16 @@ use crate::{
     UpstreamConnectionState,
 };
 
+fn refuse_reason_text(reason: crate::ota::RefuseReason) -> &'static str {
+    use crate::ota::RefuseReason;
+    match reason {
+        RefuseReason::UnparseableFirmware => "Firmware invalid",
+        RefuseReason::DigestMismatch => "Download corrupted",
+        RefuseReason::SecureBootInvalid => "Signature invalid",
+        RefuseReason::DowngradeBlocked => "Downgrade blocked",
+    }
+}
+
 // Type alias for the display to match factory
 type DeviceDisplay<'a> = mipidsi::Display<
     display_interface_spi::SPIInterface<
@@ -357,6 +367,9 @@ impl<'a> UserInteraction for FrostyUi<'a> {
                         FirmwareUpgradeProgress::downloading(progress)
                     }
                     FirmwareUpgradeStatus::Passive => FirmwareUpgradeProgress::passive(),
+                    FirmwareUpgradeStatus::Rejected { reason } => {
+                        FirmwareUpgradeProgress::rejected(refuse_reason_text(reason))
+                    }
                 });
 
                 WidgetTree::FirmwareUpgradeProgress { widget, status }

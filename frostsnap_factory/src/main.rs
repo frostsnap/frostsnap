@@ -387,7 +387,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 };
                 return Err(format!(
                     "firmware is not a known release ({what}); \
-                     add an entry to frostsnap_coordinator/src/firmware.rs before releasing"
+                     add it to frostsnap_comms/src/firmware_version.rs \
+                     before releasing"
                 )
                 .into());
             }

@@ -7,6 +7,7 @@ extern crate std;
 extern crate alloc;
 pub mod factory;
 pub mod firmware_reader;
+pub mod firmware_version;
 pub mod fixed_string;
 pub mod genuine_certificate;
 use alloc::boxed::Box;

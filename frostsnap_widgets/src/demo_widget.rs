@@ -583,6 +583,74 @@ macro_rules! demo_widget {
                 let widget = FirmwareUpgradeProgress::passive();
                 $run_macro!(widget);
             }
+            "firmware_upgrade_rejected" => {
+                use $crate::firmware_upgrade::FirmwareUpgradeProgress;
+                use embedded_graphics::prelude::*;
+
+                // Cycles through the refusal reasons the device can show
+                // (mirrors refuse_reason_text in device/src/frosty_ui.rs).
+                const REASONS: [&str; 4] = [
+                    "Downgrade blocked",
+                    "Firmware invalid",
+                    "Download corrupted",
+                    "Signature invalid",
+                ];
+
+                struct RejectedDemo {
+                    widget: FirmwareUpgradeProgress,
+                    size: Size,
+                    last_switch_time: Option<Instant>,
+                    reason_index: usize,
+                }
+
+                impl $crate::DynWidget for RejectedDemo {
+                    fn set_constraints(&mut self, max_size: Size) {
+                        self.size = max_size;
+                        self.widget.set_constraints(max_size);
+                    }
+                    fn sizing(&self) -> $crate::Sizing {
+                        self.widget.sizing()
+                    }
+                    fn force_full_redraw(&mut self) {
+                        self.widget.force_full_redraw();
+                    }
+                }
+
+                impl $crate::Widget for RejectedDemo {
+                    type Color = Rgb565;
+                    fn draw<D>(
+                        &mut self,
+                        target: &mut SuperDrawTarget<D, Self::Color>,
+                        current_time: Instant,
+                    ) -> Result<(), D::Error>
+                    where
+                        D: DrawTarget<Color = Self::Color>,
+                    {
+                        if self.last_switch_time.is_none() {
+                            self.last_switch_time = Some(current_time);
+                        }
+                        let elapsed = current_time
+                            .saturating_duration_since(self.last_switch_time.unwrap());
+                        if elapsed >= 2000 {
+                            self.reason_index = (self.reason_index + 1) % REASONS.len();
+                            self.widget =
+                                FirmwareUpgradeProgress::rejected(REASONS[self.reason_index]);
+                            self.widget.set_constraints(self.size);
+                            target.clear(PALETTE.background)?;
+                            self.last_switch_time = Some(current_time);
+                        }
+                        self.widget.draw(target, current_time)
+                    }
+                }
+
+                let widget = RejectedDemo {
+                    widget: FirmwareUpgradeProgress::rejected(REASONS[0]),
+                    size: Size::zero(),
+                    last_switch_time: None,
+                    reason_index: 0,
+                };
+                $run_macro!(widget);
+            }
             "progress" => {
                 use $crate::{ProgressIndicator, Widget, Instant};
                 use embedded_graphics::prelude::*;
