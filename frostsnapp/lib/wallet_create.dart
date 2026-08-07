@@ -283,6 +283,7 @@ class WalletCreateController extends ChangeNotifier {
         return BackdropFilter(
           filter: blurFilter,
           child: AlertDialog(
+            scrollable: true,
             title: const Text('Security check'),
             content: DefaultTextStyle(
               style: theme.textTheme.bodyMedium!.copyWith(
