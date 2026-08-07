@@ -6,7 +6,9 @@ edition = "2021"
 [features]
 default = ["std"]
 prefill-words = []
-std = []
+# `bitcoin/std` is what names a backend for secp256k1, so a host build of this
+# crate has to ask for it.
+std = ["bitcoin/std"]
 
 [dependencies]
 embedded-graphics = { version = "0.8.1", features = ["fixed_point"] }

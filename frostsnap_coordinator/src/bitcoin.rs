@@ -88,7 +88,8 @@ mod test {
     use bitcoin::Network;
     use core::str::FromStr;
     use frostsnap_core::tweak::{
-        AccountKind, AppTweak, BitcoinAccountKeychain, BitcoinBip32Path, NormalIndex,
+        point_to_libsecp_xonly, AccountKind, AppTweak, BitcoinAccountKeychain, BitcoinBip32Path,
+        NormalIndex,
     };
 
     use super::*;
@@ -133,16 +134,16 @@ mod test {
             .address(Network::Bitcoin)
             .unwrap();
 
-        assert!(external_address.is_related_to_xonly_pubkey(
-            &external_tweak
-                .derive_xonly_key(&master_appkey.to_xpub())
-                .into()
-        ));
-        assert!(internal_address.is_related_to_xonly_pubkey(
-            &internal_tweak
-                .derive_xonly_key(&master_appkey.to_xpub())
-                .into(),
-        ));
+        assert!(
+            external_address.is_related_to_xonly_pubkey(&point_to_libsecp_xonly(
+                external_tweak.derive_xonly_key(&master_appkey.to_xpub())
+            ))
+        );
+        assert!(
+            internal_address.is_related_to_xonly_pubkey(&point_to_libsecp_xonly(
+                internal_tweak.derive_xonly_key(&master_appkey.to_xpub())
+            ))
+        );
 
         assert_ne!(external_address, internal_address);
     }

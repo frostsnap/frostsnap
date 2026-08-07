@@ -365,7 +365,7 @@ mod test {
     use crate::{
         bitcoin_transaction::SpkOwner,
         schnorr_fun::fun::{g, G},
-        tweak::{AppTweak, NormalIndex},
+        tweak::{point_to_libsecp_xonly, AppTweak, NormalIndex},
     };
     use bitcoin::{
         absolute::LockTime,
@@ -398,9 +398,7 @@ mod test {
     }
 
     fn internal_key_of(key: MasterAppkey, path: BitcoinBip32Path) -> XOnlyPublicKey {
-        AppTweak::Bitcoin(path)
-            .derive_xonly_key(&key.to_xpub())
-            .into()
+        point_to_libsecp_xonly(AppTweak::Bitcoin(path).derive_xonly_key(&key.to_xpub()))
     }
 
     fn fingerprint_of(key: MasterAppkey) -> Fingerprint {
