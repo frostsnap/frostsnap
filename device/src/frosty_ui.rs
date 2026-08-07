@@ -245,6 +245,9 @@ impl<'a> UserInteraction for FrostyUi<'a> {
                         FirmwareUpgradeProgress::downloading(progress)
                     }
                     FirmwareUpgradeStatus::Passive => FirmwareUpgradeProgress::passive(),
+                    FirmwareUpgradeStatus::Rejected { reason } => {
+                        FirmwareUpgradeProgress::rejected(&reason.to_string())
+                    }
                 });
 
                 WidgetTree::FirmwareUpgradeProgress { widget, status }
