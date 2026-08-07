@@ -5,11 +5,7 @@ use esp_hal::prelude::*;
 use frostsnap_cst816s::interrupt::TouchReceiver;
 use frostsnap_widgets::palette::PALETTE;
 use frostsnap_widgets::{
-    backup::{BackupDisplay, CheckBackupScreen, EnterShareScreen},
-    debug::OverlayDebug,
-    keygen_check::KeygenCheck,
-    sign_prompt::SignTxPrompt,
-    DeviceNameScreen, DynWidget, FirmwareUpgradeConfirm, FirmwareUpgradeProgress, Standby, Widget,
+    debug::OverlayDebug, DeviceNameScreen, DynWidget, FirmwareUpgradeProgress, Standby, Widget,
 };
 
 use crate::touch_handler;
@@ -200,85 +196,17 @@ impl<'a> UserInteraction for FrostyUi<'a> {
                 standby.set_key(device_name.to_string(), held_share);
                 WidgetTree::Standby(Box::new(standby))
             }
-            Workflow::UserPrompt(prompt) => {
-                match prompt {
-                    Prompt::KeyGen { phase } => {
-                        let session_hash = phase.session_hash();
-                        let mut security_check_code = [0u8; 4];
-                        security_check_code.copy_from_slice(&session_hash.0[..4]);
-                        let widget = KeygenCheck::new(phase.t_of_n(), security_check_code);
-                        // Store both widget and phase in the WidgetTree
-                        WidgetTree::KeygenCheck {
-                            widget: Box::new(widget),
-                            phase: Some(phase),
-                        }
-                    }
-                    Prompt::Signing { phase, rand_seed } => {
-                        // Get the sign task from the phase
-                        let sign_task = phase.sign_task();
-
-                        // Check what type of signing task this is
-                        match &sign_task.inner {
-                            frostsnap_core::SignTask::BitcoinTransaction {
-                                tx_template,
-                                network,
-                            } => {
-                                // Get the user prompt from the transaction template
-                                let prompt = tx_template.user_prompt(*network);
-
-                                // Create the SignTxPrompt widget with random seed
-                                let widget =
-                                    Box::new(SignTxPrompt::new_with_seed(prompt, rand_seed));
-
-                                // Store both widget and phase in the WidgetTree
-                                WidgetTree::SignTxPrompt {
-                                    widget,
-                                    phase: Some(phase),
-                                }
-                            }
-                            frostsnap_core::SignTask::Test { message } => {
-                                use frostsnap_widgets::SignMessageConfirm;
-
-                                let widget = Box::new(SignMessageConfirm::new(message.clone()));
-
-                                WidgetTree::SignTestPrompt {
-                                    widget,
-                                    phase: Some(phase),
-                                }
-                            }
-                            frostsnap_core::SignTask::Nostr { .. } => {
-                                // Nostr signing not implemented yet
-                                let mut standby = Standby::new();
-                                standby.set_welcome();
-                                WidgetTree::Standby(Box::new(standby))
-                            }
-                        }
-                    }
-                    Prompt::ConfirmFirmwareUpgrade {
-                        firmware_digest,
-                        size,
-                    } => {
-                        // Create the FirmwareUpgradeConfirm widget
-                        let widget = Box::new(FirmwareUpgradeConfirm::new(firmware_digest.0, size));
-
-                        // Store the widget and metadata in the WidgetTree
-                        WidgetTree::FirmwareUpgradeConfirm {
-                            widget,
-                            firmware_hash: firmware_digest.0,
-                            firmware_size: size,
-                            confirmed: false,
-                        }
-                    }
-                    Prompt::EraseDevice => {
-                        use frostsnap_widgets::EraseDevice;
-
-                        WidgetTree::EraseDevicePrompt {
-                            widget: Box::new(EraseDevice::new()),
-                            confirmed: false,
-                        }
-                    }
+            Workflow::UserPrompt(prompt) => match prompt {
+                Prompt::KeyGen { phase } => WidgetTree::build_keygen_check(phase),
+                Prompt::Signing { phase, rand_seed } => {
+                    WidgetTree::build_signing_prompt(phase, rand_seed)
                 }
-            }
+                Prompt::ConfirmFirmwareUpgrade {
+                    firmware_digest,
+                    size,
+                } => WidgetTree::build_confirm_firmware_upgrade(firmware_digest, size),
+                Prompt::EraseDevice => WidgetTree::build_erase_device(),
+            },
 
             Workflow::NamingDevice { new_name } => {
                 let device_name_screen = DeviceNameScreen::new(new_name.to_string());
@@ -289,62 +217,22 @@ impl<'a> UserInteraction for FrostyUi<'a> {
                 key_name: _,
                 backup,
                 access_structure_ref: _,
-            } => {
-                let word_indices = backup.to_word_indices();
-                let share_index: u16 = backup
-                    .index()
-                    .try_into()
-                    .expect("Share index should fit in u16");
-                let backup_display = BackupDisplay::new(word_indices, share_index);
-                WidgetTree::DisplayBackup {
-                    widget: Box::new(backup_display),
-                    fired: false,
-                }
-            }
+            } => WidgetTree::build_display_backup(backup),
 
             Workflow::CheckBackup {
                 key_name: _,
                 backup,
                 access_structure_ref,
                 rand_seed,
-            } => {
-                let word_indices = backup.to_word_indices();
-                let share_index = backup.index();
-                let display_share_index: u16 = share_index
-                    .try_into()
-                    .expect("Share index should fit in u16");
-                let check_backup =
-                    CheckBackupScreen::new(word_indices, display_share_index, rand_seed);
-                WidgetTree::CheckBackup {
-                    widget: Box::new(check_backup),
-                    access_structure_ref,
-                    share_index,
-                    fired: false,
-                }
-            }
+            } => WidgetTree::build_check_backup(backup, access_structure_ref, rand_seed),
 
-            Workflow::EnteringBackup(phase) => {
-                let mut widget = Box::new(EnterShareScreen::new());
-                if cfg!(feature = "prefill-words") {
-                    widget.prefill_test_words();
-                }
-                WidgetTree::EnterBackup {
-                    widget,
-                    phase: Some(phase),
-                }
-            }
+            Workflow::EnteringBackup(phase) => WidgetTree::build_entering_backup(phase),
 
             Workflow::DisplayAddress {
                 address,
                 bip32_path,
                 rand_seed,
-            } => {
-                use frostsnap_widgets::{AddressWithIndex, Center};
-
-                let address_display =
-                    AddressWithIndex::new_with_seed(address, bip32_path.index as usize, rand_seed);
-                WidgetTree::AddressDisplay(Box::new(Center::new(address_display)))
-            }
+            } => WidgetTree::build_display_address(address, bip32_path, rand_seed),
 
             Workflow::FirmwareUpgrade(status) => {
                 use crate::ui::FirmwareUpgradeStatus;

@@ -65,7 +65,7 @@ enum Cmd {
         #[arg(long)]
         max_pct: Option<f64>,
     },
-    /// Show type sizes (requires nightly rebuild with -Zprint-type-sizes)
+    /// Show type sizes (forces a rebuild with -Zprint-type-sizes)
     Types {
         /// Show top N types
         #[arg(long, default_value_t = 30)]
@@ -413,7 +413,7 @@ fn truncate_name(name: &str, max_len: usize) -> String {
     name[..max_len].to_string()
 }
 
-/// Build the device firmware with nightly and extra RUSTFLAGS, streaming output to stderr.
+/// Build the device firmware, streaming output to stderr.
 fn build_firmware(board: &str, extra_rustflags: &[&str]) -> Result<()> {
     let status = cargo_build_command(board, extra_rustflags)
         .status()
@@ -460,14 +460,18 @@ fn cargo_build_command(board: &str, extra_rustflags: &[&str]) -> Command {
     eprintln!("Building {board}...");
 
     let mut cmd = Command::new("cargo");
-    cmd.arg("+nightly")
-        .arg("build")
+    // build-std and emit-stack-sizes are unstable -Z flags, but we deliberately
+    // build with the repo's pinned STABLE toolchain (rust-toolchain.toml) so the
+    // stack numbers match the shipped firmware; RUSTC_BOOTSTRAP=1 unlocks the
+    // flags on that stable toolchain instead of pulling in a floating nightly.
+    cmd.arg("build")
         .arg("--release")
         .arg("--locked")
         .arg("--bin")
         .arg(board)
         .arg("-Z")
         .arg("build-std=alloc,core")
+        .env("RUSTC_BOOTSTRAP", "1")
         .env("RUSTFLAGS", &rustflags)
         .env("CARGO_PROFILE_RELEASE_STRIP", "none")
         .current_dir(&device_dir);
