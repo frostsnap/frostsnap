@@ -13,7 +13,6 @@
   outputs = { self, nixpkgs, rust-overlay, flake-utils }:
     let
       versions = {
-        rust = "1.88.0";
         riscv-gcc = "2024.09.03"; # Should match justfetch.lock version!
       };
     in
@@ -24,10 +23,8 @@
           overlays = [ (import rust-overlay) ];
         };
         
-        toolchain = pkgs.rust-bin.stable.${versions.rust}.default.override {
-          extensions = [ "rust-src" "rustfmt" "clippy" ];
-          targets = [ "riscv32imc-unknown-none-elf" ];
-        };
+        # One pinned Rust version shared by nix, cargo, and CI (see rust-toolchain.toml).
+        toolchain = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
         
         riscvPkgs = pkgs.pkgsCross.riscv32-embedded;
         
@@ -45,7 +42,7 @@
           shellHook = ''
             # Version info
             echo "Toolchain versions:"
-            echo "Rust: ${versions.rust}"
+            echo "Rust: $(rustc --version)"
             echo "RISC-V GCC target: ${versions.riscv-gcc} (justfetch), $(riscv32-unknown-elf-gcc --version | head -1) (nix)"
             echo
 
