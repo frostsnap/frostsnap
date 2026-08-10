@@ -139,14 +139,16 @@ pub enum FirmwareUpgradeProgress {
     /// Upgrade was refused - warning icon, title, reason, recovery instruction
     Rejected {
         widget: Box<
-            Center<
-                Padding<
-                    Column<(
-                        Image<GrayToAlpha<Bmp<'static, Gray8>, Rgb565>>,
-                        Text<Gray4TextStyle>,
-                        Text<Gray4TextStyle>,
-                        Text<Gray4TextStyle>,
-                    )>,
+            Container<
+                Center<
+                    Padding<
+                        Column<(
+                            Image<GrayToAlpha<Bmp<'static, Gray8>, Rgb565>>,
+                            Text<Gray4TextStyle>,
+                            Text<Gray4TextStyle>,
+                            Text<Gray4TextStyle>,
+                        )>,
+                    >,
                 >,
             >,
         >,
@@ -246,7 +248,12 @@ impl FirmwareUpgradeProgress {
             .with_cross_axis_alignment(CrossAxisAlignment::Center);
 
         let padded = Padding::symmetric(20, 20, column);
-        let widget = Center::new(padded);
+        // Fill the whole screen with the background: the previous screen may have
+        // been the full-width progress bar, and the centered column alone won't
+        // paint over its edges after the fade-out.
+        let widget = Container::new(Center::new(padded))
+            .with_fill(PALETTE.background)
+            .with_expanded();
 
         Self::Rejected {
             widget: Box::new(widget),
