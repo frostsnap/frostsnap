@@ -305,21 +305,21 @@ impl FirmwareUpgradeMode<'_> {
                     }
                     State::Erase { seq } => {
                         let mut finished = false;
-                        let last_sector_index = partition.n_sectors() - 1;
+                        let n_sectors = partition.n_sectors();
                         /// So we erase multiple sectors poll (otherwise it's slow).
                         const ERASE_CHUNK_SIZE: usize = 1;
                         for _ in 0..ERASE_CHUNK_SIZE {
                             partition.erase_sector(*seq).expect("must erase sector");
 
                             *seq += 1;
-                            if *seq == last_sector_index {
+                            if *seq == n_sectors {
                                 finished = true;
                                 break;
                             }
                         }
                         ui.set_workflow(ui::Workflow::FirmwareUpgrade(
                             ui::FirmwareUpgradeStatus::Erase {
-                                progress: *seq as f32 / last_sector_index as f32,
+                                progress: *seq as f32 / n_sectors as f32,
                             },
                         ));
 
