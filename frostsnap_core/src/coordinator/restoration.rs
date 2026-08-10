@@ -958,48 +958,63 @@ impl FrostCoordinator {
         }
     }
 
-    pub fn has_backups_that_need_to_be_consolidated(&self, device_id: DeviceId) -> bool {
+    /// The distinct wallets this device has physical backups waiting to be consolidated into.
+    pub fn pending_physical_consolidations(&self, device_id: DeviceId) -> Vec<AccessStructureRef> {
         self.restoration
             .pending_physical_consolidations
             .iter()
-            .any(|consolidation| consolidation.device_id == device_id)
+            .filter(|consolidation| consolidation.device_id == device_id)
+            .map(|consolidation| consolidation.access_structure_ref)
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect()
     }
 
+    /// Consolidate one wallet's pending physical backups on a device. It is per
+    /// access structure because a device can hold pending backups for several
+    /// wallets, and those wallets need not share an encryption key.
     pub fn consolidate_pending_physical_backups(
         &self,
         device_id: DeviceId,
+        access_structure_ref: AccessStructureRef,
         encryption_key: SymmetricKey,
-    ) -> impl IntoIterator<Item = CoordinatorSend> {
-        let consolidations = self
+    ) -> Result<Option<CoordinatorSend>, ConsolidateError> {
+        let frost_key = self.get_frost_key(access_structure_ref.key_id).ok_or(
+            ConsolidateError::WalletNotFound {
+                access_structure_ref,
+            },
+        )?;
+        let root_shared_key = frost_key
+            .complete_key
+            .root_shared_key(access_structure_ref.access_structure_id, encryption_key)
+            .ok_or(ConsolidateError::CannotDecrypt {
+                access_structure_ref,
+            })?;
+
+        // A device holds at most one share in an access structure, so this yields at most one
+        // Consolidate — said in the return type rather than left for a caller to infer from a Vec
+        // that happens never to exceed one element.
+        let message = self
             .restoration
             .pending_physical_consolidations
             .iter()
-            .filter(|pending| pending.device_id == device_id);
-
-        let mut messages = vec![];
-
-        for consolidation in consolidations {
-            let root_shared_key = self
-                .root_shared_key(consolidation.access_structure_ref, encryption_key)
-                .expect("invariant");
-            let frost_key = self
-                .get_frost_key(consolidation.access_structure_ref.key_id)
-                .expect("invariant");
-
-            messages.push(CoordinatorSend::ToDevice {
+            .find(|pending| {
+                pending.device_id == device_id
+                    && pending.access_structure_ref == access_structure_ref
+            })
+            .map(|consolidation| CoordinatorSend::ToDevice {
                 message: CoordinatorToDeviceMessage::Restoration(
                     CoordinatorRestoration::Consolidate(Box::new(ConsolidateBackup {
                         share_index: consolidation.share_index,
-                        root_shared_key,
+                        root_shared_key: root_shared_key.clone(),
                         key_name: frost_key.key_name.clone(),
                         purpose: frost_key.purpose,
                     })),
                 ),
                 destinations: [device_id].into(),
             });
-        }
 
-        messages
+        Ok(message)
     }
 
     pub fn request_device_display_backup(
@@ -1302,6 +1317,39 @@ impl fmt::Display for CheckBackupError {
 }
 
 impl std::error::Error for CheckBackupError {}
+
+#[derive(Debug, Clone)]
+pub enum ConsolidateError {
+    /// The application provided a key that doesn't decrypt this wallet.
+    CannotDecrypt {
+        access_structure_ref: AccessStructureRef,
+    },
+    /// The wallet this backup consolidates into is no longer known to the coordinator.
+    WalletNotFound {
+        access_structure_ref: AccessStructureRef,
+    },
+}
+
+impl fmt::Display for ConsolidateError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ConsolidateError::CannotDecrypt {
+                access_structure_ref,
+            } => write!(
+                f,
+                "The application provided the wrong decryption key for {access_structure_ref:?} so we couldn't consolidate its backup."
+            ),
+            ConsolidateError::WalletNotFound {
+                access_structure_ref,
+            } => write!(
+                f,
+                "No wallet found for {access_structure_ref:?} so we couldn't consolidate its backup."
+            ),
+        }
+    }
+}
+
+impl std::error::Error for ConsolidateError {}
 
 #[derive(Debug, Clone)]
 pub enum RestorationError {

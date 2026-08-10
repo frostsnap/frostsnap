@@ -14,10 +14,9 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:frostsnap/contexts.dart';
 import 'package:frostsnap/copy_feedback.dart';
 import 'package:frostsnap/global.dart';
-import 'package:frostsnap/secure_key_provider.dart';
 import 'package:frostsnap/serialport.dart';
-import 'package:frostsnap/snackbar.dart';
 import 'package:frostsnap/settings.dart';
+import 'package:frostsnap/wallet_key_mismatch.dart';
 import 'package:frostsnap/stream_ext.dart';
 import 'package:frostsnap/theme.dart';
 import 'package:frostsnap/wallet.dart';
@@ -91,35 +90,48 @@ Future<void> main() async {
       // ASAP. Right now we don't confirm with the user this action but maybe in
       // the future we will.
       for (var change in update.changes) {
+        // `pending` is the DEFERRED consolidation work left by finished restorations. Empty
+        // does not mean the device is idle — an active restoration can have consolidation in
+        // flight of its own — it means there is nothing for this background auto-exit to pick
+        // up, because that flow holds the key and takes the device back out itself.
+        final recoveryMode = change.device.recoveryMode;
         if (change.kind == DeviceListChangeKind.recoveryMode &&
-            change.device.recoveryMode) {
+            recoveryMode is RecoveryMode_On &&
+            recoveryMode.pending.isNotEmpty) {
+          final pendingConsolidations = recoveryMode.pending;
           final deviceId = change.device.id;
           () async {
-            final SymmetricKey encryptionKey;
-            try {
-              encryptionKey = await SecureKeyProvider.getEncryptionKey();
-            } on PlatformException catch (e) {
-              final expected = e.code == 'NO_LOCK_SCREEN';
-              log(
-                level: expected ? LogLevel.info : LogLevel.error,
-                message:
-                    "skipping exitRecoveryMode for $deviceId: ${e.code} (${e.message})",
-              );
-              final ctx = rootNavKey.currentContext;
-              if (ctx != null) {
-                showErrorSnackbar(
-                  ctx,
-                  expected
-                      ? "Couldn't take device out of recovery mode: screen lock required."
-                      : "Couldn't take device out of recovery mode: ${e.message ?? e.code}",
-                );
+            // Each wallet may be under a different key, so resolve and finish
+            // them one at a time; a wallet whose key is gone must not block the
+            // rest. Show the shared recovery dialog once after the batch, not per
+            // dead wallet.
+            var anyNeedsRecovery = false;
+            final unavailable = <String>[];
+            for (final asRef in pendingConsolidations) {
+              switch (await resolveWalletKey(asRef)) {
+                case WalletKeyResolved(:final key):
+                  await coord.exitRecoveryMode(
+                    deviceId: deviceId,
+                    accessStructureRef: asRef,
+                    encryptionKey: key,
+                  );
+                case WalletKeyNeedsRecovery():
+                  anyNeedsRecovery = true;
+                case WalletKeyUnavailable(:final detail):
+                  unavailable.add(detail);
               }
-              return;
             }
-            coord.exitRecoveryMode(
-              deviceId: deviceId,
-              encryptionKey: encryptionKey,
-            );
+            if (anyNeedsRecovery) {
+              await showWalletKeyMismatchDialog(
+                action: 'take this device out of recovery mode',
+              );
+            }
+            if (unavailable.isNotEmpty) {
+              showOrdinaryKeyError(
+                'take this device out of recovery mode',
+                unavailable.first,
+              );
+            }
           }();
         }
       }

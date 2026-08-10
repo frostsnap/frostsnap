@@ -231,8 +231,14 @@ impl super::coordinator::Coordinator {
         Ok(())
     }
 
-    pub fn exit_recovery_mode(&self, device_id: DeviceId, encryption_key: SymmetricKey) {
-        self.0.exit_recovery_mode(device_id, encryption_key);
+    pub fn exit_recovery_mode(
+        &self,
+        device_id: DeviceId,
+        access_structure_ref: AccessStructureRef,
+        encryption_key: SymmetricKey,
+    ) {
+        self.0
+            .exit_recovery_mode(device_id, access_structure_ref, encryption_key);
     }
 
     pub fn delete_restoration_share(

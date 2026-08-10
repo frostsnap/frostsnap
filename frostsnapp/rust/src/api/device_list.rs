@@ -2,7 +2,7 @@ pub use crate::api::firmware::{FirmwareUpgradeEligibility, FirmwareVersion};
 use anyhow::Result;
 use flutter_rust_bridge::frb;
 use frostsnap_coordinator::DeviceMode;
-use frostsnap_core::DeviceId;
+use frostsnap_core::{AccessStructureRef, DeviceId};
 
 use crate::{frb_generated::StreamSink, sink_wrap::SinkWrap};
 
@@ -33,13 +33,34 @@ pub struct DeviceListState {
     pub state_id: u32,
 }
 
+/// Whether a device is in recovery mode, and what it still has outstanding. The two are not
+/// independent — pending consolidations only exist in recovery — so they are one value rather
+/// than a bool beside a list that could disagree with it.
+#[derive(Clone, Debug, PartialEq)]
+pub enum RecoveryMode {
+    Off,
+    On {
+        /// Wallets with DEFERRED consolidation work — the coordinator's
+        /// `pending_physical_consolidations`, i.e. work left over from restorations that have
+        /// already finished. Non-empty is the re-plug discovery the background auto-exit acts
+        /// on, resolving each wallet's key separately.
+        ///
+        /// EMPTY IS NORMAL, and it does **not** mean the device has nothing outstanding: an
+        /// app-driven restoration can still have consolidation in flight via
+        /// `tmp_waiting_consolidate`. It means only that there is no *deferred* work for the
+        /// background auto-exit to pick up, because the active flow owns whatever it has in
+        /// progress and takes the device back out of recovery itself.
+        pending: Vec<AccessStructureRef>,
+    },
+}
+
 #[derive(Clone, Debug)]
 pub struct ConnectedDevice {
     pub name: Option<String>,
     pub firmware: FirmwareVersion,
     pub latest_firmware: Option<FirmwareVersion>,
     pub id: DeviceId,
-    pub recovery_mode: bool,
+    pub recovery_mode: RecoveryMode,
 }
 
 impl ConnectedDevice {
@@ -71,7 +92,7 @@ impl ConnectedDevice {
     pub(crate) fn device_mode(&self) -> DeviceMode {
         if self.name.is_none() {
             DeviceMode::Blank
-        } else if self.recovery_mode {
+        } else if matches!(self.recovery_mode, RecoveryMode::On { .. }) {
             DeviceMode::Recovery
         } else {
             DeviceMode::Ready

@@ -9,6 +9,7 @@ import 'package:frostsnap/restoration/target_device.dart';
 import 'package:frostsnap/secure_key_provider.dart';
 import 'package:frostsnap/src/rust/api/recovery.dart';
 import 'package:frostsnap/theme.dart';
+import 'package:frostsnap/wallet_key_mismatch.dart';
 
 class RecoveryFlowWithDiscovery extends StatefulWidget {
   final RecoveryContext recoveryContext;
@@ -160,7 +161,18 @@ class _DeviceDiscoveryWidgetState extends State<DeviceDiscoveryWidget> {
         return error?.toString();
 
       case AddingToWalletContext(:final accessStructureRef):
-        final encryptionKey = await SecureKeyProvider.getEncryptionKey();
+        final encryptionKey = await existingWalletKey(
+          context: mounted ? context : null,
+          accessStructureRef: accessStructureRef,
+          action: 'recover this key into the wallet',
+        );
+        if (encryptionKey == null) {
+          // existingWalletKey has already surfaced the specific outcome (the
+          // recovery dialog, or an ordinary error for a transient/unknown
+          // failure). Only that dialog may assert recovery is required, so keep
+          // this inline result neutral and retryable.
+          return 'Could not verify this share right now.';
+        }
         final error = await coord.checkRecoverShare(
           accessStructureRef: accessStructureRef,
           recoverShare: share,
