@@ -1,3 +1,4 @@
+use crate::aa::rounded_rect::AARoundedRectangle;
 use crate::super_draw_target::SuperDrawTarget;
 use crate::DefaultTextStyle;
 use crate::{palette::PALETTE, Column, Frac, Switcher, Text as TextWidget, Widget, FONT_SMALL};
@@ -6,7 +7,7 @@ use embedded_graphics::{
     draw_target::DrawTarget,
     geometry::{Point, Size},
     pixelcolor::Rgb565,
-    primitives::{Primitive, PrimitiveStyle, PrimitiveStyleBuilder, Rectangle, RoundedRectangle},
+    primitives::Rectangle,
     text::Alignment,
     Drawable,
 };
@@ -21,10 +22,6 @@ pub struct ProgressBar {
     corner_radius: u32,
     /// Padding from edges
     bar_rect: Option<Rectangle>,
-    /// Last drawn filled width to track changes
-    last_filled_width: Option<u32>,
-    /// Whether background has been drawn
-    background_drawn: bool,
 }
 
 impl ProgressBar {
@@ -35,8 +32,6 @@ impl ProgressBar {
             bar_height: 20,
             corner_radius: 10,
             bar_rect: None,
-            last_filled_width: None,
-            background_drawn: false,
         }
     }
 
@@ -47,8 +42,6 @@ impl ProgressBar {
             bar_height,
             corner_radius,
             bar_rect: None,
-            last_filled_width: None,
-            background_drawn: false,
         }
     }
 
@@ -82,15 +75,6 @@ impl crate::DynWidget for ProgressBar {
             Point::new(0, 0),
             Size::new(max_size.width, self.bar_height),
         ));
-
-        // Reset drawing state when constraints change
-        self.background_drawn = false;
-        self.last_filled_width = None;
-    }
-
-    fn force_full_redraw(&mut self) {
-        self.background_drawn = false;
-        self.last_filled_width = None;
     }
 }
 
@@ -106,61 +90,30 @@ impl Widget for ProgressBar {
             .bar_rect
             .expect("ProgressBar::draw called before set_constraints");
 
-        // Draw the background/border only if not already drawn
-        if !self.background_drawn {
-            let background_rect = RoundedRectangle::with_equal_corners(
-                bar_rect,
-                Size::new(self.corner_radius, self.corner_radius),
-            );
+        // Our AA rounded rect writes every pixel of its bounding rect (corners
+        // are blended against the backdrop), so redrawing it covers everything
+        // it previously lit — unlike embedded-graphics' RoundedRectangle, whose
+        // silently confined radius at small widths orphans corner pixels.
+        let background_color = target.background_color();
 
-            let background_style = PrimitiveStyleBuilder::new()
-                .stroke_color(PALETTE.outline)
-                .stroke_width(2)
-                .build();
-
-            background_rect.into_styled(background_style).draw(target)?;
-        }
+        AARoundedRectangle::new(bar_rect, background_color)
+            .with_corner_radius(self.corner_radius)
+            .with_border(PALETTE.outline, 2)
+            .draw(target)?;
 
         // Calculate the filled width based on progress
         let filled_width = (self.progress * bar_rect.size.width).round().max(1);
 
-        // Only redraw if the filled width has changed
-        if self.last_filled_width != Some(filled_width) {
-            // Clear the inside of the bar first (in case progress decreased)
-            if let Some(last_width) = self.last_filled_width {
-                if filled_width < last_width {
-                    // Clear the area that was previously filled
-                    let clear_rect = Rectangle::new(
-                        Point::new(
-                            bar_rect.top_left.x + 2 + filled_width as i32,
-                            bar_rect.top_left.y + 2,
-                        ),
-                        Size::new(last_width - filled_width, self.bar_height - 4),
-                    );
-                    let clear_style = PrimitiveStyle::with_fill(PALETTE.background);
-                    clear_rect.into_styled(clear_style).draw(target)?;
-                }
-            }
+        if self.progress > Frac::ZERO && filled_width > 4 {
+            let fill_rect = Rectangle::new(
+                Point::new(bar_rect.top_left.x + 2, bar_rect.top_left.y + 2),
+                Size::new(filled_width.saturating_sub(4), self.bar_height - 4),
+            );
 
-            // Draw the filled progress rectangle (if there's any progress)
-            if self.progress > Frac::ZERO && filled_width > 2 {
-                // Account for the border width
-                let fill_rect = RoundedRectangle::with_equal_corners(
-                    Rectangle::new(
-                        Point::new(bar_rect.top_left.x + 2, bar_rect.top_left.y + 2),
-                        Size::new(filled_width.saturating_sub(4), self.bar_height - 4),
-                    ),
-                    Size::new(
-                        self.corner_radius.saturating_sub(2),
-                        self.corner_radius.saturating_sub(2),
-                    ),
-                );
-
-                let fill_style = PrimitiveStyle::with_fill(PALETTE.primary);
-                fill_rect.into_styled(fill_style).draw(target)?;
-            }
-
-            self.last_filled_width = Some(filled_width);
+            AARoundedRectangle::new(fill_rect, background_color)
+                .with_corner_radius(self.corner_radius.saturating_sub(2))
+                .with_fill(PALETTE.primary)
+                .draw(target)?;
         }
 
         Ok(())
