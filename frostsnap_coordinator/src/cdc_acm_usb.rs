@@ -186,6 +186,7 @@ impl io::Read for CdcAcmSerial {
 mod _impl {
 
     use crate::serialport::*;
+    use tracing::{event, Level};
 
     #[allow(unused)]
     impl SerialPort for super::CdcAcmSerial {
@@ -210,7 +211,11 @@ mod _impl {
 
             match pin_reader.poll_fill_buf(&mut cx) {
                 Poll::Ready(Ok(buf)) => Ok(buf.len() as u32),
-                Poll::Ready(Err(_)) => Ok(0),
+                // Still Ok(0): returning Err would make any benign error here a disconnect.
+                Poll::Ready(Err(e)) => {
+                    event!(Level::ERROR, error = ?e, "nUSB read failed");
+                    Ok(0)
+                }
                 Poll::Pending => Ok(0), // No data available yet, don't block
             }
         }
