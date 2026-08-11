@@ -311,11 +311,11 @@ impl FirmwareUpgradeMode<'_> {
                         for _ in 0..ERASE_CHUNK_SIZE {
                             partition.erase_sector(*seq).expect("must erase sector");
 
-                            *seq += 1;
                             if *seq == last_sector_index {
                                 finished = true;
                                 break;
                             }
+                            *seq += 1;
                         }
                         ui.set_workflow(ui::Workflow::FirmwareUpgrade(
                             ui::FirmwareUpgradeStatus::Erase {
