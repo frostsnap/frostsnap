@@ -5,6 +5,7 @@ use frostsnap_comms::{
 };
 use frostsnap_coordinator::{DesktopSerial, FramedSerialPort, Serial};
 use frostsnap_core::schnorr_fun::fun::{marker::EvenY, Point};
+use frostsnap_core::schnorr_fun::Signature;
 use std::time::Instant;
 
 use crate::{USB_PID, USB_VID};
@@ -108,36 +109,31 @@ pub fn poll_genuine_check(
         } => {
             match port.try_read_message() {
                 Ok(Some(ReceiveSerial::Message(msg))) => {
-                    if let Ok(DeviceSendBody::SignedChallenge {
-                        signature,
+                    if let Ok(DeviceSendBody::GenuineProof {
+                        rsa_signature,
+                        identity_signature,
                         certificate,
                     }) = msg.body.decode()
                     {
-                        let certificate_body = match genuine_certificate::verify_certificate(
+                        // Verify the bound proof against the id of the device we
+                        // are talking to (`msg.from`).
+                        match genuine_certificate::verify_genuine_bound(
                             &certificate,
                             genuine_key,
+                            *challenge,
+                            msg.from,
+                            &rsa_signature,
+                            &identity_signature,
                         ) {
-                            Some(body) => body,
-                            None => {
-                                return GenuineCheckPollResult::Failed(
-                                    Some(certificate.unverified_raw_serial()),
-                                    "genuine check failed to verify!".to_string(),
-                                );
-                            }
-                        };
-                        let serial = certificate_body.raw_serial();
-
-                        match verify_challenge_signature(&certificate_body, *challenge, &signature)
-                        {
-                            Ok(_) => {
+                            Ok(certificate_body) => {
                                 *state = GenuineCheckState::Complete {
                                     firmware_digest: *firmware_digest,
-                                    serial: serial.to_string(),
+                                    serial: certificate_body.raw_serial(),
                                 };
                             }
                             Err(e) => {
                                 return GenuineCheckPollResult::Failed(
-                                    Some(serial.clone()),
+                                    Some(certificate.unverified_raw_serial()),
                                     format!("Device failed genuine check: {e}"),
                                 );
                             }
@@ -213,24 +209,26 @@ fn wait_for_announce(
     }
 }
 
-type SignedChallengeResponse = (
+type GenuineProofResponse = (
     frostsnap_comms::genuine_certificate::Certificate,
     Box<[u8; 384]>,
+    Signature,
 );
 
-fn wait_for_signed_challenge(
+fn wait_for_genuine_proof(
     port: &mut FramedSerialPort<Downstream>,
-) -> Result<SignedChallengeResponse, Box<dyn std::error::Error>> {
+) -> Result<GenuineProofResponse, Box<dyn std::error::Error>> {
     loop {
         port.poll_send()?;
         match port.try_read_message() {
             Ok(Some(ReceiveSerial::Message(msg))) => {
-                if let Ok(DeviceSendBody::SignedChallenge {
-                    signature,
+                if let Ok(DeviceSendBody::GenuineProof {
+                    rsa_signature,
+                    identity_signature,
                     certificate,
                 }) = msg.body.decode()
                 {
-                    return Ok((*certificate, signature));
+                    return Ok((*certificate, rsa_signature, identity_signature));
                 }
             }
             Ok(_) => {}
@@ -249,14 +247,6 @@ fn try_verify_certificate<'a>(
         }
     }
     Err("Certificate not signed by any known genuine key".into())
-}
-
-pub fn verify_challenge_signature(
-    certificate_body: &CertificateBody,
-    challenge: GenuineChallenge,
-    signature: &[u8; 384],
-) -> Result<(), Box<dyn std::error::Error>> {
-    genuine_certificate::verify_challenge(certificate_body, challenge, signature)
 }
 
 pub struct GenuineCheckResult {
@@ -304,11 +294,17 @@ pub fn run_genuine_check(
         .into(),
     );
 
-    println!("Waiting for signed challenge...");
-    let (certificate, signature) = wait_for_signed_challenge(&mut port)?;
+    println!("Waiting for genuine proof...");
+    let (certificate, rsa_signature, identity_signature) = wait_for_genuine_proof(&mut port)?;
 
     let (env_name, certificate_body) = try_verify_certificate(&certificate, known_keys)?;
-    verify_challenge_signature(&certificate_body, challenge, &signature)?;
+    genuine_certificate::verify_challenge_bound(
+        &certificate_body,
+        challenge,
+        device_id,
+        &rsa_signature,
+    )?;
+    genuine_certificate::verify_identity(device_id, challenge, &identity_signature)?;
 
     let CertificateBody::Frontier {
         case_color,

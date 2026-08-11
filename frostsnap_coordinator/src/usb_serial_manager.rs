@@ -2,11 +2,10 @@
 const USB_VID: u16 = 12346;
 const USB_PID: u16 = 4097;
 
-// The genuine check as currently implemented is vulnerable to a MITM:
-// a malicious device can forward a received challenge to a genuine
-// device and relay the response back, passing the check without
-// actually holding the DS key. The signature needs to be over the
-// device's own DeviceId to bind it. Disabled until that's fixed.
+// The genuine check now binds each device's DeviceId into the proof it returns,
+// so a relayed proof won't verify against the relayer's id (see
+// `genuine_certificate::verify_genuine_bound`). Still disabled here until the app
+// surfaces the result; the factory performs the check during provisioning.
 const DO_GENUINE_CHECK: bool = false;
 
 use crate::firmware::ValidatedFirmwareBin;
@@ -413,8 +412,21 @@ impl UsbSerialManager {
                                         body: AppMessageBody::Misc(inner),
                                     }))
                                 }
-                                DeviceSendBody::SignedChallenge {
-                                    signature,
+                                DeviceSendBody::_LegacyGenuineProof { .. } => {
+                                    // Legacy unbound response from pre-binding
+                                    // firmware: relay-able, so never trusted. The
+                                    // device needs a firmware upgrade to be verified.
+                                    self.challenges.remove(&message.from);
+                                    event!(
+                                        Level::INFO,
+                                        device = message.from.to_string(),
+                                        "received legacy unbound genuine response; \
+                                         firmware upgrade required to verify genuineness"
+                                    );
+                                }
+                                DeviceSendBody::GenuineProof {
+                                    rsa_signature,
+                                    identity_signature,
                                     certificate,
                                 } => {
                                     let Some(challenge) = self.challenges.remove(&message.from)
@@ -422,19 +434,24 @@ impl UsbSerialManager {
                                         event!(
                                             Level::WARN,
                                             device = message.from.to_string(),
-                                            "received SignedChallenge but no challenge was pending"
+                                            "received GenuineProof but no challenge was pending"
                                         );
                                         continue;
                                     };
-                                    match self.genuine_cert_key.and_then(|key| {
-                                        frostsnap_comms::genuine_certificate::verify_genuine(
-                                            &certificate,
-                                            key,
-                                            challenge,
-                                            &signature,
-                                        )
-                                    }) {
-                                        Some(certificate_body) => {
+                                    let Some(key) = self.genuine_cert_key else {
+                                        continue;
+                                    };
+                                    // Verify against `message.from`, the device
+                                    // we're actually talking to, not the message body.
+                                    match frostsnap_comms::genuine_certificate::verify_genuine_bound(
+                                        &certificate,
+                                        key,
+                                        challenge,
+                                        message.from,
+                                        &rsa_signature,
+                                        &identity_signature,
+                                    ) {
+                                        Ok(certificate_body) => {
                                             self.genuine_devices
                                                 .insert(message.from, certificate_body.clone());
                                             device_changes.push(DeviceChange::GenuineDevice {
@@ -442,8 +459,13 @@ impl UsbSerialManager {
                                                 certificate: certificate_body,
                                             });
                                         }
-                                        None => {
-                                            event!(Level::WARN, device = message.from.to_string(), "genuine check failed — invalid certificate or challenge response");
+                                        Err(e) => {
+                                            event!(
+                                                Level::WARN,
+                                                device = message.from.to_string(),
+                                                error = e.to_string(),
+                                                "genuine check failed"
+                                            );
                                         }
                                     }
                                 }
