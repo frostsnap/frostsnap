@@ -11,6 +11,7 @@ import 'package:frostsnap/nonce_replenish.dart';
 import 'package:frostsnap/restoration/wallet_recovery_page.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/backup_run.dart';
+import 'package:frostsnap/bitcoin_network_ext.dart';
 import 'package:frostsnap/src/rust/api/bitcoin.dart';
 import 'package:frostsnap/src/rust/api/coordinator.dart';
 import 'package:frostsnap/src/rust/api/settings.dart';
@@ -525,7 +526,7 @@ class WalletDrawer extends StatelessWidget {
                       color: theme.colorScheme.onSurfaceVariant,
                     ),
                   );
-                }(context, text: item.network?.name() ?? ''),
+                }(context, text: item.network?.displayName ?? ''),
             ],
           ),
         ),

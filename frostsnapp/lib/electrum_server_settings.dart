@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:frostsnap/settings.dart';
 import 'package:frostsnap/progress_indicator.dart';
 import 'package:frostsnap/dialog_content_with_actions.dart';
+import 'package:frostsnap/bitcoin_network_ext.dart';
 import 'package:frostsnap/src/rust/api/bitcoin.dart';
 import 'package:frostsnap/src/rust/api/settings.dart';
 import 'package:frostsnap/theme.dart';
@@ -102,7 +103,7 @@ class _NetworkServerCard extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
                 child: Text(
-                  network.name(),
+                  network.displayName,
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.w600,
                   ),
