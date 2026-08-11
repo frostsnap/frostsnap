@@ -141,11 +141,12 @@ Future<void> _show(BuildContext context, String action) async {
     builder: (context) => AlertDialog(
       title: const Text('Wallet needs recovery'),
       content: Text(
-        "This phone's encryption key can't unlock this wallet's data, "
-        "so it can't $action.\n\n"
-        'This usually means the wallet was protected by a key this phone no '
-        'longer has. To keep using the wallet, delete it from this app and '
-        'recover it from its Frostsnap devices.'
+        "This wallet's data is encrypted, and your phone has lost the "
+        'ability to unlock it in order to $action. This usually happens '
+        'when the screen lock (PIN, pattern, or password) is changed or '
+        'removed.\n\n'
+        'To get this wallet working again, delete it from the app and '
+        'restore it using your Frostsnap devices.'
         '${walletCtx == null ? "\n\nYou can delete it from the wallet's settings." : ""}',
       ),
       actions: [
