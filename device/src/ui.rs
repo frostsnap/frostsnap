@@ -135,6 +135,7 @@ pub enum FirmwareUpgradeStatus {
     Erase { progress: f32 },
     Download { progress: f32 },
     Passive,
+    Rejected { reason: crate::ota::RefuseReason },
 }
 
 #[derive(Clone, Debug)]

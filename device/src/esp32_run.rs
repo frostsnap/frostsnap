@@ -403,7 +403,7 @@ impl<'a> DeviceLoop<'a> {
                                                 if let Some(mut upgrade) = self.upgrade.take() {
                                                     let upstream_io =
                                                         self.upstream_serial.inner_mut();
-                                                    upgrade.enter_upgrade_mode(
+                                                    let outcome = upgrade.enter_upgrade_mode(
                                                         upstream_io,
                                                         if self.downstream_connection_state
                                                             == DownstreamConnectionState::Established
@@ -419,7 +419,21 @@ impl<'a> DeviceLoop<'a> {
                                                         self.timer,
                                                         self.rsa,
                                                     );
-                                                    reset(self.upstream_serial);
+                                                    match outcome {
+                                                        ota::UpgradeOutcome::Committed => {
+                                                            reset(self.upstream_serial)
+                                                        }
+                                                        // Any refusal parks here until power
+                                                        // cycle. The active slot is unchanged
+                                                        // and the screen says why and how to
+                                                        // recover; resuming the loop instead
+                                                        // would leave the coordinator and the
+                                                        // chain in a half-finished upgrade
+                                                        // conversation.
+                                                        ota::UpgradeOutcome::Rejected => loop {
+                                                            self.ui.poll();
+                                                        },
+                                                    }
                                                 } else {
                                                     panic!("upgrade cannot start because we were not warned about it")
                                                 }

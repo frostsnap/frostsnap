@@ -7,6 +7,7 @@ extern crate std;
 extern crate alloc;
 pub mod factory;
 pub mod firmware_reader;
+pub mod firmware_version;
 pub mod fixed_string;
 pub mod genuine_certificate;
 use alloc::boxed::Box;
@@ -266,15 +267,12 @@ impl From<CoordinatorSendMessage> for CoordinatorSendMessage<WireCoordinatorSend
 ///
 /// ## Device Verification Strategy
 ///
-/// Devices accept **both** digest types during verification for backwards compatibility.
-/// This is cryptographically sound because:
+/// Devices accept only the deterministic firmware-only digest. A legacy
+/// coordinator announcing the full-image digest gets a digest-mismatch
+/// refusal — anything it could push is superseded firmware the device now
+/// refuses as a downgrade anyway, so the legacy convention buys nothing.
 ///
-/// 1. SHA256 collision resistance (~2^-256 probability) makes accidental matches impossible
-/// 2. The two digests cover different byte ranges, requiring collision at specific boundaries
-/// 3. Simplifies device code - no need to track which variant was received
-/// 4. Provides graceful fallback if coordinator sends wrong digest type
-///
-/// See `device/src/ota.rs::enter_upgrade_mode()` for verification implementation.
+/// See `decide_upgrade` in `device/src/ota.rs` for the verification.
 #[derive(Encode, Decode, Debug, Clone)]
 pub enum CoordinatorUpgradeMessage {
     /// Legacy upgrade preparation - sends digest of entire signed firmware.

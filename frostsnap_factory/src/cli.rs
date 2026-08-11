@@ -61,7 +61,7 @@ pub enum Commands {
         /// Path to signed binary
         #[arg(short, long)]
         input: PathBuf,
-        /// Require the firmware digest to be in KNOWN_FIRMWARE_VERSIONS. Use in release CI
+        /// Require the firmware digest to be a registered release. Use in release CI
         /// to block shipping a release whose firmware version hasn't been registered.
         #[arg(long)]
         require_known_version: bool,

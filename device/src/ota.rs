@@ -12,10 +12,78 @@ use esp_hal::time::Duration;
 use esp_hal::timer;
 use esp_hal::Blocking;
 use frostsnap_comms::{
-    CommsMisc, DeviceSendBody, Sha256Digest, BAUDRATE, FIRMWARE_NEXT_CHUNK_READY_SIGNAL,
-    FIRMWARE_UPGRADE_CHUNK_LEN,
+    firmware_version, CommsMisc, DeviceSendBody, Sha256Digest, BAUDRATE,
+    FIRMWARE_NEXT_CHUNK_READY_SIGNAL, FIRMWARE_UPGRADE_CHUNK_LEN,
 };
 use nb::block;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum UpgradeVerdict {
+    Commit,
+    Refuse(RefuseReason),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RefuseReason {
+    UnparseableFirmware,
+    DigestMismatch,
+    SecureBootInvalid,
+    DowngradeBlocked,
+}
+
+impl core::fmt::Display for RefuseReason {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str(match self {
+            RefuseReason::UnparseableFirmware => "Firmware invalid",
+            RefuseReason::DigestMismatch => "Download corrupted",
+            RefuseReason::SecureBootInvalid => "Signature invalid",
+            RefuseReason::DowngradeBlocked => "Downgrade blocked",
+        })
+    }
+}
+
+/// Decide whether to commit the downloaded upgrade sitting in `partition`,
+/// against the digest the coordinator announced. Everything examined here is
+/// attacker-controlled, so every failure is a verdict, never a panic. When
+/// more than one thing is wrong the reason follows the check order below,
+/// most fundamental first; that only picks the reason shown, never whether it
+/// commits.
+fn decide_upgrade(
+    partition: &EspFlashPartition<'_>,
+    announced_digest: &Sha256Digest,
+    sha: &mut Sha<'_>,
+    rsa: &mut Rsa<Blocking>,
+) -> UpgradeVerdict {
+    let Ok((firmware_size, _)) = partition.firmware_size() else {
+        return UpgradeVerdict::Refuse(RefuseReason::UnparseableFirmware);
+    };
+
+    // Only the body digest is accepted. v0.0.1-era coordinators announce the
+    // full-image digest instead, but anything they'd push is superseded
+    // firmware this device refuses anyway — mismatching them early just picks
+    // a different refusal reason.
+    let body_digest = partition.sha256_digest(sha, Some(firmware_size));
+    if body_digest != *announced_digest {
+        return UpgradeVerdict::Refuse(RefuseReason::DigestMismatch);
+    }
+
+    if secure_boot::is_secure_boot_enabled()
+        && secure_boot::verify_secure_boot(partition, rsa, sha).is_err()
+    {
+        return UpgradeVerdict::Refuse(RefuseReason::SecureBootInvalid);
+    }
+
+    // Only body digests are compared: the shared list's v0.0.1 full-image
+    // digest can never equal any image's body digest.
+    let downgrade_blocked = firmware_version::EARLIEST_ACCEPTABLE
+        .versions_before()
+        .any(|(digest, _)| *digest == body_digest);
+    if downgrade_blocked {
+        return UpgradeVerdict::Refuse(RefuseReason::DowngradeBlocked);
+    }
+
+    UpgradeVerdict::Commit
+}
 
 #[derive(Clone, Debug)]
 pub struct OtaPartitions<'a> {
@@ -205,6 +273,16 @@ pub enum State {
     WaitingToEnterUpgradeMode,
 }
 
+/// Outcome of driving an upgrade to its decision point. `Rejected` means the
+/// written image was refused (any [`RefuseReason`]) with the
+/// active slot unchanged; the caller must not reboot into it and is expected to
+/// park on the refusal screen until the user power-cycles.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum UpgradeOutcome {
+    Committed,
+    Rejected,
+}
+
 impl FirmwareUpgradeMode<'_> {
     pub fn poll(&mut self, ui: &mut impl crate::ui::UserInteraction) -> Option<DeviceSendBody> {
         match self {
@@ -233,11 +311,11 @@ impl FirmwareUpgradeMode<'_> {
                         for _ in 0..ERASE_CHUNK_SIZE {
                             partition.erase_sector(*seq).expect("must erase sector");
 
-                            *seq += 1;
                             if *seq == last_sector_index {
                                 finished = true;
                                 break;
                             }
+                            *seq += 1;
                         }
                         ui.set_workflow(ui::Workflow::FirmwareUpgrade(
                             ui::FirmwareUpgradeStatus::Erase {
@@ -298,7 +376,7 @@ impl FirmwareUpgradeMode<'_> {
         sha: &mut Sha<'_>,
         timer: &T,
         rsa: &mut Rsa<Blocking>,
-    ) {
+    ) -> UpgradeOutcome {
         match self {
             FirmwareUpgradeMode::Upgrading { state, .. } => {
                 if !matches!(state, State::WaitingToEnterUpgradeMode) {
@@ -414,44 +492,24 @@ impl FirmwareUpgradeMode<'_> {
         } = &self
         {
             let partition = &ota.ota_partitions()[*ota_slot];
-            let (firmware_size, firmware_and_signature_block_size) =
-                partition.firmware_size().unwrap();
 
-            // Verify firmware digest - we accept BOTH digest types:
-            //
-            // 1. Deterministic firmware digest (PrepareUpgrade2): Hash of firmware only,
-            //    excluding padding and signature block. Displayed on device screen so users
-            //    can verify it matches their locally-built reproducible firmware.
-            //
-            // 2. Legacy full digest (PrepareUpgrade): Hash of entire signed firmware including
-            //    padding and signature block. Used by v0.0.1 and earlier coordinators.
-            //
-            // Why accept both?
-            // - SHA256 collision resistance (~2^-256) makes accidental matches impossible
-            // - Simplifies code - no need to track which message variant was received
-            // - Provides backwards compatibility with older coordinators
-            // - Allows graceful fallback if coordinator sends wrong digest type
-            //
-            // See frostsnap_comms::CoordinatorUpgradeMessage for protocol documentation.
-
-            let digest_without_signature = partition.sha256_digest(sha, Some(firmware_size));
-            if digest_without_signature != *expected_digest {
-                let digest_with_signature =
-                    partition.sha256_digest(sha, Some(firmware_and_signature_block_size));
-                if digest_with_signature != *expected_digest {
-                    panic!(
-                    "upgrade downloaded did not match intended digest.\n\nGot:\n{}\n\nExpected:\n{}\n\n(Legacy:\n{})",
-                    digest_without_signature, expected_digest, digest_with_signature
-                );
+            // The coordinator driving this is untrusted, so acceptance is enforced
+            // here, against the bytes actually written. Any refusal leaves the active
+            // slot unchanged and returns Rejected; the running firmware survives and
+            // boots again on the power cycle the refusal screen asks for.
+            match decide_upgrade(partition, expected_digest, sha, rsa) {
+                UpgradeVerdict::Commit => ota.switch_partition(*ota_slot, OtaMetadata {}),
+                UpgradeVerdict::Refuse(reason) => {
+                    ui.set_workflow(ui::Workflow::FirmwareUpgrade(
+                        ui::FirmwareUpgradeStatus::Rejected { reason },
+                    ));
+                    ui.poll();
+                    return UpgradeOutcome::Rejected;
                 }
             }
-
-            if secure_boot::is_secure_boot_enabled() {
-                secure_boot::verify_secure_boot(partition, rsa, sha).unwrap();
-            }
-
-            ota.switch_partition(*ota_slot, OtaMetadata {});
         }
+
+        UpgradeOutcome::Committed
     }
 }
 
