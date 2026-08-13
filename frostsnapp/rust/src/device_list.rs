@@ -1,6 +1,9 @@
 #![allow(unused)]
 use crate::api::device_list as api;
-use frostsnap_coordinator::{frostsnap_core::DeviceId, DeviceChange};
+use frostsnap_coordinator::{
+    frostsnap_core::{AccessStructureRef, DeviceId},
+    DeviceChange,
+};
 use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, Clone, Default)]
@@ -93,7 +96,7 @@ impl DeviceList {
                         latest_firmware: latest_firmware_digest.map(FirmwareVersion::new),
                         name: None,
                         id,
-                        recovery_mode: false,
+                        recovery_mode: api::RecoveryMode::Off,
                     },
                 );
             }
@@ -179,8 +182,10 @@ impl DeviceList {
         }
     }
 
-    pub fn set_recovery_mode(&mut self, id: DeviceId, recovery_mode: bool) {
+    pub fn set_recovery_mode(&mut self, id: DeviceId, recovery_mode: api::RecoveryMode) {
         if let Some(connected_device) = self.connected.get_mut(&id) {
+            // Compares the whole value, not just on/off, so a device already in recovery that
+            // gains consolidations still emits. Comparing only the flag dropped that update.
             if connected_device.recovery_mode != recovery_mode {
                 connected_device.recovery_mode = recovery_mode;
                 let connected_device = connected_device.clone();

@@ -105,7 +105,9 @@ class _WalletMoreState extends State<WalletMore> {
                   : () async {
                       await MaybeFullscreenDialog.show(
                         context: context,
-                        child: SignMessagePage(frostKey: frostKey),
+                        child: walletCtx.wrap(
+                          SignMessagePage(frostKey: frostKey),
+                        ),
                       );
                     },
             ),

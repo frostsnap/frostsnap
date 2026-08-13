@@ -1,8 +1,15 @@
 use common::TEST_ENCRYPTION_KEY;
+use frostsnap_core::coordinator::restoration::{
+    ConsolidateError, PendingConsolidation, RestorationMutation,
+};
+use frostsnap_core::coordinator::{BeginKeygen, Mutation};
 use frostsnap_core::device::KeyPurpose;
-use frostsnap_core::{EnterPhysicalId, WireSignTask};
+use frostsnap_core::{
+    AccessStructureId, AccessStructureRef, EnterPhysicalId, KeyId, SymmetricKey, WireSignTask,
+};
 use rand_chacha::rand_core::SeedableRng;
 use rand_chacha::ChaCha20Rng;
+use schnorr_fun::fun::prelude::*;
 use schnorr_fun::Schnorr;
 use std::collections::BTreeSet;
 
@@ -197,13 +204,11 @@ fn restore_2_of_3_with_physical_backups_propagates_threshold() {
 
     // Now consolidate the physical backups on all devices
     for &device_id in &devices {
-        if run
-            .coordinator
-            .has_backups_that_need_to_be_consolidated(device_id)
-        {
+        for as_ref in run.coordinator.pending_physical_consolidations(device_id) {
             let consolidate_messages = run
                 .coordinator
-                .consolidate_pending_physical_backups(device_id, TEST_ENCRYPTION_KEY);
+                .consolidate_pending_physical_backups(device_id, as_ref, TEST_ENCRYPTION_KEY)
+                .unwrap();
             run.extend(consolidate_messages);
         }
     }
@@ -213,8 +218,9 @@ fn restore_2_of_3_with_physical_backups_propagates_threshold() {
     // Verify all devices now have properly encrypted shares
     for (i, &device_id) in devices.iter().enumerate() {
         assert!(
-            !run.coordinator
-                .has_backups_that_need_to_be_consolidated(device_id),
+            run.coordinator
+                .pending_physical_consolidations(device_id)
+                .is_empty(),
             "Device {:?} should have all backups consolidated",
             device_id
         );
@@ -545,4 +551,149 @@ fn delete_share_and_recover_then_sign() {
     assert!(
         checked_task2.verify_final_signatures(&schnorr, env.signatures.get(&session_id2).unwrap())
     );
+}
+
+fn queue_consolidation(
+    run: &mut Run,
+    device_id: frostsnap_core::DeviceId,
+    asr: AccessStructureRef,
+) {
+    run.coordinator.mutate(Mutation::Restoration(
+        RestorationMutation::DeviceNeedsConsolidation(PendingConsolidation {
+            device_id,
+            access_structure_ref: asr,
+            share_index: s!(1).public(),
+        }),
+    ));
+}
+
+#[test]
+fn consolidate_reports_missing_wallet_without_blaming_the_key() {
+    let mut test_rng = ChaCha20Rng::from_seed([7u8; 32]);
+    let mut env = TestEnv::default();
+    let mut run =
+        Run::start_after_keygen_and_nonces(2, 2, &mut env, &mut test_rng, 1, KeyPurpose::Test);
+    let device_id = *run.device_set().iter().next().unwrap();
+
+    let missing = AccessStructureRef {
+        key_id: KeyId([0u8; 32]),
+        access_structure_id: AccessStructureId([0u8; 32]),
+    };
+    queue_consolidation(&mut run, device_id, missing);
+
+    let err = run
+        .coordinator
+        .consolidate_pending_physical_backups(device_id, missing, TEST_ENCRYPTION_KEY)
+        .unwrap_err();
+    assert!(
+        matches!(err, ConsolidateError::WalletNotFound { access_structure_ref } if access_structure_ref == missing),
+        "a wallet the coordinator has never seen must be WalletNotFound, got {err:?}"
+    );
+}
+
+#[test]
+fn consolidate_reports_wrong_key() {
+    let mut test_rng = ChaCha20Rng::from_seed([8u8; 32]);
+    let mut env = TestEnv::default();
+    let mut run =
+        Run::start_after_keygen_and_nonces(2, 2, &mut env, &mut test_rng, 1, KeyPurpose::Test);
+    let device_id = *run.device_set().iter().next().unwrap();
+
+    let asr = run
+        .coordinator
+        .iter_keys()
+        .next()
+        .unwrap()
+        .access_structures()
+        .next()
+        .unwrap()
+        .access_structure_ref();
+    queue_consolidation(&mut run, device_id, asr);
+
+    let wrong_key = SymmetricKey([0xAA; 32]);
+    let err = run
+        .coordinator
+        .consolidate_pending_physical_backups(device_id, asr, wrong_key)
+        .unwrap_err();
+    assert!(
+        matches!(err, ConsolidateError::CannotDecrypt { access_structure_ref } if access_structure_ref == asr),
+        "an existing wallet that won't decrypt must be CannotDecrypt, got {err:?}"
+    );
+}
+
+#[test]
+fn per_ref_consolidation_uses_each_wallets_own_key() {
+    // A device can hold pending consolidations for several wallets under different
+    // keys (e.g. one from before the app key was invalidated and recreated).
+    // Consolidation must use each wallet's own key: the right key opens its wallet
+    // while a wrong key for another wallet on the same device returns CannotDecrypt
+    // for that wallet alone, not a batch failure.
+    let mut test_rng = ChaCha20Rng::from_seed([9u8; 32]);
+    let mut env = TestEnv::default();
+
+    // Wallet A under the default key.
+    let mut run = Run::start_after_keygen(2, 2, &mut env, &mut test_rng, KeyPurpose::Test);
+    let device_id = *run.device_set().iter().next().unwrap();
+    let ref_a = run
+        .coordinator
+        .iter_keys()
+        .next()
+        .unwrap()
+        .access_structures()
+        .next()
+        .unwrap()
+        .access_structure_ref();
+
+    // Wallet B, same devices, under a different key. A fresh env keeps the keygen
+    // bookkeeping (which asserts each share arrives once) clean for the 2nd round.
+    let key_b = SymmetricKey([0xBB; 32]);
+    let mut env_b = TestEnv {
+        keygen_encryption_key: Some(key_b),
+        ..Default::default()
+    };
+    let begin_b = BeginKeygen::new(
+        run.device_set().into_iter().collect(),
+        2,
+        "wallet B".to_string(),
+        KeyPurpose::Test,
+        &mut test_rng,
+    );
+    let keygen_init = run
+        .coordinator
+        .begin_keygen(begin_b, &mut test_rng)
+        .unwrap();
+    run.extend(keygen_init);
+    run.run_until_finished(&mut env_b, &mut test_rng).unwrap();
+    let ref_b = run
+        .coordinator
+        .iter_keys()
+        .map(|k| k.access_structures().next().unwrap().access_structure_ref())
+        .find(|r| *r != ref_a)
+        .unwrap();
+
+    queue_consolidation(&mut run, device_id, ref_a);
+    queue_consolidation(&mut run, device_id, ref_b);
+    assert_eq!(
+        run.coordinator
+            .pending_physical_consolidations(device_id)
+            .len(),
+        2
+    );
+
+    // A's key opens A; the same key does NOT open B on the same device...
+    assert!(run
+        .coordinator
+        .consolidate_pending_physical_backups(device_id, ref_a, TEST_ENCRYPTION_KEY)
+        .is_ok());
+    assert!(matches!(
+        run.coordinator
+            .consolidate_pending_physical_backups(device_id, ref_b, TEST_ENCRYPTION_KEY)
+            .unwrap_err(),
+        ConsolidateError::CannotDecrypt { access_structure_ref } if access_structure_ref == ref_b
+    ));
+    // ...and B consolidates with its own key.
+    assert!(run
+        .coordinator
+        .consolidate_pending_physical_backups(device_id, ref_b, key_b)
+        .is_ok());
 }

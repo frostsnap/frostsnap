@@ -10,10 +10,20 @@ use frostsnap_core::{
     coordinator::CoordFrostKey,
     schnorr_fun::frost::{ShareIndex, SharedKey},
     tweak::Xpub,
-    AccessStructureId, AccessStructureRef, DeviceId, KeyId, MasterAppkey,
+    AccessStructureId, AccessStructureRef, DeviceId, KeyId, MasterAppkey, SymmetricKey,
 };
 use std::collections::BTreeMap;
 use tracing::{event, Level};
+
+#[derive(Clone, Copy, Debug)]
+pub enum WalletKeyStatus {
+    /// The coordinator has no such wallet/access structure.
+    Unknown,
+    /// The wallet exists but the held key does not decrypt it.
+    WrongKey,
+    /// The held key decrypts the wallet.
+    Ok,
+}
 
 use crate::{coordinator::FfiCoordinator, frb_generated::StreamSink};
 
@@ -226,6 +236,32 @@ impl Coordinator {
     #[frb(sync)]
     pub fn get_access_structure(&self, as_ref: AccessStructureRef) -> Option<AccessStructure> {
         self.0.get_access_structure(as_ref)
+    }
+
+    /// Whether the app's key can actually decrypt an existing wallet. Distinguishes
+    /// a wallet the coordinator has never heard of (a lookup miss, not a key
+    /// problem) from a known wallet the held key cannot open — only the latter
+    /// warrants advising recovery. Existence is checked without the key so a wrong
+    /// key can never masquerade as an unknown wallet.
+    #[frb(sync)]
+    pub fn wallet_key_status(
+        &self,
+        access_structure_ref: AccessStructureRef,
+        encryption_key: SymmetricKey,
+    ) -> WalletKeyStatus {
+        if self.0.get_access_structure(access_structure_ref).is_none() {
+            return WalletKeyStatus::Unknown;
+        }
+        if self
+            .0
+            .inner()
+            .root_shared_key(access_structure_ref, encryption_key)
+            .is_some()
+        {
+            WalletKeyStatus::Ok
+        } else {
+            WalletKeyStatus::WrongKey
+        }
     }
 
     pub fn delete_key(&self, key_id: KeyId) -> Result<()> {

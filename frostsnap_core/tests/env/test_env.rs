@@ -8,7 +8,7 @@ use frostsnap_core::{
     coordinator::{
         CoordinatorToUserKeyGenMessage, CoordinatorToUserMessage, CoordinatorToUserSigningMessage,
     },
-    CheckedSignTask, DeviceId, KeyId, RestorationId, SessionHash, SignSessionId,
+    CheckedSignTask, DeviceId, KeyId, RestorationId, SessionHash, SignSessionId, SymmetricKey,
 };
 use rand::RngCore;
 use schnorr_fun::Signature;
@@ -22,6 +22,9 @@ pub struct TestEnv {
     pub coordinator_check: Option<SessionHash>,
     pub coordinator_got_keygen_acks: BTreeSet<DeviceId>,
     pub keygen_acks: BTreeSet<KeyId>,
+    /// The key finalize_keygen encrypts shares under; defaults to
+    /// TEST_ENCRYPTION_KEY. Set it to mint a wallet under a different key.
+    pub keygen_encryption_key: Option<SymmetricKey>,
 
     // backups
     pub backups: BTreeMap<DeviceId, (String, frost_backup::ShareBackup)>,
@@ -82,7 +85,11 @@ impl Env for TestEnv {
                         );
                         let send_finalize_keygen = run
                             .coordinator
-                            .finalize_keygen(keygen_id, TEST_ENCRYPTION_KEY, rng)
+                            .finalize_keygen(
+                                keygen_id,
+                                self.keygen_encryption_key.unwrap_or(TEST_ENCRYPTION_KEY),
+                                rng,
+                            )
                             .unwrap();
                         self.keygen_acks
                             .insert(send_finalize_keygen.access_structure_ref.key_id);

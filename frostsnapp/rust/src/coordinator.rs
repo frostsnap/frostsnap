@@ -197,8 +197,12 @@ impl FfiCoordinator {
                         device_list.consume_manager_event(change.clone());
                         match change {
                             DeviceChange::Registered { id, .. } => {
-                                if coordinator.has_backups_that_need_to_be_consolidated(id) {
-                                    device_list.set_recovery_mode(id, true);
+                                let pending = coordinator.pending_physical_consolidations(id);
+                                if !pending.is_empty() {
+                                    device_list.set_recovery_mode(
+                                        id,
+                                        api::device_list::RecoveryMode::On { pending },
+                                    );
                                 }
 
                                 ui_stack.connected(
@@ -868,7 +872,7 @@ impl FfiCoordinator {
             })?;
         }
 
-        self.exit_recovery_mode(held_by, encryption_key);
+        self.exit_recovery_mode(held_by, access_structure_ref, encryption_key);
 
         self.emit_key_state();
 
@@ -907,7 +911,7 @@ impl FfiCoordinator {
 
         for device_id in needs_consolidation {
             // NOTE: This will only work for the devices that are plugged in otherwise it's a noop
-            self.exit_recovery_mode(device_id, encryption_key);
+            self.exit_recovery_mode(device_id, assid, encryption_key);
         }
 
         self.emit_key_state();
@@ -1078,10 +1082,10 @@ impl FfiCoordinator {
                 // When/if the physical backup has been saved on the device this means the device
                 // has entered recovery mode. We need to set recovery mode so that the device can be
                 // brought out of recovery mode when the time comes.
-                device_list
-                    .lock()
-                    .unwrap()
-                    .set_recovery_mode(device_id, true);
+                device_list.lock().unwrap().set_recovery_mode(
+                    device_id,
+                    api::device_list::RecoveryMode::On { pending: vec![] },
+                );
 
                 let coordinator = coordinator.lock().unwrap();
                 // We need to update the recovering key's state the ui gets updated
@@ -1164,10 +1168,10 @@ impl FfiCoordinator {
             false
         });
         if success {
-            self.device_list
-                .lock()
-                .unwrap()
-                .set_recovery_mode(phase.from, true);
+            self.device_list.lock().unwrap().set_recovery_mode(
+                phase.from,
+                api::device_list::RecoveryMode::On { pending: vec![] },
+            );
 
             self.emit_key_state();
         }
@@ -1237,25 +1241,41 @@ impl FfiCoordinator {
     }
 
     /// i.e. do a consolidation
-    pub fn exit_recovery_mode(&self, device_id: DeviceId, encryption_key: SymmetricKey) {
+    pub fn exit_recovery_mode(
+        &self,
+        device_id: DeviceId,
+        access_structure_ref: AccessStructureRef,
+        encryption_key: SymmetricKey,
+    ) {
         let device = match self.device_list.lock().unwrap().get_device(device_id) {
             Some(device) => device,
             None => return,
         };
 
-        let msgs = {
+        let msg = {
             let coord = self.coordinator.lock().unwrap();
-            coord
-                .consolidate_pending_physical_backups(device_id, encryption_key)
-                .into_iter()
-                .collect::<Vec<_>>()
+            match coord.consolidate_pending_physical_backups(
+                device_id,
+                access_structure_ref,
+                encryption_key,
+            ) {
+                Ok(Some(msg)) => msg,
+                // Nothing pending for this wallet on this device; there is no exit to wait for.
+                Ok(None) => return,
+                Err(e) => {
+                    event!(
+                        Level::ERROR,
+                        id = device_id.to_string(),
+                        name = device.name,
+                        error = e.to_string(),
+                        "unable to consolidate backups to take device out of recovery mode"
+                    );
+                    return;
+                }
+            }
         };
 
-        if msgs.is_empty() {
-            return;
-        }
-
-        self.usb_sender.send_from_core(msgs);
+        self.usb_sender.send_from_core([msg]);
 
         event!(
             Level::INFO,
@@ -1264,38 +1284,54 @@ impl FfiCoordinator {
             "asking device to exit recovery mode"
         );
 
-        let success = self.block_for_to_user_message([device_id], move |to_user| match to_user {
-            CoordinatorToUserMessage::Restoration(ToUserRestoration::FinishedConsolidation {
-                device_id: got,
-                ..
-            }) => device_id == got,
-            _ => false,
+        // Wait for every share of THIS wallet to finish. Matching device + ref (not
+        // device alone) keeps a concurrent per-ref exit from satisfying this waiter.
+        let success = self.block_for_to_user_message([device_id], move |to_user| {
+            matches!(
+                to_user,
+                CoordinatorToUserMessage::Restoration(ToUserRestoration::FinishedConsolidation {
+                    device_id: got,
+                    access_structure_ref: got_ref,
+                    ..
+                }) if got == device_id && got_ref == access_structure_ref
+            )
         });
 
-        if success {
-            event!(
-                Level::INFO,
-                id = device_id.to_string(),
-                name = device.name,
-                "device exited recovery mode"
-            );
-
-            self.device_list
-                .lock()
-                .unwrap()
-                .set_recovery_mode(device_id, false);
-
-            self.ui_stack
-                .lock()
-                .unwrap()
-                .connected(device_id, DeviceMode::Ready);
-        } else {
+        if !success {
             event!(
                 Level::ERROR,
                 id = device_id.to_string(),
                 name = device.name,
                 "device failed to exit recovery mode"
             );
+            return;
+        }
+
+        event!(
+            Level::INFO,
+            id = device_id.to_string(),
+            name = device.name,
+            "device exited recovery mode"
+        );
+
+        // Recovery mode is device-level: clear it only once no wallet still has
+        // pending consolidations, so a device with several stays in recovery until
+        // the last one finishes rather than going Ready after the first.
+        let remaining = self
+            .coordinator
+            .lock()
+            .unwrap()
+            .pending_physical_consolidations(device_id);
+        if remaining.is_empty() {
+            self.device_list
+                .lock()
+                .unwrap()
+                .set_recovery_mode(device_id, api::device_list::RecoveryMode::Off);
+
+            self.ui_stack
+                .lock()
+                .unwrap()
+                .connected(device_id, DeviceMode::Ready);
         }
     }
 

@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:frostsnap/device_action_fullscreen_dialog.dart';
 import 'package:frostsnap/global.dart';
 import 'package:frostsnap/id_ext.dart';
-import 'package:frostsnap/secure_key_provider.dart';
+import 'package:frostsnap/wallet_key_mismatch.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/coordinator.dart';
 
@@ -40,7 +40,12 @@ class DeviceActionBackupController with ChangeNotifier {
         null;
     if (!connected) return false;
 
-    final encryptionKey = await SecureKeyProvider.getEncryptionKey();
+    final encryptionKey = await existingWalletKey(
+      context: context.mounted ? context : null,
+      accessStructureRef: accessStructure.accessStructureRef(),
+      action: 'show this backup',
+    );
+    if (encryptionKey == null) return false;
 
     final controller = FullscreenActionDialogController<bool>(
       context: context,
