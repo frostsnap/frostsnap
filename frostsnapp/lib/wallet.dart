@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:frostsnap/backup_workflow.dart';
 import 'package:frostsnap/contexts.dart';
 import 'package:frostsnap/device_list.dart';
+import 'package:frostsnap/firmware_upgrade_bubble.dart';
 import 'package:frostsnap/global.dart';
 import 'package:frostsnap/id_ext.dart';
 import 'package:frostsnap/keygen.dart';
@@ -186,24 +187,29 @@ class WalletHome extends StatelessWidget {
           appBar: walletListController.selected == null
               ? AppBar(forceMaterialTransparency: true)
               : null,
-          body: AnimatedSwitcher(
-            duration: Durations.long1,
-            reverseDuration: Duration.zero,
-            switchInCurve: Curves.easeInOutCubicEmphasized,
-            transitionBuilder: (child, animation) => SlideTransition(
-              position: Tween<Offset>(
-                begin: Offset(1, 0),
-                end: Offset(0, 0),
-              ).animate(animation),
-              child: FadeTransition(
-                opacity: CurvedAnimation(
-                  parent: animation,
-                  curve: Curves.linear,
+          body: Stack(
+            children: [
+              AnimatedSwitcher(
+                duration: Durations.long1,
+                reverseDuration: Duration.zero,
+                switchInCurve: Curves.easeInOutCubicEmphasized,
+                transitionBuilder: (child, animation) => SlideTransition(
+                  position: Tween<Offset>(
+                    begin: Offset(1, 0),
+                    end: Offset(0, 0),
+                  ).animate(animation),
+                  child: FadeTransition(
+                    opacity: CurvedAnimation(
+                      parent: animation,
+                      curve: Curves.linear,
+                    ),
+                    child: child,
+                  ),
                 ),
-                child: child,
+                child: body,
               ),
-            ),
-            child: body,
+              const FirmwareUpgradeBubble(),
+            ],
           ),
           bottomNavigationBar: bottomBar,
         );
@@ -650,7 +656,10 @@ class WalletDrawer extends StatelessWidget {
           ),
         ]);
 
-        final drawerColor = theme.colorScheme.surface;
+        // A tier above the page so the tray reads as a panel laid over the
+        // content rather than continuous with it. M3 puts the drawer container
+        // on surfaceContainerLow; `surface` is what the page body already uses.
+        final drawerColor = theme.colorScheme.surfaceContainerLow;
 
         final drawer = NavigationDrawer(
           backgroundColor: drawerColor,
