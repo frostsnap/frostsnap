@@ -1,12 +1,18 @@
 use crate::{
     bitcoin_transaction,
     device::KeyPurpose,
-    tweak::{AppTweak, BitcoinAccount, BitcoinAccountKeychain, Keychain},
+    tweak::{AppTweak, BitcoinAccount, BitcoinAccountKeychain, Keychain, NormalIndex},
     MasterAppkey,
 };
 use alloc::{boxed::Box, string::String, vec::Vec};
 use bitcoin::hashes::Hash;
 use schnorr_fun::{Message, Schnorr, Signature};
+
+/// TEMPORARY ceiling on the index of an output a sign task may claim as ours, bounding the space
+/// a coordinator can hide one in. A chosen number, not a property of the wallet: chain activity
+/// moves the revealed range too, so "past what ordinary use reaches" is not something this side
+/// can assert.
+const OUTPUT_INDEX_LIMIT: u32 = 200_000;
 
 #[derive(Debug, Clone, bincode::Encode, bincode::Decode, PartialEq, Eq, Hash)]
 pub enum WireSignTask {
@@ -113,6 +119,37 @@ impl WireSignTask {
                     }
                 }
 
+                // TEMPORARY. A blunt narrowing of the paths a coordinator may present as ours,
+                // while the wallet's account and address-issuance model is still implicit. Not a
+                // considered final model.
+                //
+                // Outputs only. An input path is self-certifying: `Input::txout` builds the
+                // prevout from the claimed path's own spk, so the sighash commits to it and a
+                // forged path signs against a prevout that is not on chain. Policing inputs would
+                // buy nothing and would strand coins a PSBT legitimately imports.
+                //
+                // The known cost is that only this side is bounded: an honest coordinator that
+                // allocated change or revealed an address past the ceiling would have its own task
+                // refused here. Reaching that is implausible today, and closing it properly means
+                // one shared issuance boundary in the wallet, which is the cleanup.
+                for owner in tx_template
+                    .outputs()
+                    .iter()
+                    .filter_map(|output| output.owner().local_owner())
+                {
+                    let path = owner.bip32_path;
+
+                    if path.account_keychain.account != BitcoinAccount::default() {
+                        return Err(SignTaskError::UnwatchedAccount {
+                            account: path.account_keychain.account,
+                        });
+                    }
+
+                    if path.index.to_u32() >= OUTPUT_INDEX_LIMIT {
+                        return Err(SignTaskError::OutputIndexOutOfRange { index: path.index });
+                    }
+                }
+
                 if !tx_template.has_any_inputs_to_sign() {
                     return Err(SignTaskError::NothingToSign);
                 }
@@ -210,6 +247,12 @@ pub enum SignTaskError {
         expected: Box<MasterAppkey>,
         kind: &'static str,
     },
+    UnwatchedAccount {
+        account: BitcoinAccount,
+    },
+    OutputIndexOutOfRange {
+        index: NormalIndex,
+    },
     WrongPurpose,
     InvalidBitcoinTransaction,
     NothingToSign,
@@ -225,6 +268,14 @@ impl core::fmt::Display for SignTaskError {
             } => write!(
                 f,
                 "sign task was for key {expected} but got an {kind} for key {got}",
+            ),
+            SignTaskError::UnwatchedAccount { account } => write!(
+                f,
+                "sign task has an output in an account this wallet doesn't use: {account:?}",
+            ),
+            SignTaskError::OutputIndexOutOfRange { index } => write!(
+                f,
+                "sign task has an output at index {index}, past the limit of {OUTPUT_INDEX_LIMIT}",
             ),
             SignTaskError::InvalidBitcoinTransaction => {
                 write!(f, "Bitcoin transaction input value was less than outputs")
@@ -357,5 +408,67 @@ mod test {
             .check(signing, KeyPurpose::Bitcoin(Network::Bitcoin))
             .expect("a send to an external recipient must be accepted");
         assert_eq!(checked.master_appkey, signing);
+    }
+
+    /// One test for the whole temporary policy: it is three lines of check and will be replaced,
+    /// so it gets its boundaries pinned once rather than a case each.
+    #[test]
+    fn temporary_path_policy() {
+        let signing = signing_key();
+        let other_account = crate::tweak::BitcoinAccountKeychain {
+            account: BitcoinAccount {
+                index: NormalIndex::new(1).unwrap(),
+                ..Default::default()
+            },
+            keychain: crate::tweak::Keychain::External,
+        };
+        let limit = NormalIndex::new(OUTPUT_INDEX_LIMIT).unwrap();
+        let below_limit = NormalIndex::new(OUTPUT_INDEX_LIMIT - 1).unwrap();
+
+        let spend_to_self = |input: BitcoinBip32Path, output: BitcoinBip32Path| {
+            let mut tx = TransactionTemplate::new();
+            tx.push_imaginary_owned_input(
+                LocalSpk {
+                    master_appkey: signing,
+                    bip32_path: input,
+                },
+                Amount::from_sat(100_000),
+            );
+            tx.push_owned_output(
+                Amount::from_sat(90_000),
+                LocalSpk {
+                    master_appkey: signing,
+                    bip32_path: output,
+                },
+            );
+            WireSignTask::BitcoinTransaction(tx)
+                .check(signing, KeyPurpose::Bitcoin(Network::Bitcoin))
+        };
+        let external = BitcoinBip32Path::external;
+
+        assert!(
+            spend_to_self(external(NormalIndex::ZERO), external(below_limit)).is_ok(),
+            "the highest in-range output index must still be accepted"
+        );
+
+        assert!(matches!(
+            spend_to_self(external(NormalIndex::ZERO), external(limit)),
+            Err(SignTaskError::OutputIndexOutOfRange { index }) if index == limit
+        ));
+
+        let in_other_account = BitcoinBip32Path {
+            account_keychain: other_account,
+            index: NormalIndex::ZERO,
+        };
+
+        assert!(matches!(
+            spend_to_self(external(NormalIndex::ZERO), in_other_account),
+            Err(SignTaskError::UnwatchedAccount { .. })
+        ));
+
+        assert!(
+            spend_to_self(in_other_account, external(NormalIndex::ZERO)).is_ok(),
+            "an input is a coin we control whatever its path, so it must stay spendable"
+        );
     }
 }
