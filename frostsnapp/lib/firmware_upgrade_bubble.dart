@@ -1,9 +1,14 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:frostsnap/device_action_upgrade.dart';
+import 'package:frostsnap/global.dart';
+import 'package:frostsnap/src/rust/api/device_list.dart';
 
-/// Session-scoped: dismissing silences it until the app restarts. A notifier
-/// rather than a bare bool so the scope matches the storage — every mounted
-/// prompt reacts, not only the one whose button was pressed.
+/// Cleared whenever a device is plugged in, so the dismissal means "not now"
+/// rather than "not this run". A notifier rather than a bare field because it
+/// is library-level: every mounted prompt should react, not only the one whose
+/// button was pressed.
 final _dismissed = ValueNotifier(false);
 
 /// Belongs in the page's own widget tree rather than on the root navigator or
@@ -21,10 +26,26 @@ class _FirmwareUpgradeBubbleState extends State<FirmwareUpgradeBubble> {
   static const _maxWidth = 460.0;
 
   final _upgrades = DeviceActionUpgradeController();
+  StreamSubscription<DeviceListUpdate>? _connects;
   bool _upgrading = false;
 
   @override
+  void initState() {
+    super.initState();
+    // The upgrade controller answers "how many can be upgraded", not "did
+    // something just arrive", so this is a separate question rather than a
+    // second copy of the same one.
+    _connects = GlobalStreams.deviceListSubject.listen((update) {
+      final plugged = update.changes.any(
+        (change) => change.kind == DeviceListChangeKind.added,
+      );
+      if (plugged) _dismissed.value = false;
+    });
+  }
+
+  @override
   void dispose() {
+    _connects?.cancel();
     _upgrades.dispose();
     super.dispose();
   }
