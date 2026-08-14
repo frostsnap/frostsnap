@@ -50,8 +50,16 @@ class DeviceActionUpgradeController with ChangeNotifier {
 
   DeviceActionUpgradeController() {
     _sub = GlobalStreams.deviceListSubject.listen((update) {
+      // `needsFirmwareUpgrade()` is also true when we cannot do the upgrade
+      // (no firmware bundled in the app, or a device newer than the app), so
+      // it would prompt for devices the upgrade would refuse.
       final count = update.state.devices
-          .where((dev) => dev.needsFirmwareUpgrade())
+          .where(
+            (dev) => dev.firmwareUpgradeEligibility().maybeWhen(
+              canUpgrade: () => true,
+              orElse: () => false,
+            ),
+          )
           .length;
       if (count != _needsUpgradeCount) {
         _needsUpgradeCount = count;
