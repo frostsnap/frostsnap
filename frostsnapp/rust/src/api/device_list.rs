@@ -66,12 +66,28 @@ pub struct ConnectedDevice {
 impl ConnectedDevice {
     #[frb(sync)]
     pub fn ready(&self) -> bool {
-        self.name.is_some() && !self.needs_firmware_upgrade()
+        self.name.is_some() && self.firmware_is_up_to_date()
     }
 
+    /// Whether an upgrade is available *and* possible.
+    ///
+    /// False both when the device is current and when nothing can be done —
+    /// no firmware bundled in the app, or a device newer than the app knows
+    /// about. Those are not the same as "up to date", but offering the user an
+    /// upgrade that would be refused is worse than saying nothing, so they are
+    /// the same answer here. Callers that mean "is this device current" want
+    /// [`firmware_is_up_to_date`] instead.
     #[frb(sync)]
     pub fn needs_firmware_upgrade(&self) -> bool {
-        !matches!(
+        matches!(
+            self.firmware_upgrade_eligibility(),
+            FirmwareUpgradeEligibility::CanUpgrade
+        )
+    }
+
+    #[frb(ignore)]
+    pub(crate) fn firmware_is_up_to_date(&self) -> bool {
+        matches!(
             self.firmware_upgrade_eligibility(),
             FirmwareUpgradeEligibility::UpToDate
         )

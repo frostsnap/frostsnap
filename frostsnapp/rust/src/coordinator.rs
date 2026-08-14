@@ -215,7 +215,7 @@ impl FfiCoordinator {
 
                                 if let Some(connected_device) = device_list.get_device(id) {
                                     // we only send some messages out if the device has up to date firmware
-                                    if !connected_device.needs_firmware_upgrade() {
+                                    if connected_device.firmware_is_up_to_date() {
                                         // coordinator_outbox.extend(
                                         //     coordinator.maybe_request_nonce_replenishment(
                                         //         &BTreeSet::from([id]),
