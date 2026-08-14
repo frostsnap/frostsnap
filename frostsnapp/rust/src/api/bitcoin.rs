@@ -193,11 +193,11 @@ impl Transaction {
         let txid = tx_temp.txid();
         let is_mine = tx_temp
             .iter_locally_owned_inputs()
-            .map(|(_, _, spk)| (spk.spk(), spk.bip32_path.index))
+            .map(|(_, _, spk)| (spk.spk(), spk.bip32_path.index.to_u32()))
             .chain(
                 tx_temp
                     .iter_locally_owned_outputs()
-                    .map(|(_, _, spk)| (spk.spk(), spk.bip32_path.index)),
+                    .map(|(_, _, spk)| (spk.spk(), spk.bip32_path.index.to_u32())),
             )
             .collect::<HashMap<_, _>>();
         let prevouts = tx_temp

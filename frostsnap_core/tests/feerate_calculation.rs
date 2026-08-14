@@ -1,6 +1,6 @@
 use bitcoin::{Amount, ScriptBuf, TxOut};
 use frostsnap_core::bitcoin_transaction::{LocalSpk, TransactionTemplate};
-use frostsnap_core::tweak::BitcoinBip32Path;
+use frostsnap_core::tweak::{BitcoinBip32Path, NormalIndex};
 use frostsnap_core::MasterAppkey;
 use schnorr_fun::fun::G;
 
@@ -24,7 +24,7 @@ fn test_feerate_estimation_accuracy() {
     // Create dummy local SPK for the inputs
     let local_spk = LocalSpk {
         master_appkey,
-        bip32_path: BitcoinBip32Path::external(0),
+        bip32_path: BitcoinBip32Path::external(NormalIndex::ZERO),
     };
 
     // Add 2 owned inputs matching the real transaction amounts
