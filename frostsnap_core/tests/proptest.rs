@@ -16,7 +16,7 @@ use frostsnap_core::{
     },
     device::{DeviceToUserMessage, KeyGenPhase3, KeyPurpose, SignPhase1},
     message::{self, DeviceSend, DeviceToCoordinatorMessage},
-    tweak::BitcoinBip32Path,
+    tweak::{BitcoinBip32Path, NormalIndex},
     AccessStructureRef, DeviceId, KeygenId, SignSessionId, WireSignTask,
 };
 use proptest_state_machine::{
@@ -796,7 +796,9 @@ impl StateMachineTest for HappyPathTest {
                     tx_template.push_imaginary_owned_input(
                         LocalSpk {
                             master_appkey,
-                            bip32_path: BitcoinBip32Path::external(i as u32),
+                            bip32_path: BitcoinBip32Path::external(
+                                NormalIndex::new(i as u32).unwrap(),
+                            ),
                         },
                         bitcoin::Amount::from_sat(amount),
                     );
@@ -810,7 +812,7 @@ impl StateMachineTest for HappyPathTest {
                         bitcoin::Amount::from_sat(change),
                         LocalSpk {
                             master_appkey,
-                            bip32_path: BitcoinBip32Path::internal(0),
+                            bip32_path: BitcoinBip32Path::internal(NormalIndex::ZERO),
                         },
                     );
                 }

@@ -5,7 +5,8 @@ use std::{
 
 use frostsnap_comms::{CoordinatorSendBody, CoordinatorSendMessage, Destination};
 use frostsnap_core::{
-    coordinator::VerifyAddress, message::CoordinatorToDeviceMessage, DeviceId, MasterAppkey,
+    coordinator::VerifyAddress, message::CoordinatorToDeviceMessage, tweak::NormalIndex, DeviceId,
+    MasterAppkey,
 };
 
 use crate::{Completion, DeviceMode, Sink, UiProtocol};
@@ -19,7 +20,7 @@ pub struct VerifyAddressProtocolState {
 pub struct VerifyAddressProtocol {
     state: VerifyAddressProtocolState,
     master_appkey: MasterAppkey,
-    derivation_index: u32,
+    derivation_index: NormalIndex,
     is_complete: Option<Completion>,
     need_to_send_to: BTreeSet<DeviceId>,
     sink: Box<dyn Sink<VerifyAddressProtocolState>>,

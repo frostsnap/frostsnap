@@ -1,4 +1,4 @@
-use crate::{Kind, MasterAppkey};
+use crate::{tweak::NormalIndex, Kind, MasterAppkey};
 use frostsnap_macros::Kind as KindDerive;
 
 /// Screen verification messages (for verifying addresses on device screens)
@@ -6,6 +6,6 @@ use frostsnap_macros::Kind as KindDerive;
 pub enum ScreenVerify {
     VerifyAddress {
         master_appkey: MasterAppkey,
-        derivation_index: u32,
+        derivation_index: NormalIndex,
     },
 }

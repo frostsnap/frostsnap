@@ -1269,7 +1269,7 @@ impl FrostCoordinator {
     pub fn verify_address(
         &self,
         key_id: KeyId,
-        derivation_index: u32,
+        derivation_index: crate::tweak::NormalIndex,
     ) -> Result<VerifyAddress, ActionError> {
         let frost_key = self
             .get_frost_key(key_id)
@@ -2012,7 +2012,7 @@ impl IntoIterator for NonceReplenishRequest {
 #[derive(Debug, Clone)]
 pub struct VerifyAddress {
     pub master_appkey: MasterAppkey,
-    pub derivation_index: u32,
+    pub derivation_index: crate::tweak::NormalIndex,
     pub target_devices: BTreeSet<DeviceId>,
 }
 

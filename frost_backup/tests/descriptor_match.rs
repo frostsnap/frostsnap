@@ -4,7 +4,7 @@ use bitcoin::{Address, Network};
 use frost_backup::{generate_descriptor, generate_xpriv};
 use frostsnap_coordinator::bitcoin::{descriptor_for_account_keychain, wallet::KeychainId};
 use frostsnap_core::{
-    tweak::{AccountKind, BitcoinAccount, BitcoinAccountKeychain, Keychain},
+    tweak::{AccountKind, BitcoinAccount, BitcoinAccountKeychain, Keychain, NormalIndex},
     MasterAppkey,
 };
 use schnorr_fun::fun::prelude::*;
@@ -37,7 +37,7 @@ fn test_addresses_match() {
     // Create a bitcoin account (0 hardened)
     let account = BitcoinAccount {
         kind: AccountKind::Segwitv1,
-        index: 0,
+        index: NormalIndex::ZERO,
     };
 
     // Create keychain id for external chain (0)

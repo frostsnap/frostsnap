@@ -8,6 +8,106 @@ use schnorr_fun::{
     fun::{g, marker::*, Point, Scalar, G},
 };
 
+/// A BIP32 normal (non-hardened) child index.
+///
+/// Our own derivation hmacs any `u32` it is handed, but the descriptors the wallet builds spks
+/// from can only express normal children — so a hardened index names a path we can derive and
+/// never watch. Decoding enforces the range as well as construction, which keeps the guarantee
+/// with the type instead of with whoever remembers to check.
+///
+/// rust-bitcoin has no equivalent: `ChildNumber` is an enum spanning both halves, and its
+/// `From<u32>` maps the hardened half to `Hardened` rather than failing.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Default)]
+pub struct NormalIndex(u32);
+
+impl NormalIndex {
+    pub const ZERO: Self = NormalIndex(0);
+
+    pub fn new(index: u32) -> Option<Self> {
+        ChildNumber::from_normal_idx(index).ok()?;
+        Some(NormalIndex(index))
+    }
+
+    pub fn to_u32(self) -> u32 {
+        self.0
+    }
+}
+
+impl From<NormalIndex> for ChildNumber {
+    fn from(index: NormalIndex) -> Self {
+        ChildNumber::Normal { index: index.0 }
+    }
+}
+
+impl From<NormalIndex> for u32 {
+    fn from(index: NormalIndex) -> Self {
+        index.0
+    }
+}
+
+impl TryFrom<u32> for NormalIndex {
+    type Error = HardenedIndexError;
+
+    fn try_from(index: u32) -> Result<Self, Self::Error> {
+        NormalIndex::new(index).ok_or(HardenedIndexError { index })
+    }
+}
+
+impl core::fmt::Display for NormalIndex {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        core::fmt::Display::fmt(&self.0, f)
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct HardenedIndexError {
+    pub index: u32,
+}
+
+impl core::fmt::Display for HardenedIndexError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(
+            f,
+            "bip32 index {} is hardened; only normal children can be derived here",
+            self.index
+        )
+    }
+}
+
+#[cfg(feature = "std")]
+impl std::error::Error for HardenedIndexError {}
+
+impl bincode::Encode for NormalIndex {
+    fn encode<E: bincode::enc::Encoder>(
+        &self,
+        encoder: &mut E,
+    ) -> Result<(), bincode::error::EncodeError> {
+        self.0.encode(encoder)
+    }
+}
+
+impl<Context> bincode::Decode<Context> for NormalIndex {
+    fn decode<D: bincode::de::Decoder>(
+        decoder: &mut D,
+    ) -> Result<Self, bincode::error::DecodeError> {
+        let index = u32::decode(decoder)?;
+        NormalIndex::new(index).ok_or(bincode::error::DecodeError::Other(
+            "bip32 index is hardened",
+        ))
+    }
+}
+
+impl<'de, Context> bincode::BorrowDecode<'de, Context> for NormalIndex {
+    fn borrow_decode<D: bincode::de::BorrowDecoder<'de>>(
+        decoder: &mut D,
+    ) -> Result<Self, bincode::error::DecodeError> {
+        let index = u32::borrow_decode(decoder)?;
+        NormalIndex::new(index).ok_or(bincode::error::DecodeError::Other(
+            "bip32 index is hardened",
+        ))
+    }
+}
+
 #[derive(
     Clone, Copy, Debug, PartialEq, bincode::Encode, bincode::Decode, Eq, Hash, PartialOrd, Ord,
 )]
@@ -41,18 +141,18 @@ pub enum AppTweak {
 )]
 pub struct BitcoinBip32Path {
     pub account_keychain: BitcoinAccountKeychain,
-    pub index: u32,
+    pub index: NormalIndex,
 }
 
 impl BitcoinBip32Path {
-    pub fn external(index: u32) -> Self {
+    pub fn external(index: NormalIndex) -> Self {
         Self {
             account_keychain: BitcoinAccountKeychain::external(),
             index,
         }
     }
 
-    pub fn internal(index: u32) -> Self {
+    pub fn internal(index: NormalIndex) -> Self {
         Self {
             account_keychain: BitcoinAccountKeychain::internal(),
             index,
@@ -67,7 +167,7 @@ impl From<BitcoinBip32Path> for DerivationPath {
                 .account_keychain
                 .account
                 .path_segments_from_bitcoin_appkey()
-                .chain(core::iter::once(bip32_path.index)),
+                .chain(core::iter::once(bip32_path.index.to_u32())),
         )
     }
 }
@@ -77,14 +177,14 @@ impl From<BitcoinBip32Path> for DerivationPath {
 )]
 pub struct BitcoinAccount {
     pub kind: AccountKind,
-    pub index: u32,
+    pub index: NormalIndex,
 }
 
 impl BitcoinAccount {
     pub fn path_segments_from_bitcoin_appkey(&self) -> impl Iterator<Item = u32> {
         self.kind
             .path_segments_from_bitcoin_appkey()
-            .chain(core::iter::once(self.index))
+            .chain(core::iter::once(self.index.to_u32()))
     }
 }
 
@@ -92,7 +192,7 @@ impl Default for BitcoinAccount {
     fn default() -> Self {
         Self {
             kind: AccountKind::Segwitv1,
-            index: 0,
+            index: NormalIndex::ZERO,
         }
     }
 }
@@ -131,7 +231,7 @@ impl BitcoinBip32Path {
     pub fn path_segments_from_bitcoin_appkey(&self) -> impl Iterator<Item = u32> {
         self.account_keychain
             .path_segments_from_bitcoin_appkey()
-            .chain(core::iter::once(self.index))
+            .chain(core::iter::once(self.index.to_u32()))
     }
 
     pub fn from_u32_slice(path: &[u32]) -> Option<Self> {
@@ -144,24 +244,22 @@ impl BitcoinBip32Path {
             _ => return None,
         };
 
-        let account_index = path[1];
-        let account = BitcoinAccount {
-            kind: account_kind,
-            index: account_index,
-        };
-
         let keychain = match path[2] {
             0 => Keychain::External,
             1 => Keychain::Internal,
             _ => return None,
         };
 
-        let _check_it = ChildNumber::from_normal_idx(path[2]).ok()?;
-        let index = path[3];
+        // The kind and keychain segments are pinned to one value each above; these two carry the
+        // whole `u32`, so they are where the range can actually be violated.
+        let account = BitcoinAccount {
+            kind: account_kind,
+            index: NormalIndex::new(path[1])?,
+        };
 
         Some(BitcoinBip32Path {
             account_keychain: BitcoinAccountKeychain { account, keychain },
-            index,
+            index: NormalIndex::new(path[3])?,
         })
     }
 }
@@ -421,6 +519,181 @@ mod test {
     use alloc::vec::Vec;
     use bitcoin::secp256k1::Secp256k1;
     use schnorr_fun::frost::chilldkg::certpedpop;
+
+    const MAX_NORMAL: u32 = (1 << 31) - 1;
+
+    /// Mirrors the encoding of [`BitcoinBip32Path`] with the indices left as bare `u32`s, so a
+    /// test can produce the bytes a pre-`NormalIndex` encoder would have written.
+    #[derive(bincode::Encode)]
+    struct RawPath {
+        account_kind: u32,
+        account_index: u32,
+        keychain: u32,
+        index: u32,
+    }
+
+    fn encode(value: &impl bincode::Encode) -> Vec<u8> {
+        bincode::encode_to_vec(value, bincode::config::standard()).unwrap()
+    }
+
+    #[test]
+    fn normal_index_range() {
+        assert!(NormalIndex::new(0).is_some());
+        assert!(NormalIndex::new(MAX_NORMAL).is_some());
+        assert!(NormalIndex::new(MAX_NORMAL + 1).is_none());
+        assert!(NormalIndex::new(u32::MAX).is_none());
+    }
+
+    /// The type may not change what goes on the wire, only what is accepted off it.
+    #[test]
+    fn encoding_is_unchanged_by_the_newtype() {
+        let path = BitcoinBip32Path {
+            account_keychain: BitcoinAccountKeychain {
+                account: BitcoinAccount {
+                    kind: AccountKind::Segwitv1,
+                    index: NormalIndex::new(7).unwrap(),
+                },
+                keychain: Keychain::Internal,
+            },
+            index: NormalIndex::new(MAX_NORMAL).unwrap(),
+        };
+        let raw = RawPath {
+            account_kind: 0,
+            account_index: 7,
+            keychain: 1,
+            index: MAX_NORMAL,
+        };
+
+        assert_eq!(encode(&path), encode(&raw));
+    }
+
+    /// A hardened index has to be refused wherever it can arrive, not only at the leaf type, so
+    /// this drives it through each wire type that carries a path.
+    #[test]
+    fn hardened_index_is_refused_by_path_tweak_and_sign_item() {
+        let cfg = bincode::config::standard();
+        let raw = |account_index, index| RawPath {
+            account_kind: 0,
+            account_index,
+            keychain: 0,
+            index,
+        };
+        // `AppTweak::Bitcoin` is variant 1; a `SignItem` is an empty message then an `AppTweak`.
+        let wrap = |bytes: &[u8], prefix: &[u8]| {
+            let mut out = prefix.to_vec();
+            out.extend_from_slice(bytes);
+            out
+        };
+
+        // Both segments carrying a full `u32`, in range and just past it.
+        let cases = [
+            (MAX_NORMAL, MAX_NORMAL, false),
+            (MAX_NORMAL + 1, 0, true),
+            (0, MAX_NORMAL + 1, true),
+        ];
+
+        for (account_index, index, out_of_range) in cases {
+            let path = encode(&raw(account_index, index));
+            let tweak = wrap(&path, &[1]);
+            let sign_item = wrap(&tweak, &[0]);
+
+            // The in-range case decoding cleanly is what proves the rejections below are about
+            // the index and not about bytes that were malformed to begin with.
+            assert_eq!(
+                bincode::decode_from_slice::<BitcoinBip32Path, _>(&path, cfg).is_err(),
+                out_of_range,
+                "BitcoinBip32Path at {account_index}/{index}"
+            );
+            assert_eq!(
+                bincode::decode_from_slice::<AppTweak, _>(&tweak, cfg).is_err(),
+                out_of_range,
+                "AppTweak at {account_index}/{index}"
+            );
+            assert_eq!(
+                bincode::decode_from_slice::<crate::SignItem, _>(&sign_item, cfg).is_err(),
+                out_of_range,
+                "SignItem at {account_index}/{index}"
+            );
+        }
+    }
+
+    /// The untrusted signing boundary is the one that matters most. Splices a hardened value into
+    /// the encoding of a real task, giving the bytes an encoder predating `NormalIndex` would have
+    /// produced, and covers both segments that carry a full `u32`.
+    #[test]
+    fn hardened_index_is_refused_inside_a_transaction_sign_task() {
+        let master_appkey = crate::MasterAppkey::derive_from_rootkey(g!(2 * G).normalize());
+        let cfg = bincode::config::standard();
+
+        let needle = encode(&MAX_NORMAL);
+        let hardened = encode(&(MAX_NORMAL + 1));
+        assert_eq!(
+            needle.len(),
+            hardened.len(),
+            "the splice must preserve length"
+        );
+
+        let sentinel = NormalIndex::new(MAX_NORMAL).unwrap();
+        let at_address_index = BitcoinBip32Path {
+            account_keychain: BitcoinAccountKeychain::external(),
+            index: sentinel,
+        };
+        let at_account_index = BitcoinBip32Path {
+            account_keychain: BitcoinAccountKeychain {
+                account: BitcoinAccount {
+                    kind: AccountKind::Segwitv1,
+                    index: sentinel,
+                },
+                keychain: Keychain::External,
+            },
+            index: NormalIndex::ZERO,
+        };
+
+        for bip32_path in [at_address_index, at_account_index] {
+            let mut tx_template = crate::bitcoin_transaction::TransactionTemplate::new();
+            tx_template.push_imaginary_owned_input(
+                crate::bitcoin_transaction::LocalSpk {
+                    master_appkey,
+                    bip32_path,
+                },
+                bitcoin::Amount::from_sat(100_000),
+            );
+            let bytes = encode(&crate::WireSignTask::BitcoinTransaction(tx_template));
+
+            // Without this the splice below would prove nothing: a decode failure could just mean
+            // the bytes were never valid.
+            assert!(
+                bincode::decode_from_slice::<crate::WireSignTask, _>(&bytes, cfg).is_ok(),
+                "the in-range task must decode"
+            );
+
+            let occurrences = bytes.windows(needle.len()).filter(|w| *w == needle).count();
+            assert_eq!(
+                occurrences, 1,
+                "exactly one segment should carry the sentinel"
+            );
+            let at = bytes
+                .windows(needle.len())
+                .position(|w| w == needle)
+                .expect("sentinel is present");
+
+            let mut patched = bytes.clone();
+            patched[at..at + hardened.len()].copy_from_slice(&hardened);
+
+            assert!(
+                bincode::decode_from_slice::<crate::WireSignTask, _>(&patched, cfg).is_err(),
+                "a hardened index must not survive decoding inside a sign task"
+            );
+        }
+    }
+
+    #[test]
+    fn from_u32_slice_bounds_both_unpinned_segments() {
+        assert!(BitcoinBip32Path::from_u32_slice(&[0, MAX_NORMAL, 1, MAX_NORMAL]).is_some());
+        assert!(BitcoinBip32Path::from_u32_slice(&[0, MAX_NORMAL + 1, 0, 0]).is_none());
+        assert!(BitcoinBip32Path::from_u32_slice(&[0, 0, 0, MAX_NORMAL + 1]).is_none());
+        assert!(BitcoinBip32Path::from_u32_slice(&[0, 0, 1, u32::MAX]).is_none());
+    }
 
     #[test]
     pub fn bip32_derivation_matches_rust_bitcoin() {

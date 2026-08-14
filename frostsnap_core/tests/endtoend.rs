@@ -1,7 +1,7 @@
 use common::TEST_ENCRYPTION_KEY;
 use frostsnap_core::bitcoin_transaction::{LocalSpk, TransactionTemplate};
 use frostsnap_core::device::KeyPurpose;
-use frostsnap_core::tweak::BitcoinBip32Path;
+use frostsnap_core::tweak::{BitcoinBip32Path, NormalIndex};
 use frostsnap_core::EnterPhysicalId;
 use frostsnap_core::{MasterAppkey, WireSignTask};
 use rand::seq::IteratorRandom;
@@ -231,7 +231,10 @@ fn test_verify_address() {
 
     let key_data = run.coordinator.iter_keys().next().unwrap().clone();
 
-    let verify_request = run.coordinator.verify_address(key_data.key_id, 0).unwrap();
+    let verify_request = run
+        .coordinator
+        .verify_address(key_data.key_id, NormalIndex::ZERO)
+        .unwrap();
     run.extend(verify_request);
     run.run_until_finished(&mut env, &mut test_rng).unwrap();
 
@@ -333,7 +336,7 @@ fn signing_a_bitcoin_transaction_produces_valid_signatures() {
     tx_template.push_imaginary_owned_input(
         LocalSpk {
             master_appkey,
-            bip32_path: BitcoinBip32Path::external(7),
+            bip32_path: BitcoinBip32Path::external(NormalIndex::new(7).unwrap()),
         },
         bitcoin::Amount::from_sat(42_000),
     );
@@ -341,7 +344,7 @@ fn signing_a_bitcoin_transaction_produces_valid_signatures() {
     tx_template.push_imaginary_owned_input(
         LocalSpk {
             master_appkey,
-            bip32_path: BitcoinBip32Path::internal(42),
+            bip32_path: BitcoinBip32Path::internal(NormalIndex::new(42).unwrap()),
         },
         bitcoin::Amount::from_sat(1_337_000),
     );
