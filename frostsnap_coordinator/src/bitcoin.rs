@@ -2,6 +2,7 @@ pub mod chain_sync;
 mod handler_state;
 pub mod outgoing;
 pub mod psbt;
+pub mod send;
 pub mod status_tracker;
 pub mod tofu;
 pub mod wallet;

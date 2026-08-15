@@ -191,26 +191,6 @@ impl SuperWallet {
             .collect())
     }
 
-    #[frb(type_64bit_int)]
-    pub fn send_to(
-        &self,
-        master_appkey: MasterAppkey,
-        to_address: &Address,
-        value: u64,
-        feerate: f64,
-    ) -> Result<UnsignedTx> {
-        let mut super_wallet = self.inner.lock().unwrap();
-        let signing_task = super_wallet.send_to(
-            master_appkey,
-            [(to_address.clone(), Some(value))],
-            feerate as f32,
-        )?;
-        let unsigned_tx = UnsignedTx {
-            template_tx: signing_task,
-        };
-        Ok(unsigned_tx)
-    }
-
     #[frb(sync)]
     pub fn calculate_available(
         &self,
