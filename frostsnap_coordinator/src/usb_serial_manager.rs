@@ -2,11 +2,12 @@
 const USB_VID: u16 = 12346;
 const USB_PID: u16 = 4097;
 
-// The genuine check now binds each device's DeviceId into the proof it returns,
-// so a relayed proof won't verify against the relayer's id (see
-// `genuine_certificate::verify_genuine_bound`). Still disabled here until the app
-// surfaces the result; the factory performs the check during provisioning.
-const DO_GENUINE_CHECK: bool = false;
+// Each device binds its own DeviceId into the proof it returns, so a relayed proof
+// won't verify against the relayer's id (see
+// `genuine_certificate::verify_genuine_bound`), and the app now surfaces the result.
+// A build with no genuine certificate key compiled in still never challenges
+// anything — see `UsbSerialManager::genuine_cert_key`.
+const DO_GENUINE_CHECK: bool = true;
 
 use crate::firmware::ValidatedFirmwareBin;
 use crate::PortOpenError;
