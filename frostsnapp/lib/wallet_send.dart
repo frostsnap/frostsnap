@@ -7,6 +7,7 @@ import 'package:frostsnap/maybe_fullscreen_dialog.dart';
 import 'package:frostsnap/snackbar.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/broadcast.dart';
+import 'package:frostsnap/src/rust/api/send.dart';
 import 'package:frostsnap/src/rust/api/signing.dart';
 import 'package:frostsnap/src/rust/api/super_wallet.dart';
 import 'package:frostsnap/src/rust/api/transaction.dart';
@@ -49,6 +50,10 @@ class _WalletSendPageState extends State<WalletSendPage> {
 
   late final ScrollController scrollController;
   late final BuildTxState state;
+
+  /// The coin selection confirming the amount produced. Reserves nothing; committing it (the
+  /// "Sign transaction" tap) is what allocates the change address.
+  SendPlan? plan;
 
   late final AddressInputController addrController;
   String? addrError;
@@ -173,7 +178,7 @@ class _WalletSendPageState extends State<WalletSendPage> {
             ],
           ),
           title: SatoshiText(
-            value: state.fee(),
+            value: plan?.fee(),
             style: TextStyle(color: theme.colorScheme.secondary),
           ),
         ),
@@ -556,14 +561,12 @@ class _WalletSendPageState extends State<WalletSendPage> {
   signersDone(BuildContext context) async {
     UnsignedTx? unsignedTx;
     try {
-      unsignedTx = state.tryFinish();
-    } on TryFinishTxError catch (e) {
-      final why = switch (e) {
-        TryFinishTxError.missingFeerate => 'No feerate',
-        TryFinishTxError.incompleteRecipientValues => 'No recipient amount',
-        TryFinishTxError.insufficientBalance => 'Insufficient Balance',
-      };
-      showErrorSnackbar(context, 'Invalid transaction: $why');
+      unsignedTx = widget.superWallet.commitSend(plan: plan!);
+    } catch (e) {
+      // The one real failure: a planned input was spent while this page was open. The plan is
+      // dead; send the user back to re-confirm the amount, which builds a fresh one.
+      showErrorSnackbar(context, 'Wallet changed while building: $e');
+      setState(() => pageIndex = SendPageIndex.amount);
     }
 
     final fsCtx = FrostsnapContext.of(context)!;
@@ -602,6 +605,17 @@ class _WalletSendPageState extends State<WalletSendPage> {
   }
 
   void amountDone(BuildContext context) {
+    try {
+      plan = state.tryFinish();
+    } on TryFinishTxError catch (e) {
+      final why = switch (e) {
+        TryFinishTxError.missingFeerate => 'No feerate',
+        TryFinishTxError.incompleteRecipientValues => 'No recipient amount',
+        TryFinishTxError.insufficientBalance => 'Insufficient Balance',
+      };
+      showErrorSnackbar(context, 'Invalid transaction: $why');
+      return;
+    }
     nextPageOrPop(null);
   }
 

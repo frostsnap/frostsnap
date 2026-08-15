@@ -35,11 +35,11 @@ pub type WalletIndexedTxGraphChangeSet =
 
 /// Wallet that manages all the frostsnap keys on the same network in a single transaction graph
 pub struct CoordSuperWallet {
-    tx_graph: Persisted<WalletIndexedTxGraph>,
-    chain: Persisted<local_chain::LocalChain>,
+    pub(super) tx_graph: Persisted<WalletIndexedTxGraph>,
+    pub(super) chain: Persisted<local_chain::LocalChain>,
     chain_client: ChainClient,
     pub network: bitcoin::Network,
-    db: Arc<Mutex<rusqlite::Connection>>,
+    pub(super) db: Arc<Mutex<rusqlite::Connection>>,
 }
 
 impl CoordSuperWallet {
@@ -151,7 +151,7 @@ impl CoordSuperWallet {
         .collect()
     }
 
-    fn lazily_initialize_key(&mut self, master_appkey: MasterAppkey) {
+    pub(super) fn lazily_initialize_key(&mut self, master_appkey: MasterAppkey) {
         if self
             .tx_graph
             .index
@@ -413,192 +413,6 @@ impl CoordSuperWallet {
         self.chain_client.reconnect()
     }
 
-    pub fn send_to(
-        &mut self,
-        master_appkey: MasterAppkey,
-        recipients: impl IntoIterator<Item = (bitcoin::Address, Option<u64>)>,
-        feerate: f32,
-    ) -> Result<bitcoin_transaction::TransactionTemplate> {
-        self.lazily_initialize_key(master_appkey);
-        use bdk_coin_select::{
-            metrics, Candidate, ChangePolicy, CoinSelector, DrainWeights, FeeRate, Target,
-            TargetFee, TargetOutputs, TR_DUST_RELAY_MIN_VALUE, TR_KEYSPEND_TXIN_WEIGHT,
-        };
-
-        let recipients = recipients.into_iter().collect::<Vec<_>>();
-
-        let target_outputs = {
-            let mut target_outputs = Vec::<bitcoin::TxOut>::with_capacity(recipients.len());
-            let mut available_amount = self.calculate_avaliable_value(
-                master_appkey,
-                recipients.iter().map(|(addr, _)| addr.clone()),
-                feerate,
-                true,
-            );
-            for (i, (addr, amount_opt)) in recipients.iter().enumerate() {
-                let amount: u64 = match amount_opt {
-                    Some(amount) => *amount,
-                    None => available_amount
-                        .try_into()
-                        .map_err(|_| anyhow!("insufficient balance"))?,
-                };
-                available_amount = available_amount
-                    .checked_sub_unsigned(amount)
-                    .expect("specified recipient amount is overly large");
-                if available_amount < 0 {
-                    return Err(anyhow!(
-                        "Insufficient balance: {available_amount}sats left for recipient {i}"
-                    ));
-                }
-                target_outputs.push(TxOut {
-                    value: Amount::from_sat(amount),
-                    script_pubkey: addr.script_pubkey(),
-                });
-            }
-            target_outputs
-        };
-
-        let utxos: Vec<(_, bdk_chain::FullTxOut<_>)> = self
-            .tx_graph
-            .graph()
-            .filter_chain_unspents(
-                self.chain.as_ref(),
-                self.chain.tip().block_id(),
-                CanonicalizationParams::default(),
-                self.tx_graph
-                    .index
-                    .keychain_outpoints_in_range(Self::key_index_range(master_appkey)),
-            )
-            .collect();
-
-        let candidates = utxos
-            .iter()
-            .map(|(_path, utxo)| Candidate {
-                input_count: 1,
-                value: utxo.txout.value.to_sat(),
-                weight: TR_KEYSPEND_TXIN_WEIGHT,
-                is_segwit: true,
-            })
-            .collect::<Vec<_>>();
-
-        let target = Target {
-            fee: TargetFee::from_feerate(FeeRate::from_sat_per_vb(feerate)),
-            outputs: TargetOutputs::fund_outputs(
-                target_outputs
-                    .iter()
-                    .map(|txo| (txo.weight().to_wu(), txo.value.to_sat())),
-            ),
-        };
-
-        // we try and guess the usual feerate from the existing transactions in the graph This is
-        // not a great heuristic since it doesn't focus on transactions the user has sent recently.
-        let long_term_feerate_guess = {
-            let feerates = self
-                .tx_graph
-                .graph()
-                .full_txs()
-                .filter_map(|tx| {
-                    Some(
-                        self.tx_graph.graph().calculate_fee(&tx).ok()?.to_sat() as f32
-                            / tx.weight().to_wu() as f32,
-                    )
-                })
-                .collect::<Vec<_>>();
-
-            let mut average = feerates.iter().sum::<f32>() / feerates.len() as f32;
-
-            if !average.is_normal() {
-                average = 10.0;
-            }
-            FeeRate::from_sat_per_vb(average)
-        };
-
-        let drain_weights = DrainWeights::TR_KEYSPEND;
-        let change_policy = ChangePolicy::min_value_and_waste(
-            drain_weights,
-            TR_DUST_RELAY_MIN_VALUE,
-            target.fee.rate,
-            long_term_feerate_guess,
-        );
-
-        let mut cs = CoinSelector::new(&candidates);
-        let metric = metrics::LowestFee {
-            target,
-            long_term_feerate: long_term_feerate_guess,
-            change_policy,
-        };
-
-        match cs.run_bnb(metric, 500_000) {
-            Err(_) => {
-                event!(Level::ERROR, "unable to find a selection with lowest fee");
-                cs.select_until_target_met(target)?;
-            }
-            Ok(score) => {
-                event!(Level::INFO, "coin selection succeeded with score: {score}");
-            }
-        }
-
-        let selected_utxos = cs.apply_selection(&utxos);
-
-        let mut template_tx = frostsnap_core::bitcoin_transaction::TransactionTemplate::new();
-
-        for (((_master_appkey, account_keychain), index), selected_utxo) in selected_utxos {
-            assert_eq!(_master_appkey, &master_appkey);
-            let prev_tx = self
-                .tx_graph
-                .graph()
-                .get_tx(selected_utxo.outpoint.txid)
-                .expect("must exist");
-            let bip32_path = BitcoinBip32Path {
-                account_keychain: *account_keychain,
-                index: *index,
-            };
-            template_tx
-                .push_owned_input(
-                    PushInput::spend_tx_output(prev_tx.as_ref(), selected_utxo.outpoint.vout),
-                    LocalSpk {
-                        master_appkey,
-                        bip32_path,
-                    },
-                )
-                .expect("must be able to add input");
-        }
-
-        if let Some(value) = cs.drain_value(target, change_policy) {
-            let mut db = self.db.lock().unwrap();
-            let (i, _change_spk) = self.tx_graph.mutate(&mut *db, |tx_graph| {
-                Ok(tx_graph
-                    .index
-                    .next_unused_spk((master_appkey, BitcoinAccountKeychain::internal()))
-                    .expect(
-                        "this should have been initialzed by now since we are spending from it",
-                    ))
-            })?;
-
-            self.tx_graph
-                .MUTATE_NO_PERSIST()
-                .index
-                .mark_used((master_appkey, BitcoinAccountKeychain::internal()), i);
-
-            template_tx.push_owned_output(
-                Amount::from_sat(value),
-                LocalSpk {
-                    master_appkey,
-                    bip32_path: BitcoinBip32Path {
-                        account_keychain: BitcoinAccountKeychain::internal(),
-                        index: i,
-                    },
-                },
-            );
-        }
-
-        for txo in target_outputs {
-            template_tx.push_foreign_output(txo);
-        }
-
-        Ok(template_tx)
-    }
-
     pub fn calculate_avaliable_value(
         &mut self,
         master_appkey: MasterAppkey,
@@ -651,7 +465,7 @@ impl CoordSuperWallet {
         cs.excess(target, Drain::NONE)
     }
 
-    fn key_index_range(
+    pub(super) fn key_index_range(
         master_appkey: MasterAppkey,
     ) -> impl RangeBounds<(MasterAppkey, BitcoinAccountKeychain)> {
         (master_appkey, BitcoinAccountKeychain::external())
