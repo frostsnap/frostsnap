@@ -6,6 +6,8 @@ import 'package:flutter/material.dart';
 import 'package:frostsnap/animated_gradient_card.dart';
 import 'package:frostsnap/device_action_fullscreen_dialog.dart';
 import 'package:frostsnap/device_action_upgrade.dart';
+import 'package:frostsnap/device_colors.dart';
+import 'package:frostsnap/genuine_badge.dart';
 import 'package:frostsnap/hex.dart';
 import 'package:frostsnap/secure_key_provider.dart';
 import 'package:frostsnap/settings.dart';
@@ -755,6 +757,7 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
             if (device.name != null) {
               return _deviceRow(
                 context: context,
+                device: device,
                 title: Text(
                   device.name!,
                   style: monospaceTextStyle.copyWith(
@@ -775,6 +778,7 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
             return device.firmwareUpgradeEligibility().when(
               upToDate: () => _deviceRow(
                 context: context,
+                device: device,
                 title: _inlineNameField(context, device),
                 // The name field it focuses is itself a Tab stop.
                 trailing: ExcludeFocusTraversal(
@@ -796,6 +800,7 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
               ),
               canUpgrade: () => _deviceRow(
                 context: context,
+                device: device,
                 title: const SizedBox.shrink(),
                 trailing: buildDeviceTrailingInfo(
                   context,
@@ -808,6 +813,7 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
               ),
               cannotUpgrade: (reason) => _deviceRow(
                 context: context,
+                device: device,
                 title: const SizedBox.shrink(),
                 trailing: buildDeviceTrailingInfo(
                   context,
@@ -888,24 +894,37 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
     required BuildContext context,
     required Widget title,
     required Widget trailing,
+    ConnectedDevice? device,
     VoidCallback? onTap,
     bool enabled = true,
   }) {
     final cs = Theme.of(context).colorScheme;
-    return Card.filled(
+    // Enrolment is the moment a device becomes part of a wallet, so it is worth
+    // showing what we know about it here — the colour to recognise it by, and
+    // whether it has proved it is genuine.
+    return DeviceGlowCard(
       margin: const EdgeInsets.symmetric(vertical: 4),
-      color: cs.surfaceContainerHigh,
-      clipBehavior: Clip.hardEdge,
+      caseColor: device?.caseColor,
       child: ListTile(
         onTap: onTap,
         enabled: enabled,
         leading: Icon(
           Icons.key,
-          color: enabled
-              ? cs.onSurfaceVariant
-              : cs.onSurfaceVariant.withValues(alpha: 0.5),
+          color:
+              device?.caseColor?.color ??
+              (enabled
+                  ? cs.onSurfaceVariant
+                  : cs.onSurfaceVariant.withValues(alpha: 0.5)),
         ),
-        title: title,
+        title: device == null
+            ? title
+            : Row(
+                spacing: 8,
+                children: [
+                  Flexible(child: title),
+                  GenuineBadge(status: device.genuine),
+                ],
+              ),
         trailing: trailing,
         contentPadding: const EdgeInsets.symmetric(horizontal: 16),
       ),
