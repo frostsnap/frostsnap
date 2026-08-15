@@ -400,11 +400,10 @@ impl CoordSuperWallet {
                 let indexer_changeset = tx_graph
                     .index
                     .reveal_to_target_multi(&update.last_active_indices);
-                let tx_changeset = tx_graph.apply_update(update.tx_update);
-                let changed = !(chain_changeset.is_empty()
-                    && indexer_changeset.is_empty()
-                    && tx_changeset.is_empty());
-                Ok((changed, (tx_changeset, chain_changeset)))
+                let mut changeset = tx_graph.apply_update(update.tx_update);
+                changeset.indexer.merge(indexer_changeset);
+                let changed = !(chain_changeset.is_empty() && changeset.is_empty());
+                Ok((changed, (changeset, chain_changeset)))
             })?;
         Ok(changed)
     }
