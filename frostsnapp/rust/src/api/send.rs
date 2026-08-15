@@ -5,9 +5,12 @@
 
 use flutter_rust_bridge::frb;
 use frostsnap_coordinator::bitcoin::send as coord_send;
+use frostsnap_coordinator::frostsnap_core::tweak::BitcoinAccount;
 
+use super::coordinator::Coordinator;
 use super::signing::UnsignedTx;
 use super::super_wallet::SuperWallet;
+use crate::frb_generated::RustAutoOpaque;
 
 /// A finished coin selection that has reserved nothing.
 #[frb(opaque)]
@@ -35,13 +38,26 @@ impl SendPlan {
 
 impl SuperWallet {
     /// Turn a plan into a signable transaction — the single point that allocates the change
-    /// address. Fails if the wallet no longer holds a planned input (spent since planning);
-    /// the plan is dead then and the flow builds a new one.
+    /// address. The change index skips every index reserved by an in-flight signing session
+    /// (active AND finished-but-unbroadcast, queried live from the coordinator — the wallet
+    /// stores no reservation state). Fails if the wallet no longer holds a planned input
+    /// (spent since planning); the plan is dead then and the flow builds a new one.
     #[frb(sync)]
-    pub fn commit_send(&self, plan: &SendPlan) -> anyhow::Result<UnsignedTx> {
+    pub fn commit_send(
+        &self,
+        coord: RustAutoOpaque<Coordinator>,
+        plan: &SendPlan,
+    ) -> anyhow::Result<UnsignedTx> {
+        // The wallet only has the default account today; naming it here keeps that assumption
+        // at one visible call site.
+        let reserved = coord
+            .blocking_read()
+            .0
+            .inner()
+            .reserved_change_indices(plan.0.master_appkey(), BitcoinAccount::default());
         let mut inner = self.inner.lock().unwrap();
         Ok(UnsignedTx {
-            template_tx: inner.commit_send(&plan.0)?,
+            template_tx: inner.commit_send(&plan.0, reserved)?,
         })
     }
 }
