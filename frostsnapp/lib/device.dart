@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:frostsnap/contexts.dart';
+import 'package:frostsnap/device_colors.dart';
+import 'package:frostsnap/genuine_badge.dart';
 import 'package:frostsnap/copy_feedback.dart';
 import 'package:frostsnap/device_action_fullscreen_dialog.dart';
 import 'package:frostsnap/id_ext.dart';
@@ -165,7 +167,40 @@ class _DeviceDetailsState extends State<DeviceDetails> {
       ),
     ];
 
+    // Authenticity is about the hardware, not the wallet on it, so it shows for a
+    // fresh device just as much as a named one.
+    final authenticityRows = genuineCheckEnabled
+        ? [
+            Builder(
+              builder: (context) {
+                final (title, subtitle) = device.genuine.explanation;
+                return ListTile(
+                  contentPadding: EdgeInsets.symmetric(horizontal: 16),
+                  title: Text(title),
+                  subtitle: Text(
+                    subtitle.split('\n\n').first,
+                    style: TextStyle(color: theme.colorScheme.onSurfaceVariant),
+                  ),
+                  leading: Icon(
+                    device.genuine.icon,
+                    color: device.genuine.color(theme.colorScheme),
+                  ),
+                  trailing: Icon(Icons.info_outline_rounded),
+                  onTap: () => showGenuineExplanation(context, device.genuine),
+                );
+              },
+            ),
+          ]
+        : <Widget>[];
+
     final advancedHidden = [
+      if (device.caseColor != null)
+        ListTile(
+          contentPadding: EdgeInsets.symmetric(horizontal: 16),
+          title: Text('Case Colour'),
+          subtitle: Text(device.caseColor!.label, style: monospaceTextStyle),
+          leading: Icon(Icons.circle, color: device.caseColor!.color),
+        ),
       CopyListTile(
         data: device.id.toHex(),
         contentPadding: EdgeInsets.symmetric(horizontal: 16),
@@ -228,6 +263,7 @@ class _DeviceDetailsState extends State<DeviceDetails> {
       mainAxisSize: MainAxisSize.min,
       children: [
         ...(isEmpty ? emptyRows : nonEmptyRows),
+        ...authenticityRows,
         CopyListTile(
           data: device.firmware.digest.toString(),
           contentPadding: EdgeInsets.symmetric(horizontal: 16),
