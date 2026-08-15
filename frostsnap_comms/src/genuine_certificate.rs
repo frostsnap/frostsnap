@@ -110,7 +110,9 @@ impl core::fmt::Display for CaseColor {
             CaseColor::Silver => "Silver",
             CaseColor::Blue => "Blue",
             CaseColor::Red => "Red",
-            _ => "Black",
+            // Colours this build has no name for. Only reachable from a newer
+            // device; never store this string (see `FromStr`, which rejects it).
+            _ => "Unknown",
         };
         write!(f, "{}", s)
     }
