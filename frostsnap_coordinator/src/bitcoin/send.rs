@@ -542,6 +542,99 @@ mod test {
         assert_eq!(paid, planned, "the amount shown is the amount paid");
     }
 
+    /// A reveal the wallet only learned about from a sync must survive a restart, and the coin it
+    /// makes visible must stay spendable. The reveal was the exact changeset `apply_update`
+    /// discarded, so every reload re-indexed stored txs against a too-narrow window and the coin
+    /// showed in the balance but never in coin selection.
+    #[test]
+    fn a_synced_reveal_survives_a_restart_and_its_coin_stays_spendable() {
+        // Past the load window, so only the persisted reveal can bring it back: inside the
+        // window, indexing the hit would reveal it and the ratchet changeset would carry it.
+        const FAR: u32 = 60;
+        const VALUE: u64 = 1_000_000;
+
+        let db = Arc::new(Mutex::new(rusqlite::Connection::open_in_memory().unwrap()));
+        let master_appkey =
+            MasterAppkey::derive_from_rootkey(Point::random(&mut rand::thread_rng()));
+        let recipient = bitcoin::Address::from_str("bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4")
+            .unwrap()
+            .require_network(NETWORK)
+            .unwrap();
+        let external = (master_appkey, BitcoinAccountKeychain::external());
+        let blocks = [
+            BlockId {
+                height: 0,
+                hash: bitcoin::constants::genesis_block(NETWORK).block_hash(),
+            },
+            BlockId {
+                height: 100,
+                hash: BlockHash::from_byte_array([100u8; 32]),
+            },
+        ];
+
+        // First run: a sync reports activity at an index the wallet had not revealed itself.
+        {
+            let (client, _handler) = chain_client(&db);
+            let mut wallet = CoordSuperWallet::load_or_init(db.clone(), NETWORK, client).unwrap();
+            wallet.list_addresses(master_appkey);
+
+            let tx = bitcoin::Transaction {
+                version: bitcoin::transaction::Version::TWO,
+                lock_time: bitcoin::absolute::LockTime::ZERO,
+                input: vec![TxIn::default()],
+                output: vec![TxOut {
+                    value: Amount::from_sat(VALUE),
+                    script_pubkey: crate::bitcoin::peek_spk(
+                        master_appkey,
+                        BitcoinBip32Path {
+                            account_keychain: BitcoinAccountKeychain::external(),
+                            index: FAR,
+                        },
+                    ),
+                }],
+            };
+            let mut tx_update = TxUpdate::default();
+            tx_update.txs = vec![Arc::new(tx.clone())];
+            tx_update.anchors = [(
+                ConfirmationBlockTime {
+                    block_id: blocks[1],
+                    confirmation_time: 1_700_000_000,
+                },
+                tx.compute_txid(),
+            )]
+            .into();
+
+            wallet
+                .apply_update(bdk_electrum_streaming::Update {
+                    tx_update,
+                    last_active_indices: [(external, FAR)].into(),
+                    chain_update: Some(CheckPoint::from_block_ids(blocks).unwrap()),
+                })
+                .unwrap();
+
+            assert!(
+                wallet.calculate_avaliable_value(master_appkey, [recipient.clone()], 1.0, true) > 0,
+                "the coin is spendable in the session that discovered it"
+            );
+        }
+
+        // Restart: same database, fresh wallet.
+        let (client, _handler) = chain_client(&db);
+        let mut wallet = CoordSuperWallet::load_or_init(db.clone(), NETWORK, client).unwrap();
+        wallet.list_addresses(master_appkey);
+
+        assert_eq!(
+            wallet.tx_graph.index.last_revealed_index(external),
+            Some(FAR),
+            "the frontier the sync established must be on disk"
+        );
+        let available = wallet.calculate_avaliable_value(master_appkey, [recipient], 1.0, true);
+        assert!(
+            available > 0,
+            "balance and send max must agree across a restart; send max saw {available}"
+        );
+    }
+
     #[test]
     fn a_plan_outlived_by_its_coins_errors_instead_of_committing() {
         let mut f = Fixture::new();
