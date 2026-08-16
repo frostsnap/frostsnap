@@ -23,6 +23,14 @@ impl SendPlan {
     pub fn change_value(&self) -> Option<u64> {
         self.0.change_value()
     }
+
+    /// What the plan pays this recipient. The review screen must read the amount from here
+    /// rather than re-asking the wallet: under send max the wallet's answer tracks deposits
+    /// that land after planning, and the plan does not.
+    #[frb(sync, type_64bit_int)]
+    pub fn recipient_value(&self, index: u32) -> Option<u64> {
+        self.0.recipient_value(index as usize)
+    }
 }
 
 impl SuperWallet {

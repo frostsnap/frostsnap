@@ -46,6 +46,15 @@ impl SendPlan {
     pub fn fee(&self) -> u64 {
         self.fee
     }
+
+    /// What this plan pays recipient `index`, the value the committed transaction carries.
+    ///
+    /// For send max this is the maximum as the selection fixed it, not as the wallet reports it
+    /// now: a deposit landing after planning does not raise it. A display that re-asks the
+    /// wallet "what is the max?" shows a number this plan does not pay.
+    pub fn recipient_value(&self, index: usize) -> Option<u64> {
+        self.recipients.get(index).map(|txo| txo.value.to_sat())
+    }
 }
 
 impl CoordSuperWallet {
@@ -496,6 +505,41 @@ mod test {
 
         f.wallet.commit_send(&plan).unwrap();
         assert_eq!(f.last_revealed_internal(), None);
+    }
+
+    /// A send-max plan's amount is fixed when the plan is. A deposit landing while the user picks
+    /// signers must not move it, so the review screen has to read the amount from the plan — the
+    /// wallet's live answer to "what is the max?" is a number this transaction does not pay.
+    #[test]
+    fn a_deposit_after_planning_does_not_move_a_send_max_amount() {
+        let mut f = Fixture::new();
+        f.fund(0, 1_000_000, 100);
+
+        let plan = f
+            .wallet
+            .plan_send(f.master_appkey, [(f.recipient.clone(), None)], 1.0)
+            .unwrap();
+        let planned = plan.recipient_value(0).expect("the one recipient");
+
+        f.fund(1, 5_000_000, 101);
+        assert_eq!(
+            plan.recipient_value(0),
+            Some(planned),
+            "the plan is a snapshot, not a view of the wallet"
+        );
+
+        let paid = f
+            .wallet
+            .commit_send(&plan)
+            .unwrap()
+            .to_rust_bitcoin_tx()
+            .output
+            .iter()
+            .find(|txo| txo.script_pubkey == f.recipient.script_pubkey())
+            .expect("the recipient is paid")
+            .value
+            .to_sat();
+        assert_eq!(paid, planned, "the amount shown is the amount paid");
     }
 
     #[test]

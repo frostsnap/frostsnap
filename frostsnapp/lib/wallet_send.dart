@@ -119,9 +119,13 @@ class _WalletSendPageState extends State<WalletSendPage> {
 
     final isSendMax = state.isSendMax(recipient: 0);
 
-    int? amount;
+    // Queried for its side effect: an amount that has since become invalid sends the user back
+    // to fix it. The value displayed comes from the plan, not from here — under send max this
+    // asks the wallet for the max as it stands now, which a deposit landing while the user
+    // picks signers would raise above what the planned transaction actually pays.
+    int? liveAmount;
     try {
-      amount = state.amount(recipient: 0);
+      liveAmount = state.amount(recipient: 0);
     } on AmountError catch (e) {
       assert(() {
         print('Must have valid amount at this point: $e');
@@ -129,6 +133,7 @@ class _WalletSendPageState extends State<WalletSendPage> {
       }());
       prevPageOrPop(null);
     }
+    final amount = plan?.recipientValue(index: 0) ?? liveAmount;
 
     Widget leadingCard(String data) {
       return Card(
