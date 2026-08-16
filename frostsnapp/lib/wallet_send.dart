@@ -7,6 +7,7 @@ import 'package:frostsnap/maybe_fullscreen_dialog.dart';
 import 'package:frostsnap/snackbar.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/broadcast.dart';
+import 'package:frostsnap/src/rust/api/send.dart';
 import 'package:frostsnap/src/rust/api/signing.dart';
 import 'package:frostsnap/src/rust/api/super_wallet.dart';
 import 'package:frostsnap/src/rust/api/transaction.dart';
@@ -49,6 +50,10 @@ class _WalletSendPageState extends State<WalletSendPage> {
 
   late final ScrollController scrollController;
   late final BuildTxState state;
+
+  /// The coin selection confirming the amount produced. Reserves nothing; committing it (the
+  /// "Sign transaction" tap) is what allocates the change address.
+  SendPlan? plan;
 
   late final AddressInputController addrController;
   String? addrError;
@@ -114,9 +119,13 @@ class _WalletSendPageState extends State<WalletSendPage> {
 
     final isSendMax = state.isSendMax(recipient: 0);
 
-    int? amount;
+    // Queried for its side effect: an amount that has since become invalid sends the user back
+    // to fix it. The value displayed comes from the plan, not from here — under send max this
+    // asks the wallet for the max as it stands now, which a deposit landing while the user
+    // picks signers would raise above what the planned transaction actually pays.
+    int? liveAmount;
     try {
-      amount = state.amount(recipient: 0);
+      liveAmount = state.amount(recipient: 0);
     } on AmountError catch (e) {
       assert(() {
         print('Must have valid amount at this point: $e');
@@ -124,6 +133,7 @@ class _WalletSendPageState extends State<WalletSendPage> {
       }());
       prevPageOrPop(null);
     }
+    final amount = plan?.recipientValue(index: 0) ?? liveAmount;
 
     Widget leadingCard(String data) {
       return Card(
@@ -173,7 +183,7 @@ class _WalletSendPageState extends State<WalletSendPage> {
             ],
           ),
           title: SatoshiText(
-            value: state.fee(),
+            value: plan?.fee(),
             style: TextStyle(color: theme.colorScheme.secondary),
           ),
         ),
@@ -556,14 +566,12 @@ class _WalletSendPageState extends State<WalletSendPage> {
   signersDone(BuildContext context) async {
     UnsignedTx? unsignedTx;
     try {
-      unsignedTx = state.tryFinish();
-    } on TryFinishTxError catch (e) {
-      final why = switch (e) {
-        TryFinishTxError.missingFeerate => 'No feerate',
-        TryFinishTxError.incompleteRecipientValues => 'No recipient amount',
-        TryFinishTxError.insufficientBalance => 'Insufficient Balance',
-      };
-      showErrorSnackbar(context, 'Invalid transaction: $why');
+      unsignedTx = widget.superWallet.commitSend(plan: plan!);
+    } catch (e) {
+      // The one real failure: a planned input was spent while this page was open. The plan is
+      // dead; send the user back to re-confirm the amount, which builds a fresh one.
+      showErrorSnackbar(context, 'Wallet changed while building: $e');
+      setState(() => pageIndex = SendPageIndex.amount);
     }
 
     final fsCtx = FrostsnapContext.of(context)!;
@@ -602,6 +610,17 @@ class _WalletSendPageState extends State<WalletSendPage> {
   }
 
   void amountDone(BuildContext context) {
+    try {
+      plan = state.tryFinish();
+    } on TryFinishTxError catch (e) {
+      final why = switch (e) {
+        TryFinishTxError.missingFeerate => 'No feerate',
+        TryFinishTxError.incompleteRecipientValues => 'No recipient amount',
+        TryFinishTxError.insufficientBalance => 'Insufficient Balance',
+      };
+      showErrorSnackbar(context, 'Invalid transaction: $why');
+      return;
+    }
     nextPageOrPop(null);
   }
 

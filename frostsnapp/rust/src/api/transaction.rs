@@ -8,7 +8,7 @@ use frostsnap_core::{AccessStructureId, DeviceId, MasterAppkey};
 
 use crate::api::bitcoin::BitcoinNetworkExt;
 use crate::api::broadcast::{Broadcast, UnitBroadcastSubscription};
-use crate::api::signing::UnsignedTx;
+use crate::api::send::SendPlan;
 use crate::frb_generated::RustAutoOpaque;
 
 use super::{
@@ -379,21 +379,32 @@ impl BuildTxState {
         }
     }
 
-    #[frb(sync, type_64bit_int)]
-    pub fn fee(&self) -> Option<u64> {
-        let inner = self.inner.read().unwrap();
-        let mut sw = self.super_wallet.inner.lock().unwrap();
-        sw.send_to(
-            self.frost_key.master_appkey(),
-            inner.recipients.iter().filter_map(|r| {
-                let addr = r.address.clone()?;
-                let amount = r.amount.map_or(Some(0), |a| a.value());
-                Some((addr, amount))
-            }),
-            inner.feerate()?,
-        )
-        .ok()?
-        .fee()
+    /// Coin-select the form into a [`SendPlan`] — the moment the amount is confirmed. The plan
+    /// is a pure value the flow holds and interrogates; nothing about the wallet changes until
+    /// it is passed back through `SuperWallet::commit_send`.
+    #[frb(sync)]
+    pub fn try_finish(&self) -> Result<SendPlan, TryFinishTxError> {
+        let (recipients, feerate) = {
+            let inner = self.inner.read().unwrap();
+            let feerate = inner.feerate().ok_or(TryFinishTxError::MissingFeerate)?;
+            let recipients = inner
+                .recipients
+                .iter()
+                .filter_map(|r| Some((r.address.clone()?, r.amount?.value())))
+                .collect::<Vec<_>>();
+            if recipients.len() != inner.recipients.len() {
+                return Err(TryFinishTxError::IncompleteRecipientValues);
+            }
+            (recipients, feerate)
+        };
+        let plan = self
+            .super_wallet
+            .inner
+            .lock()
+            .unwrap()
+            .plan_send(self.frost_key.master_appkey(), recipients, feerate)
+            .map_err(|_| TryFinishTxError::InsufficientBalance)?;
+        Ok(SendPlan(plan))
     }
 
     #[frb(sync)]
@@ -562,29 +573,6 @@ impl BuildTxState {
 
     fn _trigger_changed(&self) {
         self.broadcast.add(&());
-    }
-
-    #[frb(sync)]
-    pub fn try_finish(&self) -> Result<UnsignedTx, TryFinishTxError> {
-        let master_appkey = self.master_appkey();
-
-        let inner = self.inner.read().unwrap();
-        let feerate = inner.feerate().ok_or(TryFinishTxError::MissingFeerate)?;
-        let recipients = inner
-            .recipients
-            .iter()
-            .filter_map(|r| Some((r.address.clone()?, r.amount?.value())))
-            .collect::<Vec<_>>();
-        if recipients.len() != inner.recipients.len() {
-            return Err(TryFinishTxError::IncompleteRecipientValues);
-        }
-        drop(inner);
-
-        let mut sw_inner = self.super_wallet.inner.lock().unwrap();
-        sw_inner
-            .send_to(master_appkey, recipients, feerate)
-            .map(|template_tx| UnsignedTx { template_tx })
-            .map_err(|_| TryFinishTxError::InsufficientBalance)
     }
 }
 

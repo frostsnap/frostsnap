@@ -14,6 +14,7 @@ pub mod port;
 pub mod psbt_manager;
 pub mod qr;
 pub mod recovery;
+pub mod send;
 pub mod settings;
 pub mod signing;
 pub mod super_wallet;
