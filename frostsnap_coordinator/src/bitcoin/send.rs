@@ -4,7 +4,7 @@
 //! re-plan) as often as it likes — a fee display bound to a plan cannot move the wallet's
 //! keychain indices.
 
-use super::wallet::CoordSuperWallet;
+use super::wallet::{CoordSuperWallet, KeychainId};
 use anyhow::{anyhow, Result};
 use bdk_chain::{
     bitcoin::{self, Amount, OutPoint, TxOut},
@@ -20,8 +20,16 @@ use frostsnap_core::{
     tweak::{BitcoinAccountKeychain, BitcoinBip32Path},
     MasterAppkey,
 };
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use tracing::{event, Level};
+
+/// A coin a restore with this scan window cannot reach gets force-spent by every plan. From
+/// last used index p a restore derives p+1..=p+window and stalls where no history appears; 20
+/// is BIP44's gap limit, the strictest convention in common use, and defending it covers every
+/// wider window too (bdk's default 25 included) — whatever a 20-window crawl reaches, a wider
+/// one reaches a fortiori. It must stay below the wallet's own lookahead — a coin past a bigger
+/// gap never enters the UTXO set, so there is nothing to force.
+const RISKY_GAP: u32 = 20;
 
 /// A finished coin selection that has reserved nothing.
 ///
@@ -109,22 +117,22 @@ impl CoordSuperWallet {
             target_outputs
         };
 
-        let utxos: Vec<(_, bdk_chain::FullTxOut<_>)> = self
-            .tx_graph
-            .graph()
-            .filter_chain_unspents(
-                self.chain.as_ref(),
-                self.chain.tip().block_id(),
-                CanonicalizationParams::default(),
-                self.tx_graph
-                    .index
-                    .keychain_outpoints_in_range(Self::key_index_range(master_appkey)),
-            )
-            .collect();
+        let (keychain_indices, utxos): (Vec<(KeychainId, u32)>, Vec<bdk_chain::FullTxOut<_>>) =
+            self.tx_graph
+                .graph()
+                .filter_chain_unspents(
+                    self.chain.as_ref(),
+                    self.chain.tip().block_id(),
+                    CanonicalizationParams::default(),
+                    self.tx_graph
+                        .index
+                        .keychain_outpoints_in_range(Self::key_index_range(master_appkey)),
+                )
+                .unzip();
 
         let candidates = utxos
             .iter()
-            .map(|(_path, utxo)| Candidate {
+            .map(|utxo| Candidate {
                 input_count: 1,
                 value: utxo.txout.value.to_sat(),
                 weight: TR_KEYSPEND_TXIN_WEIGHT,
@@ -173,6 +181,9 @@ impl CoordSuperWallet {
         );
 
         let mut cs = CoinSelector::new(&candidates);
+        for position in self.gap_stranded(master_appkey, &keychain_indices) {
+            cs.select(position);
+        }
         let metric = metrics::LowestFee {
             target,
             long_term_feerate: long_term_feerate_guess,
@@ -190,14 +201,16 @@ impl CoordSuperWallet {
         }
 
         let selected = cs
-            .apply_selection(&utxos)
-            .map(|(((_, account_keychain), index), utxo)| {
+            .selected_indices()
+            .iter()
+            .map(|&position| {
+                let ((_, account_keychain), index) = keychain_indices[position];
                 (
                     BitcoinBip32Path {
-                        account_keychain: *account_keychain,
-                        index: *index,
+                        account_keychain,
+                        index,
                     },
-                    utxo.outpoint,
+                    utxos[position].outpoint,
                 )
             })
             .collect();
@@ -214,6 +227,43 @@ impl CoordSuperWallet {
                 .saturating_sub(recipient_value)
                 .saturating_sub(change_value.unwrap_or(0)),
         })
+    }
+
+    /// Positions in `coins` of ones a [`RISKY_GAP`]-window restore cannot discover, found by
+    /// simulating its crawl per keychain: the window starts covering the first RISKY_GAP indices,
+    /// and each REACHABLE used index u extends it through u + RISKY_GAP. Reachability is
+    /// transitive — history sitting above the window extends nothing, so a whole cluster above
+    /// one wide gap is stranded together; measuring only the run below each coin would let
+    /// unreachable history reset the gap and leave the cluster's upper coins stranded forever.
+    /// "Used" is the indexer's is_used semantics — some txout was indexed there, spent or not —
+    /// because spent history feeds a restore's crawl just the same.
+    fn gap_stranded(&self, master_appkey: MasterAppkey, coins: &[(KeychainId, u32)]) -> Vec<usize> {
+        let mut used: BTreeMap<KeychainId, BTreeSet<u32>> = BTreeMap::new();
+        for ((keychain, index), _) in self
+            .tx_graph
+            .index
+            .keychain_outpoints_in_range(Self::key_index_range(master_appkey))
+        {
+            used.entry(keychain).or_default().insert(index);
+        }
+        let mut stranded: BTreeMap<KeychainId, BTreeSet<u32>> = BTreeMap::new();
+        for (keychain, indices) in &used {
+            let unreachable = stranded.entry(*keychain).or_default();
+            let mut reach = RISKY_GAP - 1;
+            for &index in indices {
+                if index <= reach {
+                    reach = index + RISKY_GAP;
+                } else {
+                    unreachable.insert(index);
+                }
+            }
+        }
+        coins
+            .iter()
+            .enumerate()
+            .filter(|(_, (keychain, index))| stranded[keychain].contains(index))
+            .map(|(position, _)| position)
+            .collect()
     }
 
     /// Turn a [`SendPlan`] into a signable template. This is the wallet's single change-address
@@ -381,7 +431,7 @@ mod test {
         }
 
         /// Deliver a confirmed external payment the way a sync would.
-        fn fund(&mut self, index: u32, value: u64, height: u32) {
+        fn fund(&mut self, index: u32, value: u64, height: u32) -> OutPoint {
             let spk = crate::bitcoin::peek_spk(
                 self.master_appkey,
                 BitcoinBip32Path {
@@ -426,6 +476,10 @@ mod test {
                     ),
                 })
                 .unwrap();
+            OutPoint {
+                txid: tx.compute_txid(),
+                vout: 0,
+            }
         }
 
         fn last_revealed_internal(&self) -> Option<u32> {
@@ -531,6 +585,92 @@ mod test {
             .next()
             .expect("send has a change output");
         assert_eq!(change_index, 1);
+    }
+
+    /// The external-keychain indices the policy would force-spend, straight off the fixture.
+    fn stranded_external_indices(f: &Fixture) -> Vec<u32> {
+        let w = &f.wallet;
+        let (keychain_indices, _): (Vec<(KeychainId, u32)>, Vec<bdk_chain::FullTxOut<_>>) =
+            w.tx_graph
+                .graph()
+                .filter_chain_unspents(
+                    w.chain.as_ref(),
+                    w.chain.tip().block_id(),
+                    CanonicalizationParams::default(),
+                    w.tx_graph.index.keychain_outpoints_in_range(
+                        CoordSuperWallet::key_index_range(f.master_appkey),
+                    ),
+                )
+                .unzip();
+        w.gap_stranded(f.master_appkey, &keychain_indices)
+            .into_iter()
+            .map(|position| keychain_indices[position].1)
+            .collect()
+    }
+
+    /// The first index a BIP44-window restore cannot discover is 21 past the last used one (20
+    /// never-used below it) — an ordinary send must consolidate the coin sitting there even
+    /// though the target needs nothing from it.
+    #[test]
+    fn an_ordinary_send_consolidates_gap_stranded_coins() {
+        let mut f = Fixture::new();
+        f.fund(0, 1_000_000, 100);
+        let stranded = f.fund(21, 500_000, 101);
+
+        let plan = f.plan(10_000);
+        assert!(
+            plan.selected
+                .iter()
+                .any(|&(_, outpoint)| outpoint == stranded),
+            "the coin past the risky gap must be force-spent"
+        );
+        f.wallet.commit_send(&plan, []).unwrap();
+    }
+
+    /// One index closer and a restore still finds it: a gap of 19 forces nothing.
+    #[test]
+    fn a_lookahead_safe_gap_is_not_forced() {
+        let mut f = Fixture::new();
+        f.fund(0, 1_000_000, 100);
+        f.fund(20, 500_000, 101);
+        assert_eq!(stranded_external_indices(&f), Vec::<u32>::new());
+    }
+
+    /// Recovery is transitive: history a restore cannot reach extends nothing. With coins at 30
+    /// and 45 above one wide gap, BOTH are invisible to a restore stalled at the gap — forcing
+    /// only 30 (whose local run is wide) and not 45 (whose local run is 14) would leave 45
+    /// stranded forever, since 30's spent history keeps 45's local run short after the sweep.
+    #[test]
+    fn coins_clustered_above_one_gap_are_all_forced() {
+        let mut f = Fixture::new();
+        f.fund(0, 1_000_000, 100);
+        f.fund(30, 500_000, 101);
+        f.fund(45, 500_000, 102);
+        assert_eq!(stranded_external_indices(&f), vec![30, 45]);
+    }
+
+    /// A spent-through index still shows history to a restore's crawl, so it resets the gap
+    /// here too: with index 13 spent, the crawl chains 0 → 13 → 26 in sub-window hops.
+    #[test]
+    fn spent_history_resets_the_gap() {
+        let mut f = Fixture::new();
+        f.fund(0, 1_000_000, 100);
+        let spent = f.fund(13, 200_000, 101);
+        let spend = bitcoin::Transaction {
+            version: bitcoin::transaction::Version::TWO,
+            lock_time: bitcoin::absolute::LockTime::ZERO,
+            input: vec![TxIn {
+                previous_output: spent,
+                ..Default::default()
+            }],
+            output: vec![TxOut {
+                value: Amount::from_sat(150_000),
+                script_pubkey: bitcoin::ScriptBuf::new_op_return([]),
+            }],
+        };
+        f.wallet.broadcast_success(spend);
+        f.fund(26, 500_000, 102);
+        assert_eq!(stranded_external_indices(&f), Vec::<u32>::new());
     }
 
     #[test]
