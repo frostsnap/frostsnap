@@ -182,7 +182,12 @@ impl CoordSuperWallet {
 
         let mut cs = CoinSelector::new(&candidates);
         for position in self.gap_stranded(master_appkey, &keychain_indices) {
-            cs.select(position);
+            // A coin below its spend cost is the same coin `calculate_avaliable_value` leaves
+            // out of the spendable figure, so forcing it would both destroy value and set a
+            // target the selection can no longer fund.
+            if candidates[position].effective_value(target.fee.rate) > 0.0 {
+                cs.select(position);
+            }
         }
         let metric = metrics::LowestFee {
             target,
@@ -237,6 +242,9 @@ impl CoordSuperWallet {
     /// unreachable history reset the gap and leave the cluster's upper coins stranded forever.
     /// "Used" is the indexer's is_used semantics — some txout was indexed there, spent or not —
     /// because spent history feeds a restore's crawl just the same.
+    ///
+    /// Send max is deliberately not special-cased: its target is every effective coin, so a
+    /// stranded coin worth spending is already in the selection and forcing it changes nothing.
     fn gap_stranded(&self, master_appkey: MasterAppkey, coins: &[(KeychainId, u32)]) -> Vec<usize> {
         let mut used: BTreeMap<KeychainId, BTreeSet<u32>> = BTreeMap::new();
         for ((keychain, index), _) in self
@@ -432,10 +440,22 @@ mod test {
 
         /// Deliver a confirmed external payment the way a sync would.
         fn fund(&mut self, index: u32, value: u64, height: u32) -> OutPoint {
+            self.fund_keychain(BitcoinAccountKeychain::external(), index, value, height)
+        }
+
+        /// Deliver a confirmed payment to either keychain. Change lands on the internal one,
+        /// which is where the burned indices are.
+        fn fund_keychain(
+            &mut self,
+            account_keychain: BitcoinAccountKeychain,
+            index: u32,
+            value: u64,
+            height: u32,
+        ) -> OutPoint {
             let spk = crate::bitcoin::peek_spk(
                 self.master_appkey,
                 BitcoinBip32Path {
-                    account_keychain: BitcoinAccountKeychain::external(),
+                    account_keychain,
                     index,
                 },
             );
@@ -466,11 +486,7 @@ mod test {
             self.wallet
                 .apply_update(bdk_electrum_streaming::Update {
                     tx_update,
-                    last_active_indices: [(
-                        (self.master_appkey, BitcoinAccountKeychain::external()),
-                        index,
-                    )]
-                    .into(),
+                    last_active_indices: [((self.master_appkey, account_keychain), index)].into(),
                     chain_update: Some(
                         CheckPoint::from_block_ids(self.blocks.iter().copied()).unwrap(),
                     ),
@@ -641,7 +657,7 @@ mod test {
     /// only 30 (whose local run is wide) and not 45 (whose local run is 14) would leave 45
     /// stranded forever, since 30's spent history keeps 45's local run short after the sweep.
     #[test]
-    fn coins_clustered_above_one_gap_are_all_forced() {
+    fn gap_stranded_reports_a_whole_cluster() {
         let mut f = Fixture::new();
         f.fund(0, 1_000_000, 100);
         f.fund(30, 500_000, 101);
@@ -671,6 +687,49 @@ mod test {
         f.wallet.broadcast_success(spend);
         f.fund(26, 500_000, 102);
         assert_eq!(stranded_external_indices(&f), Vec::<u32>::new());
+    }
+
+    /// The internal keychain is where the burned change indices are, so scattered change is
+    /// what a restore cannot reach. The policy has to defend it exactly as it defends receive
+    /// addresses.
+    #[test]
+    fn a_stranded_change_coin_is_forced_too() {
+        let mut f = Fixture::new();
+        f.fund(0, 1_000_000, 100);
+        let stranded_change = f.fund_keychain(BitcoinAccountKeychain::internal(), 21, 500_000, 101);
+
+        let plan = f.plan(10_000);
+        assert!(
+            plan.selected
+                .iter()
+                .any(|&(_, outpoint)| outpoint == stranded_change),
+            "change past the risky gap must be force-spent too"
+        );
+    }
+
+    /// Rescue must not cost the user their send. A coin worth less than it costs to spend is
+    /// left out of the spendable figure, so forcing it would set a target the selection cannot
+    /// fund and send max would fail outright on a wallet with a full balance.
+    #[test]
+    fn a_stranded_coin_below_its_spend_cost_is_left_alone() {
+        let mut f = Fixture::new();
+        f.fund(0, 1_000_000, 100);
+        let dust = f.fund(21, 300, 101); // past the risky gap, under its own spend cost here
+
+        let available =
+            f.wallet
+                .calculate_avaliable_value(f.master_appkey, [f.recipient.clone()], 10.0, true);
+        let plan = match f
+            .wallet
+            .plan_send(f.master_appkey, [(f.recipient.clone(), None)], 10.0)
+        {
+            Ok(plan) => plan,
+            Err(e) => panic!("wallet advertises {available} spendable but send max fails: {e}"),
+        };
+        assert!(
+            !plan.selected.iter().any(|&(_, outpoint)| outpoint == dust),
+            "moving it costs more than it carries, so it stays where it is"
+        );
     }
 
     #[test]
