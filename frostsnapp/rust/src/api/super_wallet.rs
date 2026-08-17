@@ -275,6 +275,34 @@ impl SuperWallet {
         }
     }
 
+    /// Scan for change that a gap-limit restore left invisible and reclaim it.
+    ///
+    /// Entirely local (no network requests) and cheap when nothing changed since the last scan,
+    /// so fire-and-forget this whenever a wallet is opened — offline included. There is
+    /// deliberately no blocking scan UI: a full first pass (two keychains × 1000 candidate
+    /// derivations) measures 70–90ms (release/debug, Apple M-series) — the async call just
+    /// keeps it off the UI thread. A recovery pushes the refreshed tx list to wallet
+    /// subscribers, which is also what refreshes the gap-stranded banner.
+    pub fn recovery_scan(&self, master_appkey: MasterAppkey) -> Result<()> {
+        let mut inner = self.inner.lock().unwrap();
+        let report = inner.recovery_scan(master_appkey)?;
+        if !report.revealed.is_empty() {
+            let wallet_streams = self.wallet_streams.lock().unwrap();
+            if let Some(stream) = wallet_streams.get(&master_appkey) {
+                let txs = inner.list_transactions(master_appkey);
+                let _ = stream.add(txs.into());
+            }
+        }
+        Ok(())
+    }
+
+    /// How many spendable coins a standard restore could miss, and their total sats — the
+    /// wallet's next outgoing transaction consolidates them automatically.
+    #[frb(sync, type_64bit_int)]
+    pub fn gap_stranded_value(&self, master_appkey: MasterAppkey) -> (u64, u64) {
+        self.inner.lock().unwrap().gap_stranded_value(master_appkey)
+    }
+
     pub fn psbt_to_unsigned_tx(
         &self,
         psbt: &Psbt,

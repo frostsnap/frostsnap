@@ -37,7 +37,8 @@ pub type WalletIndexedTxGraphChangeSet =
 pub struct CoordSuperWallet {
     pub(super) tx_graph: Persisted<WalletIndexedTxGraph>,
     pub(super) chain: Persisted<local_chain::LocalChain>,
-    chain_client: ChainClient,
+    pub(super) recovery_scan_state: Persisted<super::recovery_scan::RecoveryScanState>,
+    pub(super) chain_client: ChainClient,
     pub network: bitcoin::Network,
     pub(super) db: Arc<Mutex<rusqlite::Connection>>,
 }
@@ -61,12 +62,15 @@ impl CoordSuperWallet {
             bitcoin::constants::genesis_block(network).block_hash(),
         )
         .context("loading chain from database")?;
+        let recovery_scan_state =
+            Persisted::new(&mut *db_, ()).context("loading recovery scan state")?;
 
         drop(db_);
 
         Ok(Self {
             tx_graph,
             chain,
+            recovery_scan_state,
             chain_client,
             db,
             network,

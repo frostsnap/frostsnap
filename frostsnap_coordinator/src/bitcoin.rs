@@ -2,8 +2,11 @@ pub mod chain_sync;
 mod handler_state;
 pub mod outgoing;
 pub mod psbt;
+pub mod recovery_scan;
 pub mod send;
 pub mod status_tracker;
+#[cfg(test)]
+pub(crate) mod test_util;
 pub mod tofu;
 pub mod wallet;
 mod wallet_persist;

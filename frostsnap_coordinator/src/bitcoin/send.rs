@@ -274,6 +274,40 @@ impl CoordSuperWallet {
             .collect()
     }
 
+    /// How many spendable coins a [`RISKY_GAP`]-window restore could not discover, and their
+    /// total value in sats. These are exactly the coins the next outgoing plan
+    /// force-consolidates (see [`Self::plan_send`]) — surfacing them lets the app nudge the
+    /// user to make that transaction. Coins below their own spend cost at a modest 10 sat/vB
+    /// are excluded: rescuing one of those eats the coin, so it isn't worth nudging about.
+    pub fn gap_stranded_value(&mut self, master_appkey: MasterAppkey) -> (u64, u64) {
+        self.lazily_initialize_key(master_appkey);
+        let (keychain_indices, utxos): (Vec<(KeychainId, u32)>, Vec<bdk_chain::FullTxOut<_>>) =
+            self.tx_graph
+                .graph()
+                .filter_chain_unspents(
+                    self.chain.as_ref(),
+                    self.chain.tip().block_id(),
+                    CanonicalizationParams::default(),
+                    self.tx_graph
+                        .index
+                        .keychain_outpoints_in_range(Self::key_index_range(master_appkey)),
+                )
+                .unzip();
+        self.gap_stranded(master_appkey, &keychain_indices)
+            .into_iter()
+            .filter_map(|position| {
+                let candidate = Candidate {
+                    input_count: 1,
+                    value: utxos[position].txout.value.to_sat(),
+                    weight: TR_KEYSPEND_TXIN_WEIGHT,
+                    is_segwit: true,
+                };
+                (candidate.effective_value(FeeRate::from_sat_per_vb(10.0)) > 0.0)
+                    .then_some(candidate.value)
+            })
+            .fold((0, 0), |(count, sats), value| (count + 1, sats + value))
+    }
+
     /// Turn a [`SendPlan`] into a signable template. This is the wallet's single change-address
     /// allocation point: the lowest revealed-unused index not in `reserved_change`, revealing
     /// fresh only when nothing passes. `reserved_change` is the caller's view of in-flight
@@ -705,6 +739,21 @@ mod test {
                 .any(|&(_, outpoint)| outpoint == stranded_change),
             "change past the risky gap must be force-spent too"
         );
+    }
+
+    /// The nudge and the rescue must agree: the summary counts exactly the coins a plan would
+    /// force, so a banner built on it can always be satisfied by one send.
+    #[test]
+    fn gap_stranded_value_counts_only_rescuable_coins() {
+        let mut f = Fixture::new();
+        f.fund(0, 1_000_000, 100);
+        assert_eq!(f.wallet.gap_stranded_value(f.master_appkey), (0, 0));
+
+        f.fund(30, 500_000, 101);
+        // Stranded and above its spend cost at the 1 sat/vB relay floor, but below it at the
+        // summary's 10 sat/vB bar — pins that the bar is 10, not merely relayable.
+        f.fund(45, 300, 102);
+        assert_eq!(f.wallet.gap_stranded_value(f.master_appkey), (1, 500_000));
     }
 
     /// Rescue must not cost the user their send. A coin worth less than it costs to spend is

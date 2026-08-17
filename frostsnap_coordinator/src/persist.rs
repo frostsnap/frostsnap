@@ -181,6 +181,23 @@ impl<T: Deref<Target = bdk_chain::bitcoin::Transaction>> ToSql for SqlBitcoinTra
     }
 }
 
+pub struct SqlMasterAppkey(pub frostsnap_core::MasterAppkey);
+
+impl FromSql for SqlMasterAppkey {
+    fn column_result(value: rusqlite::types::ValueRef<'_>) -> rusqlite::types::FromSqlResult<Self> {
+        Ok(SqlMasterAppkey(
+            frostsnap_core::MasterAppkey::from_str(value.as_str()?)
+                .map_err(|e| FromSqlError::Other(Box::new(e)))?,
+        ))
+    }
+}
+
+impl ToSql for SqlMasterAppkey {
+    fn to_sql(&self) -> rusqlite::Result<ToSqlOutput<'_>> {
+        Ok(ToSqlOutput::from(self.0.to_string()))
+    }
+}
+
 pub struct SqlTxid(pub bdk_chain::bitcoin::Txid);
 
 impl FromSql for SqlTxid {

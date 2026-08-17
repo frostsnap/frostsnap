@@ -182,6 +182,9 @@ impl ChainClient {
         block_on(response)?
     }
 
+    /// Track `keychain` through `next_index` plus lookahead. Re-calling with a larger
+    /// `next_index` widens the live subscription window in place (bdk_electrum_streaming
+    /// >= 0.5.3); equal or smaller is a no-op, so the window never narrows.
     pub fn monitor_keychain(&self, keychain: KeychainId, next_index: u32) {
         self.start_client();
         let descriptor = descriptor_for_account_keychain(
@@ -413,8 +416,24 @@ impl ConnectionHandler {
                     continue;
                 }
             };
-            if changed {
-                for master_appkey in master_appkeys {
+            for master_appkey in master_appkeys {
+                // A sync can deliver an outgoing tx whose change is stranded past the reveal
+                // frontier; reconcile before emitting so the txs below already carry the
+                // recovered attributions. Not gated on `changed`: for a wallet whose stranded
+                // tx is already persisted, every update is a no-op changeset and this is the
+                // only automatic caller. Cheap when nothing new arrived.
+                let recovered = match wallet.recovery_scan(master_appkey) {
+                    Ok(report) => !report.revealed.is_empty(),
+                    Err(err) => {
+                        tracing::error!(
+                            master_appkey = master_appkey.to_redacted_string(),
+                            error = err.to_string(),
+                            "recovery scan after sync failed"
+                        );
+                        false
+                    }
+                };
+                if changed || recovered {
                     let txs = wallet.list_transactions(master_appkey);
                     action(master_appkey, txs);
                 }
@@ -714,4 +733,203 @@ pub enum ChainStatusState {
     Connecting,
     Connected,
     Disconnected,
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::bitcoin::test_util::{
+        foreign_spk, test_chain_client, test_db, tx_paying, Fixture, EXTERNAL, INTERNAL,
+    };
+    use bdk_chain::bitcoin::OutPoint;
+    use bdk_electrum_streaming::electrum_streaming_client::ElectrumScriptHash;
+    use bdk_electrum_streaming::ClientAction;
+    use frostsnap_core::schnorr_fun::fun::Point;
+    use frostsnap_core::tweak::{BitcoinAccountKeychain, BitcoinBip32Path};
+
+    fn test_client() -> (ChainClient, ConnectionHandler) {
+        test_chain_client(&test_db())
+    }
+
+    fn spk_hash_at(keychain: KeychainId, index: u32) -> ElectrumScriptHash {
+        let spk = crate::bitcoin::peek_spk(
+            keychain.0,
+            BitcoinBip32Path {
+                account_keychain: keychain.1,
+                index,
+            },
+        );
+        ElectrumScriptHash::new(&spk)
+    }
+
+    /// Pins the upstream contract the recovery scan's monitoring handoff rides on
+    /// (bdk_electrum_streaming >= 0.5.3): re-inserting the SAME descriptor with a larger
+    /// `next_index` widens the tracked window in place, and equal or smaller never narrows it.
+    #[test]
+    fn re_tracking_a_descriptor_widens_and_never_narrows() {
+        let master_appkey =
+            MasterAppkey::derive_from_rootkey(Point::random(&mut rand::thread_rng()));
+        let keychain = (master_appkey, BitcoinAccountKeychain::internal());
+        let lookahead = 50;
+        let descriptor = descriptor_for_account_keychain(keychain, bitcoin::NetworkKind::Main);
+
+        let mut tracker = DerivedSpkTracker::new(lookahead);
+        tracker.insert_descriptor(keychain, descriptor.clone(), 5);
+        assert_eq!(tracker.index_of_spk_hash(spk_hash_at(keychain, 900)), None);
+
+        let widened = tracker.insert_descriptor(keychain, descriptor.clone(), 901);
+        assert!(
+            !widened.is_empty(),
+            "widening must hand back new hashes to subscribe"
+        );
+        assert_eq!(
+            tracker.index_of_spk_hash(spk_hash_at(keychain, 900)),
+            Some((keychain, 900)),
+            "the matched index must be watched"
+        );
+        assert_eq!(
+            tracker.index_of_spk_hash(spk_hash_at(keychain, 901 + lookahead + 1)),
+            Some((keychain, 901 + lookahead + 1)),
+            "lookahead extends past next_index"
+        );
+        assert_eq!(
+            tracker.index_of_spk_hash(spk_hash_at(keychain, 901 + lookahead + 2)),
+            None
+        );
+
+        assert!(
+            tracker
+                .insert_descriptor(keychain, descriptor, 5)
+                .is_empty(),
+            "a smaller next_index must be a no-op"
+        );
+        assert_eq!(
+            tracker.index_of_spk_hash(spk_hash_at(keychain, 900)),
+            Some((keychain, 900)),
+            "the window must never narrow"
+        );
+    }
+
+    #[test]
+    fn monitor_keychain_forwards_the_widened_window() {
+        let (client, mut handler) = test_client();
+        let master_appkey =
+            MasterAppkey::derive_from_rootkey(Point::random(&mut rand::thread_rng()));
+        let keychain = (master_appkey, BitcoinAccountKeychain::external());
+
+        client.monitor_keychain(keychain, 5);
+        assert!(matches!(
+            handler.client_recv.try_recv().unwrap(),
+            ClientAction::AddDescriptor { next_index: 5, .. }
+        ));
+
+        client.monitor_keychain(keychain, 901);
+        assert!(matches!(
+            handler.client_recv.try_recv().unwrap(),
+            ClientAction::AddDescriptor {
+                next_index: 901,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn a_sync_update_triggers_the_recovery_scan() {
+        let fixture = Fixture::new();
+        let wallet = Arc::new(sync::Mutex::new(fixture.wallet()));
+
+        let receive = tx_paying(vec![], vec![(fixture.spk(EXTERNAL(), 0), 100_000)]);
+        let burn = tx_paying(
+            vec![OutPoint {
+                txid: receive.compute_txid(),
+                vout: 0,
+            }],
+            vec![
+                (foreign_spk(), 60_000),
+                (fixture.spk(INTERNAL(), 800), 30_000),
+            ],
+        );
+        let burn_txid = burn.compute_txid();
+
+        let (update_tx, update_rx) = mpsc::unbounded();
+        update_tx
+            .unbounded_send(fixture.update(vec![receive], 100, Some((EXTERNAL(), 0))))
+            .unwrap();
+        // the spend shows up in external 0's history, which is what attributes it to the key
+        update_tx
+            .unbounded_send(fixture.update(vec![burn], 101, Some((EXTERNAL(), 0))))
+            .unwrap();
+        drop(update_tx);
+
+        let emitted: Arc<sync::Mutex<Vec<Vec<crate::bitcoin::wallet::Transaction>>>> =
+            Default::default();
+        ConnectionHandler::handle_wallet_updates(wallet.clone(), update_rx, {
+            let emitted = emitted.clone();
+            move |_, txs| emitted.lock().unwrap().push(txs)
+        });
+
+        let wallet = wallet.lock().unwrap();
+        assert_eq!(
+            wallet
+                .tx_graph
+                .index
+                .last_revealed_index((fixture.master_appkey, INTERNAL())),
+            Some(800),
+            "the update handler must run the recovery scan"
+        );
+        let emitted = emitted.lock().unwrap();
+        let last = emitted.last().unwrap();
+        let burn_row = last.iter().find(|tx| tx.txid == burn_txid).unwrap();
+        assert!(
+            !burn_row.is_mine.is_empty(),
+            "the emitted txs must already carry the recovered attribution"
+        );
+    }
+
+    /// An upgraded wallet can hold a stranded outgoing tx that is already fully persisted:
+    /// every sync then applies as an empty changeset, and an update naming the key is the only
+    /// signal there is. Recovery must not be gated on the changeset.
+    #[test]
+    fn a_no_op_update_still_triggers_the_recovery_scan() {
+        let fixture = Fixture::new();
+        let mut prepopulated = fixture.wallet();
+        let (_, burn_txid) = crate::bitcoin::test_util::fund_and_burn(
+            &fixture,
+            &mut prepopulated,
+            Some((800, 30_000)),
+        );
+        drop(prepopulated);
+        let wallet = Arc::new(sync::Mutex::new(fixture.wallet()));
+
+        let (update_tx, update_rx) = mpsc::unbounded();
+        update_tx
+            .unbounded_send(bdk_electrum_streaming::Update {
+                tx_update: bdk_chain::TxUpdate::default(),
+                chain_update: None,
+                last_active_indices: [((fixture.master_appkey, EXTERNAL()), 0)].into(),
+            })
+            .unwrap();
+        drop(update_tx);
+
+        let emitted: Arc<sync::Mutex<Vec<Vec<crate::bitcoin::wallet::Transaction>>>> =
+            Default::default();
+        ConnectionHandler::handle_wallet_updates(wallet.clone(), update_rx, {
+            let emitted = emitted.clone();
+            move |_, txs| emitted.lock().unwrap().push(txs)
+        });
+
+        let wallet = wallet.lock().unwrap();
+        assert_eq!(
+            wallet
+                .tx_graph
+                .index
+                .last_revealed_index((fixture.master_appkey, INTERNAL())),
+            Some(800),
+            "an empty changeset must not skip the scan"
+        );
+        let emitted = emitted.lock().unwrap();
+        let last = emitted.last().expect("recovery alone must emit");
+        let burn_row = last.iter().find(|tx| tx.txid == burn_txid).unwrap();
+        assert!(!burn_row.is_mine.is_empty());
+    }
 }
