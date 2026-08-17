@@ -93,8 +93,14 @@ fn owned_recipient_rides_in_the_normal_page_sequence() {
     assert!(page_is::<ConfirmationPage>(&list, 5));
 }
 
+/// The warning depends on what leaves the wallet, so adding an output that comes back to us must
+/// not change whether it fires. Same foreign value, same fee, same verdict.
 #[test]
-fn fee_warning_denominator_includes_owned_recipients() {
+fn owned_recipients_do_not_change_the_fee_warning() {
+    let foreign_only = pages(prompt(&[(1_000_000, None)], 60_000));
+    assert_eq!(foreign_only.len(), 5);
+    assert!(page_is::<WarningPage>(&foreign_only, 2));
+
     let with_owned = pages(prompt(
         &[
             (1_000_000, None),
@@ -102,12 +108,8 @@ fn fee_warning_denominator_includes_owned_recipients() {
         ],
         60_000,
     ));
-    assert_eq!(with_owned.len(), 6);
-    assert!(page_is::<FeePage>(&with_owned, 4));
-
-    let foreign_only = pages(prompt(&[(1_000_000, None)], 60_000));
-    assert_eq!(foreign_only.len(), 5);
-    assert!(page_is::<WarningPage>(&foreign_only, 2));
+    assert_eq!(with_owned.len(), 7);
+    assert!(page_is::<WarningPage>(&with_owned, 4));
 }
 
 #[test]
@@ -118,4 +120,20 @@ fn absolute_fee_threshold_fires_even_when_little_moves() {
     ));
     assert_eq!(list.len(), 5);
     assert!(page_is::<WarningPage>(&list, 2));
+}
+
+/// A self-payment must not dilute the value the proportional warning measures against. The fee
+/// here is 30% of the 200_000 actually leaving and sits below the absolute threshold, so the
+/// proportional rule is the only thing that can catch it.
+#[test]
+fn an_owned_output_does_not_dilute_the_foreign_value_the_warning_measures() {
+    let list = pages(prompt(
+        &[
+            (200_000, None),
+            (1_000_000, Some(BitcoinBip32Path::external(0))),
+        ],
+        60_000,
+    ));
+    assert_eq!(list.len(), 7);
+    assert!(page_is::<WarningPage>(&list, 4));
 }

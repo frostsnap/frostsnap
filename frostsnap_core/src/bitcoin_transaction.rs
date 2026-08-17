@@ -373,10 +373,36 @@ pub struct PromptSignBitcoinTx {
 }
 
 impl PromptSignBitcoinTx {
-    /// Total value the prompt itemises as moving. The proportional high-fee warning is
-    /// measured against this.
+    /// Total value the prompt itemises as moving.
     pub fn value_moved(&self) -> bitcoin::Amount {
         self.recipients.iter().map(|r| r.amount).sum()
+    }
+
+    /// What the proportional high-fee warning is measured against: the value at risk of
+    /// leaving the wallet.
+    ///
+    /// When anything goes to a foreign recipient that is the foreign total alone — outputs
+    /// returning to us are not at risk, and counting them would let a self-payment dilute the
+    /// ratio until a disproportionate fee stopped warning. When nothing leaves, the fee is the
+    /// only value the transaction actually consumes, so the self-spend total is the proxy that
+    /// keeps the warning armed.
+    pub fn value_at_risk(&self) -> bitcoin::Amount {
+        match self.foreign_value() {
+            Some(foreign) => foreign,
+            None => self.value_moved(),
+        }
+    }
+
+    /// The value leaving the wallet, or `None` when nothing does. Whichever arm this takes decides
+    /// both the denominator above and how the warning describes itself, so the two cannot drift.
+    pub fn foreign_value(&self) -> Option<bitcoin::Amount> {
+        let foreign: bitcoin::Amount = self
+            .recipients
+            .iter()
+            .filter(|r| r.owned.is_none())
+            .map(|r| r.amount)
+            .sum();
+        (foreign > bitcoin::Amount::ZERO).then_some(foreign)
     }
 }
 

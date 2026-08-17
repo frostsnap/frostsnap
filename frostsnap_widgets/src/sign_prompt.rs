@@ -208,9 +208,34 @@ pub struct WarningPage {
     >,
 }
 
+/// The two lines of the high-fee warning.
+///
+/// Pure and separately tested because the sentence must name the quantity the rule actually
+/// divided by, and nothing about rendering a page can catch it naming a different one. In a mixed
+/// send every output is titled "Send Amount #n", owned ones included, so "the amount sent" reads as
+/// the total and is wrong: the rule uses only what leaves.
+fn warning_lines(
+    fee_sats: u64,
+    leaves_wallet: bool,
+) -> (alloc::string::String, alloc::string::String) {
+    if fee_sats > HIGH_FEE_ABSOLUTE_THRESHOLD_SATS {
+        ("Fee is greater".to_string(), "than 0.001 BTC".to_string())
+    } else if leaves_wallet {
+        (
+            "Fee exceeds 5% of".to_string(),
+            "the amount leaving".to_string(),
+        )
+    } else {
+        (
+            "Fee exceeds 5% of".to_string(),
+            "the value moved".to_string(),
+        )
+    }
+}
+
 impl WarningPage {
     #[inline(never)]
-    fn new(fee_sats: u64) -> Self {
+    fn new(fee_sats: u64, leaves_wallet: bool) -> Self {
         let warning_bmp =
             Bmp::<Gray8>::from_slice(WARNING_ICON_DATA).expect("Failed to load warning icon BMP");
         let warning_icon = Image::new(GrayToAlpha::new(warning_bmp, PALETTE.warning));
@@ -233,14 +258,7 @@ impl WarningPage {
             Gray4TextStyle::new(FONT_CAUTION_TITLE, PALETTE.on_background),
         );
 
-        let (line1, line2) = if fee_sats > HIGH_FEE_ABSOLUTE_THRESHOLD_SATS {
-            ("Fee is greater".to_string(), "than 0.001 BTC".to_string())
-        } else {
-            (
-                "Fee exceeds 5% of".to_string(),
-                "the value moved".to_string(),
-            )
-        };
+        let (line1, line2) = warning_lines(fee_sats, leaves_wallet);
 
         let warning_text = Column::new((
             Text::new(
@@ -345,8 +363,8 @@ impl SignPromptPageList {
             return true;
         }
 
-        let moved_sats = prompt.value_moved().to_sat();
-        moved_sats > 0 && fee_sats > moved_sats * HIGH_FEE_PERCENTAGE_THRESHOLD / 100
+        let at_risk_sats = prompt.value_at_risk().to_sat();
+        at_risk_sats > 0 && fee_sats > at_risk_sats * HIGH_FEE_PERCENTAGE_THRESHOLD / 100
     }
 }
 
@@ -400,7 +418,10 @@ impl WidgetList for SignPromptPageList {
             }
         } else if Some(index) == warning_page {
             (
-                SignPromptPage::new(WarningPage::new(self.prompt.fee.to_sat())),
+                SignPromptPage::new(WarningPage::new(
+                    self.prompt.fee.to_sat(),
+                    self.prompt.foreign_value().is_some(),
+                )),
                 false,
             )
         } else if index == fee_page {
@@ -478,5 +499,29 @@ impl SignTxPrompt {
             }
         }
         false
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::warning_lines;
+
+    /// The sentence must name the quantity the rule divided by. In a mixed send every output is
+    /// titled "Send Amount #n", owned ones included, so wording that reads as the total is wrong:
+    /// the proportional rule uses only what leaves the wallet.
+    #[test]
+    fn the_warning_names_the_quantity_it_measured() {
+        assert_eq!(
+            warning_lines(60_000, true),
+            ("Fee exceeds 5% of".into(), "the amount leaving".into())
+        );
+        assert_eq!(
+            warning_lines(60_000, false),
+            ("Fee exceeds 5% of".into(), "the value moved".into())
+        );
+        assert_eq!(
+            warning_lines(150_000, true),
+            ("Fee is greater".into(), "than 0.001 BTC".into())
+        );
     }
 }
