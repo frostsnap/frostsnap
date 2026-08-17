@@ -1,4 +1,9 @@
-use crate::{bitcoin_transaction, device::KeyPurpose, tweak::AppTweak, MasterAppkey};
+use crate::{
+    bitcoin_transaction,
+    device::KeyPurpose,
+    tweak::{AppTweak, BitcoinAccount, BitcoinAccountKeychain, Keychain},
+    MasterAppkey,
+};
 use alloc::{boxed::Box, string::String, vec::Vec};
 use bitcoin::hashes::Hash;
 use schnorr_fun::{Message, Schnorr, Signature};
@@ -39,6 +44,33 @@ pub struct CheckedSignTask {
 }
 
 impl WireSignTask {
+    /// The internal (change) indices of `account` under `master_appkey` that this task's
+    /// transaction pays — the indices a wallet must not hand out as fresh change while the task
+    /// is in flight. Empty for non-Bitcoin tasks.
+    pub fn reserved_change_indices(
+        &self,
+        master_appkey: MasterAppkey,
+        account: BitcoinAccount,
+    ) -> impl Iterator<Item = u32> + '_ {
+        let internal = BitcoinAccountKeychain {
+            account,
+            keychain: Keychain::Internal,
+        };
+        let template = match self {
+            WireSignTask::BitcoinTransaction(template) => Some(template),
+            _ => None,
+        };
+        template.into_iter().flat_map(move |template| {
+            template
+                .iter_locally_owned_outputs()
+                .filter_map(move |(_, _, spk)| {
+                    (spk.master_appkey == master_appkey
+                        && spk.bip32_path.account_keychain == internal)
+                        .then_some(spk.bip32_path.index)
+                })
+        })
+    }
+
     pub fn check(
         self,
         master_appkey: MasterAppkey,

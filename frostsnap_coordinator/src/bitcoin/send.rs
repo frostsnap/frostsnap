@@ -8,6 +8,7 @@ use super::wallet::CoordSuperWallet;
 use anyhow::{anyhow, Result};
 use bdk_chain::{
     bitcoin::{self, Amount, OutPoint, TxOut},
+    indexer::keychain_txout,
     CanonicalizationParams,
 };
 use bdk_coin_select::{
@@ -19,6 +20,7 @@ use frostsnap_core::{
     tweak::{BitcoinAccountKeychain, BitcoinBip32Path},
     MasterAppkey,
 };
+use std::collections::BTreeSet;
 use tracing::{event, Level};
 
 /// A finished coin selection that has reserved nothing.
@@ -39,6 +41,10 @@ pub struct SendPlan {
 }
 
 impl SendPlan {
+    pub fn master_appkey(&self) -> MasterAppkey {
+        self.master_appkey
+    }
+
     pub fn change_value(&self) -> Option<u64> {
         self.change_value
     }
@@ -211,13 +217,21 @@ impl CoordSuperWallet {
     }
 
     /// Turn a [`SendPlan`] into a signable template. This is the wallet's single change-address
-    /// allocation point.
+    /// allocation point: the lowest revealed-unused index not in `reserved_change`, revealing
+    /// fresh only when nothing passes. `reserved_change` is the caller's view of in-flight
+    /// reservations (see [`reserved_change_indices`]); the wallet stores nothing. A fresh reveal
+    /// cannot collide with it, since reservations come from committed templates whose indices are
+    /// at or below the frontier.
     ///
     /// The plan pinned its inputs' immutable identities, so committing re-canonicalizes only
     /// the plan's own outpoints to re-check the one mutable fact: each must still be unspent —
     /// a plan can outlive a sync that spends one of its coins. The plan is dead then; the
     /// caller builds a new one.
-    pub fn commit_send(&mut self, plan: &SendPlan) -> Result<TransactionTemplate> {
+    pub fn commit_send(
+        &mut self,
+        plan: &SendPlan,
+        reserved_change: impl IntoIterator<Item = u32>,
+    ) -> Result<TransactionTemplate> {
         self.lazily_initialize_key(plan.master_appkey);
 
         let still_unspent = self
@@ -258,16 +272,24 @@ impl CoordSuperWallet {
 
         if let Some(value) = plan.change_value {
             let internal = (plan.master_appkey, BitcoinAccountKeychain::internal());
+            let reserved: BTreeSet<u32> = reserved_change.into_iter().collect();
             let mut db = self.db.lock().unwrap();
-            // No mark_used: it was RAM-only (the keychain changeset cannot carry it), so it died
-            // on restart anyway while burning cancelled sends' indices within a session. Until a
-            // committed tx reaches the graph, a subsequent send may pick the same change index —
-            // reuse between our own in-flight txs, accepted as the rarer and safer failure.
-            let (index, _change_spk) = self.tx_graph.mutate(&mut db, |tx_graph| {
-                Ok(tx_graph
+            let index = self.tx_graph.mutate(&mut db, |tx_graph| {
+                let unreserved = tx_graph
                     .index
-                    .next_unused_spk(internal)
-                    .expect("keychain initialized: we are spending from this wallet"))
+                    .unused_keychain_spks(internal)
+                    .map(|(index, _)| index)
+                    .find(|index| !reserved.contains(index));
+                Ok(match unreserved {
+                    Some(index) => (index, keychain_txout::ChangeSet::default()),
+                    None => {
+                        let ((index, _spk), changeset) = tx_graph
+                            .index
+                            .reveal_next_spk(internal)
+                            .expect("keychain initialized: we are spending from this wallet");
+                        (index, changeset)
+                    }
+                })
             })?;
 
             template.push_owned_output(
@@ -446,7 +468,7 @@ mod test {
 
         let plan = f.plan(10_000);
         let planned_fee = plan.fee();
-        let template = f.wallet.commit_send(&plan).unwrap();
+        let template = f.wallet.commit_send(&plan, []).unwrap();
 
         assert_eq!(template.fee(), Some(planned_fee), "fee shown is fee paid");
         assert_eq!(
@@ -469,7 +491,7 @@ mod test {
                 f.plan(10_000);
             }
             let plan = f.plan(10_000);
-            let template = f.wallet.commit_send(&plan).unwrap();
+            let template = f.wallet.commit_send(&plan, []).unwrap();
             assert_eq!(f.last_revealed_internal(), Some(expected_index));
             // Broadcasting puts the tx in the graph, where scanning marks its change index used
             // durably — that, not any in-RAM reservation, is what advances allocation.
@@ -487,9 +509,28 @@ mod test {
 
         for _ in 0..2 {
             let plan = f.plan(10_000);
-            f.wallet.commit_send(&plan).unwrap();
+            f.wallet.commit_send(&plan, []).unwrap();
             assert_eq!(f.last_revealed_internal(), Some(0));
         }
+    }
+
+    /// The counterpart of the baseline above: hand commit_send the pending send's index as
+    /// reserved and the next send advances instead of reusing it.
+    #[test]
+    fn a_pending_sends_change_index_is_skipped() {
+        let mut f = Fixture::new();
+        f.fund(0, 1_000_000, 100);
+
+        let plan = f.plan(10_000);
+        f.wallet.commit_send(&plan, []).unwrap();
+        let plan = f.plan(10_000);
+        let template = f.wallet.commit_send(&plan, [0]).unwrap();
+        let change_index = template
+            .iter_locally_owned_outputs()
+            .map(|(_, _, spk)| spk.bip32_path.index)
+            .next()
+            .expect("send has a change output");
+        assert_eq!(change_index, 1);
     }
 
     #[test]
@@ -503,7 +544,7 @@ mod test {
             .unwrap();
         assert_eq!(plan.change_value, None);
 
-        f.wallet.commit_send(&plan).unwrap();
+        f.wallet.commit_send(&plan, []).unwrap();
         assert_eq!(f.last_revealed_internal(), None);
     }
 
@@ -530,7 +571,7 @@ mod test {
 
         let paid = f
             .wallet
-            .commit_send(&plan)
+            .commit_send(&plan, [])
             .unwrap()
             .to_rust_bitcoin_tx()
             .output
@@ -585,7 +626,7 @@ mod test {
             })
             .unwrap();
 
-        let err = f.wallet.commit_send(&plan).unwrap_err();
+        let err = f.wallet.commit_send(&plan, []).unwrap_err();
         assert!(
             err.to_string().contains("no longer spendable"),
             "the one real failure mode is a spent planned input: {err}"
@@ -599,7 +640,7 @@ mod test {
         // Staleness is recoverable: a fresh plan over what is actually left commits fine.
         f.fund(1, 1_000_000, 102);
         let fresh = f.plan(10_000);
-        f.wallet.commit_send(&fresh).unwrap();
+        f.wallet.commit_send(&fresh, []).unwrap();
         assert_eq!(f.last_revealed_internal(), Some(0));
     }
 }

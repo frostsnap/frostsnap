@@ -1488,6 +1488,29 @@ impl FrostCoordinator {
         }
     }
 
+    /// The internal (change) indices of `account` under `master_appkey` reserved by in-flight
+    /// signing sessions — ACTIVE and FINISHED both: a fully signed session leaves the active map
+    /// while its transaction may still be unbroadcast. A session reserves until it is cancelled
+    /// or forgotten (`ForgetFinishedSignSession`); the coordinator has no chain visibility, so
+    /// once the transaction is broadcast the wallet's graph independently marks the index used,
+    /// and a finished session still reserving it is harmless overlap.
+    pub fn reserved_change_indices(
+        &self,
+        master_appkey: MasterAppkey,
+        account: crate::tweak::BitcoinAccount,
+    ) -> BTreeSet<u32> {
+        self.active_signing_sessions
+            .values()
+            .map(|session| &session.init.group_request.sign_task)
+            .chain(
+                self.finished_signing_sessions
+                    .values()
+                    .map(|session| &session.init.group_request.sign_task),
+            )
+            .flat_map(|task| task.reserved_change_indices(master_appkey, account))
+            .collect()
+    }
+
     pub fn active_signing_sessions(&self) -> impl Iterator<Item = ActiveSignSession> + '_ {
         self.active_sign_session_order.iter().map(|sid| {
             self.active_signing_sessions
