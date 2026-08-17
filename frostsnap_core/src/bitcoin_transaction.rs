@@ -9,7 +9,7 @@ use bitcoin::{
 };
 
 use crate::{
-    tweak::{AppTweak, BitcoinBip32Path},
+    tweak::{AppTweak, BitcoinBip32Path, Keychain},
     MasterAppkey,
 };
 
@@ -302,22 +302,51 @@ impl TransactionTemplate {
             self.fee()
                 .expect("transaction validity should have already been checked"),
         );
-        let foreign_recipients = self
-            .foreign_recipients()
-            .map(|(spk, value)| {
-                (
-                    bitcoin::Address::from_script(spk, network)
-                        .expect("has address representation"),
-                    bitcoin::Amount::from_sat(value),
-                )
-            })
-            .collect::<Vec<_>>();
-
         // Calculate fee rate in sats/vB
         let fee_rate_sats_per_vbyte = self.feerate();
 
+        let any_foreign = self
+            .outputs
+            .iter()
+            .any(|output| matches!(output.owner, SpkOwner::Foreign(_)));
+        let internal_count = self
+            .iter_locally_owned_outputs()
+            .filter(|(_, _, local)| {
+                local.bip32_path.account_keychain.keychain == Keychain::Internal
+            })
+            .count();
+        // A single change output alongside a foreign recipient is the shape of an
+        // ordinary send; disclosing it would train users to skim past their own
+        // outputs. Any other local output — or more than one change output — is
+        // value returning to us that the signer must be shown.
+        let hide_single_change = any_foreign && internal_count == 1;
+
+        let recipients = self
+            .outputs
+            .iter()
+            .filter_map(|output| {
+                let owned = match &output.owner {
+                    SpkOwner::Foreign(_) => None,
+                    SpkOwner::Local(local) => {
+                        if hide_single_change
+                            && local.bip32_path.account_keychain.keychain == Keychain::Internal
+                        {
+                            return None;
+                        }
+                        Some(local.bip32_path)
+                    }
+                };
+                Some(PromptRecipient {
+                    address: bitcoin::Address::from_script(&output.owner.spk(), network)
+                        .expect("has address representation"),
+                    amount: bitcoin::Amount::from_sat(output.value),
+                    owned,
+                })
+            })
+            .collect();
+
         PromptSignBitcoinTx {
-            foreign_recipients,
+            recipients,
             fee,
             fee_rate_sats_per_vbyte,
         }
@@ -325,20 +354,29 @@ impl TransactionTemplate {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub struct PromptRecipient {
+    pub address: bitcoin::Address,
+    pub amount: bitcoin::Amount,
+    /// `Some` iff the signing wallet itself derives [`address`](Self::address) at this
+    /// path — the prompt renders such a recipient as our own.
+    pub owned: Option<BitcoinBip32Path>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct PromptSignBitcoinTx {
-    pub foreign_recipients: Vec<(bitcoin::Address, bitcoin::Amount)>,
+    /// Disclosed outputs in transaction order. The single change output of an ordinary
+    /// send is not disclosed.
+    pub recipients: Vec<PromptRecipient>,
     pub fee: bitcoin::Amount,
     /// Fee rate in sats/vB
     pub fee_rate_sats_per_vbyte: Option<f64>,
 }
 
 impl PromptSignBitcoinTx {
-    /// Calculate the total amount being sent to foreign recipients
-    pub fn total_sent(&self) -> bitcoin::Amount {
-        self.foreign_recipients
-            .iter()
-            .map(|(_, amount)| *amount)
-            .sum()
+    /// Total value the prompt itemises as moving. The proportional high-fee warning is
+    /// measured against this.
+    pub fn value_moved(&self) -> bitcoin::Amount {
+        self.recipients.iter().map(|r| r.amount).sum()
     }
 }
 
