@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:frostsnap/contexts.dart';
+import 'package:frostsnap/src/rust/api/bitcoin.dart';
 import 'package:frostsnap/src/rust/api/super_wallet.dart';
 import 'package:frostsnap/theme.dart';
 import 'package:frostsnap/wallet_receive.dart';
@@ -16,17 +17,33 @@ class _CheckAddressPageState extends State<CheckAddressPage> {
   Future<SearchResult>? searchFuture;
   int currentDepth = 0;
   int searchSize = 100;
+  bool _isValidAddress = false;
 
   @override
   void initState() {
     super.initState();
     textInputController = TextEditingController();
+    textInputController.addListener(_onTextChanged);
   }
 
   @override
   void dispose() {
     textInputController.dispose();
     super.dispose();
+  }
+
+  void _onTextChanged() {
+    final walletCtx = WalletContext.of(context);
+    final text = textInputController.text.trim();
+    final isValid =
+        text.isNotEmpty &&
+        walletCtx != null &&
+        Address.fromString(s: text, network: walletCtx.network) != null;
+    if (isValid != _isValidAddress) {
+      setState(() {
+        _isValidAddress = isValid;
+      });
+    }
   }
 
   Future<SearchResult> searchAddress() async {
@@ -132,18 +149,26 @@ class _CheckAddressPageState extends State<CheckAddressPage> {
               controller: textInputController,
               minLines: 2,
               maxLines: 6,
-              decoration: const InputDecoration(counterText: ''),
+              decoration: InputDecoration(
+                counterText: '',
+                errorText:
+                    textInputController.text.isNotEmpty && !_isValidAddress
+                    ? 'Invalid address for this network'
+                    : null,
+              ),
             ),
           ),
           const SizedBox(height: 32),
           FilledButton(
-            onPressed: () {
-              currentDepth = 0;
-              searchSize = 100;
-              setState(() {
-                searchFuture = searchAddress();
-              });
-            },
+            onPressed: _isValidAddress
+                ? () {
+                    currentDepth = 0;
+                    searchSize = 100;
+                    setState(() {
+                      searchFuture = searchAddress();
+                    });
+                  }
+                : null,
             child: const Text('Look for address'),
           ),
           const SizedBox(height: 16),
