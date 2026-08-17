@@ -32,18 +32,18 @@ class _CheckAddressPageState extends State<CheckAddressPage> {
     super.dispose();
   }
 
+  // Rebuilds on every change rather than on validity transitions: the error text
+  // reads both the field's emptiness and its validity, and `_isValidAddress` is
+  // false for both, so a validity-only trigger misses empty<->invalid entirely.
   void _onTextChanged() {
     final walletCtx = WalletContext.of(context);
     final text = textInputController.text.trim();
-    final isValid =
-        text.isNotEmpty &&
-        walletCtx != null &&
-        Address.fromString(s: text, network: walletCtx.network) != null;
-    if (isValid != _isValidAddress) {
-      setState(() {
-        _isValidAddress = isValid;
-      });
-    }
+    setState(() {
+      _isValidAddress =
+          text.isNotEmpty &&
+          walletCtx != null &&
+          Address.fromString(s: text, network: walletCtx.network) != null;
+    });
   }
 
   Future<SearchResult> searchAddress() async {
@@ -65,8 +65,8 @@ class _CheckAddressPageState extends State<CheckAddressPage> {
   }
 
   Widget _buildSearchResults(SearchResult? result) {
-    final walletCtx = WalletContext.of(context)!;
     if (result == null) return const SizedBox.shrink();
+    final walletCtx = WalletContext.of(context)!;
 
     final children = <Widget>[
       Text(
