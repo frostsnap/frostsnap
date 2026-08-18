@@ -196,7 +196,12 @@ class _ConsolidatePageState extends State<ConsolidatePage> {
         planError = null;
       });
     } catch (e) {
-      setState(() => planError = e.toString());
+      // Drop the old plan with it: the summary renders above the error, and a stale fee and
+      // change amount beside the newly picked feerate reads as this plan's numbers.
+      setState(() {
+        plan = null;
+        planError = e.toString();
+      });
     }
   }
 

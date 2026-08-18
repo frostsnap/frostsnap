@@ -1066,6 +1066,32 @@ mod test {
         assert!(err.to_string().contains("not enough"), "got: {err}");
     }
 
+    /// The other refusal: the coins cover the fee and what is left is under the dust floor.
+    /// Separate from the case above because both share one message, and that one passes with
+    /// the floor deleted.
+    #[test]
+    fn consolidation_refuses_a_dust_change_output() {
+        let mut f = Fixture::new();
+        f.fund(0, 1_000_000, 100);
+        // 1_400 covers the 1_110 sat fee and leaves 290: a real output, below the relay floor.
+        f.fund(21, 1_400, 101);
+        assert_eq!(f.wallet.gap_stranded_value(f.master_appkey), (1, 1_400));
+
+        let err = f
+            .wallet
+            .plan_consolidate(f.master_appkey, 10.0)
+            .expect_err("290 sats of change is dust");
+        assert!(err.to_string().contains("not enough"), "got: {err}");
+
+        // Same coin, same fee, enough left over: the refusal above was the floor and not a
+        // shortfall.
+        let mut f = Fixture::new();
+        f.fund(0, 1_000_000, 100);
+        f.fund(21, 1_600, 101);
+        let plan = f.wallet.plan_consolidate(f.master_appkey, 10.0).unwrap();
+        assert_eq!(plan.change_value, Some(490));
+    }
+
     /// Committing flows through the ordinary change allocation, and broadcasting the result is
     /// the remedy the nudge promised: the stranded set empties.
     #[test]
