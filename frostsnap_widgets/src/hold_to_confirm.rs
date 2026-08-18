@@ -170,7 +170,14 @@ where
             }
 
             if holding && !self.completed {
-                let increment = Frac::from_ratio(elapsed_ms, self.hold_duration_ms);
+                // Clamp accrual (never decay) so a stale `last_update` can
+                // never convert an idle gap into hold progress — one frame
+                // can only contribute a bounded amount toward confirmation.
+                const MAX_ACCRUAL_PER_FRAME_MS: u32 = 250;
+                let increment = Frac::from_ratio(
+                    elapsed_ms.min(MAX_ACCRUAL_PER_FRAME_MS),
+                    self.hold_duration_ms,
+                );
                 let new_progress = current_progress + increment;
                 self.content.set_progress(new_progress);
 
@@ -219,7 +226,41 @@ where
         is_release: bool,
     ) -> Option<crate::KeyTouch> {
         // Handle touch on the border (which will pass it to content)
-        self.content.handle_touch(point, current_time, is_release)
+        let was_holding = self.is_holding();
+        let result = self.content.handle_touch(point, current_time, is_release);
+
+        if was_holding {
+            // While holding, draws account the elapsed time as hold credit,
+            // so only the release may touch the timer: stamp it so the gap
+            // until the next draw counts as decay (or drop it when nothing
+            // accrued), ensuring no idle gap is ever counted as hold time.
+            if is_release {
+                self.last_update = if self.content.get_progress() > Frac::ZERO {
+                    Some(current_time)
+                } else {
+                    None
+                };
+            }
+        } else if !self.completed {
+            // Not holding: first settle the decay owed for the un-drawn gap
+            // since the last event — re-stamping without it would forfeit
+            // that decay and let leftover progress ratchet toward
+            // confirmation — then stamp or drop the timer.
+            if let Some(last_time) = self.last_update {
+                let gap_ms = current_time.saturating_duration_since(last_time) as u32;
+                let progress = self.content.get_progress();
+                if gap_ms > 0 && progress > Frac::ZERO {
+                    self.content
+                        .set_progress(progress - Frac::from_ratio(gap_ms, 1000));
+                }
+            }
+            self.last_update = if self.is_holding() || self.content.get_progress() > Frac::ZERO {
+                Some(current_time)
+            } else {
+                None
+            };
+        }
+        result
     }
 
     fn handle_vertical_drag(&mut self, _prev_y: Option<u32>, _new_y: u32, _is_release: bool) {}
