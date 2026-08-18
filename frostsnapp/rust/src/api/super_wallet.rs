@@ -280,11 +280,10 @@ impl SuperWallet {
         psbt: &Psbt,
         master_appkey: MasterAppkey,
     ) -> Result<UnsignedTx, PsbtValidationError> {
-        let template = self
-            .inner
-            .lock()
-            .unwrap()
-            .psbt_to_tx_template(psbt, master_appkey)?;
+        let template = frostsnap_coordinator::bitcoin::psbt_template::psbt_to_tx_template(
+            psbt,
+            master_appkey,
+        )?;
 
         Ok(UnsignedTx {
             template_tx: template,
