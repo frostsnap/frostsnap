@@ -612,24 +612,26 @@ impl CoordSuperWallet {
             owned_count += 1;
         }
 
-        for (i, _) in psbt.outputs.iter().enumerate() {
-            let txout = &rust_bitcoin_tx.output[i];
+        for txout in &rust_bitcoin_tx.output {
+            // An owned output keeps a derivation path, not the script, and the template
+            // re-derives it: our appkey on another wallet's address repoints the payment at us.
             match self
                 .tx_graph
                 .index
                 .index_of_spk(txout.script_pubkey.clone())
             {
-                Some(&((_, account_keychain), index)) => template.push_owned_output(
-                    txout.value,
-                    LocalSpk {
-                        master_appkey,
-                        bip32_path: BitcoinBip32Path {
-                            account_keychain,
-                            index,
+                Some(&((owner, account_keychain), index)) if owner == master_appkey => template
+                    .push_owned_output(
+                        txout.value,
+                        LocalSpk {
+                            master_appkey,
+                            bip32_path: BitcoinBip32Path {
+                                account_keychain,
+                                index,
+                            },
                         },
-                    },
-                ),
-                None => {
+                    ),
+                _ => {
                     template.push_foreign_output(txout.clone());
                 }
             }
@@ -741,8 +743,72 @@ pub struct ConfirmationTime {
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::bitcoin::{peek_spk, test_wallet};
     use bitcoin::key::{Secp256k1, TweakedPublicKey};
-    use frostsnap_core::{schnorr_fun::fun::Point, tweak::AppTweak};
+    use frostsnap_core::{
+        schnorr_fun::fun::Point,
+        tweak::{AppTweak, DerivationPathExt},
+    };
+
+    fn appkey() -> MasterAppkey {
+        MasterAppkey::derive_from_rootkey(Point::random(&mut rand::thread_rng()))
+    }
+
+    #[test]
+    fn a_psbt_output_paying_another_loaded_wallet_stays_foreign() {
+        let (mut wallet, _handler) = test_wallet(bitcoin::Network::Bitcoin);
+        let (signer, other) = (appkey(), appkey());
+        wallet.lazily_initialize_key(signer);
+        wallet.lazily_initialize_key(other);
+
+        let path = BitcoinBip32Path::external(0);
+        let unsigned_tx = bitcoin::Transaction {
+            version: bitcoin::transaction::Version::TWO,
+            lock_time: bitcoin::absolute::LockTime::ZERO,
+            input: vec![bitcoin::TxIn::default()],
+            output: vec![TxOut {
+                value: Amount::from_sat(90_000),
+                script_pubkey: peek_spk(other, path),
+            }],
+        };
+        let mut psbt = bitcoin::Psbt::from_unsigned_tx(unsigned_tx).unwrap();
+
+        // The input classifier only reads the key origin, so the internal key itself can be
+        // any valid point.
+        let internal_key = bitcoin::secp256k1::XOnlyPublicKey::from_str(
+            "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        )
+        .unwrap();
+        psbt.inputs[0].witness_utxo = Some(TxOut {
+            value: Amount::from_sat(100_000),
+            script_pubkey: peek_spk(signer, path),
+        });
+        psbt.inputs[0].tap_internal_key = Some(internal_key);
+        psbt.inputs[0].tap_key_origins.insert(
+            internal_key,
+            (
+                vec![],
+                (
+                    signer.derive_appkey(AppTweakKind::Bitcoin).fingerprint(),
+                    bip32::DerivationPath::from_normal_path_segments(
+                        path.path_segments_from_bitcoin_appkey(),
+                    ),
+                ),
+            ),
+        );
+
+        let template = wallet.psbt_to_tx_template(&psbt, signer).unwrap();
+
+        assert_eq!(
+            template.to_rust_bitcoin_tx().output,
+            psbt.unsigned_tx.output,
+            "the signed transaction must still pay the address the PSBT named"
+        );
+        assert!(
+            template.outputs()[0].local_owner().is_none(),
+            "another wallet's address is not our own change"
+        );
+    }
 
     #[test]
     fn wallet_descriptors_match_our_tweaking() {
