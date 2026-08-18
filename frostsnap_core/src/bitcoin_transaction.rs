@@ -175,6 +175,33 @@ impl TransactionTemplate {
         });
     }
 
+    /// Claim an existing output as `owner`'s, proving the claim against its spk.
+    ///
+    /// For outputs whose spk came from somewhere other than `owner` — a PSBT, an index
+    /// lookup — where a `LocalSpk` assembled from mismatched parts would otherwise stand.
+    pub fn push_owned_output_checked(
+        &mut self,
+        txout: &TxOut,
+        owner: LocalSpk,
+    ) -> Result<(), Box<SpkDoesntMatchPathError>> {
+        let expected_spk = owner.spk();
+
+        if txout.script_pubkey != expected_spk {
+            return Err(Box::new(SpkDoesntMatchPathError {
+                got: txout.script_pubkey.clone(),
+                expected: expected_spk,
+                path: owner
+                    .bip32_path
+                    .path_segments_from_bitcoin_appkey()
+                    .collect(),
+                master_appkey: owner.master_appkey,
+            }));
+        }
+
+        self.push_owned_output(txout.value, owner);
+        Ok(())
+    }
+
     pub fn to_rust_bitcoin_tx(&self) -> bitcoin::Transaction {
         bitcoin::Transaction {
             version: self.version,
