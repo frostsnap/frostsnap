@@ -62,13 +62,7 @@ impl BitcoinBip32Path {
 
 impl From<BitcoinBip32Path> for DerivationPath {
     fn from(bip32_path: BitcoinBip32Path) -> Self {
-        DerivationPath::from_normal_path_segments(
-            bip32_path
-                .account_keychain
-                .account
-                .path_segments_from_bitcoin_appkey()
-                .chain(core::iter::once(bip32_path.index)),
-        )
+        DerivationPath::from_normal_path_segments(bip32_path.path_segments_from_bitcoin_appkey())
     }
 }
 
@@ -417,6 +411,28 @@ impl DerivationPathExt for DerivationPath {
 
 #[cfg(test)]
 mod test {
+
+    /// The conversion dropped the keychain segment, so external/0 and internal/0 both became
+    /// the same path and none of them round-tripped through `from_u32_slice`.
+    #[test]
+    fn derivation_path_keeps_the_keychain() {
+        for path in [BitcoinBip32Path::external(7), BitcoinBip32Path::internal(7)] {
+            let segments = DerivationPath::from(path)
+                .into_iter()
+                .map(|child| u32::from(*child))
+                .collect::<Vec<_>>();
+            assert_eq!(
+                segments,
+                path.path_segments_from_bitcoin_appkey().collect::<Vec<_>>()
+            );
+            assert_eq!(BitcoinBip32Path::from_u32_slice(&segments), Some(path));
+        }
+        assert_ne!(
+            DerivationPath::from(BitcoinBip32Path::external(7)),
+            DerivationPath::from(BitcoinBip32Path::internal(7)),
+        );
+    }
+
     use super::*;
     use alloc::vec::Vec;
     use bitcoin::secp256k1::Secp256k1;
