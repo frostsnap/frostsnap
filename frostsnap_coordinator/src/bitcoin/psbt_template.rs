@@ -1,10 +1,12 @@
 use anyhow::{anyhow, Result};
 use bdk_chain::bitcoin::{
+    self,
     bip32::{self, Fingerprint},
     taproot, Psbt, XOnlyPublicKey,
 };
 use frostsnap_core::{
     bitcoin_transaction::{self, LocalSpk, PushInput, TransactionTemplate},
+    message::EncodedSignature,
     tweak::{AppTweakKind, BitcoinBip32Path},
     MasterAppkey,
 };
@@ -134,6 +136,63 @@ pub fn psbt_to_tx_template(
 
     Ok(template)
 }
+
+/// Writes each signature onto the PSBT input it was produced for.
+///
+/// The counterpart to [`psbt_to_tx_template`]: the template decided which inputs were ours,
+/// so it is the only thing that can say which input each signature belongs to.
+pub fn attach_signatures_to_psbt(
+    template: &TransactionTemplate,
+    signatures: &[EncodedSignature],
+    psbt: &Psbt,
+) -> Result<Psbt, AttachSignaturesError> {
+    let pairs = template.signatures_by_input_index(signatures)?;
+
+    let mut psbt = psbt.clone();
+    for (i, signature) in pairs {
+        let input = psbt
+            .inputs
+            .get_mut(i)
+            .ok_or(AttachSignaturesError::NoSuchInput(i))?;
+        input.tap_key_sig = Some(bitcoin::taproot::Signature {
+            signature: bitcoin::secp256k1::schnorr::Signature::from_slice(&signature.0)
+                .map_err(|_| AttachSignaturesError::MalformedSignature(i))?,
+            sighash_type: bitcoin::sighash::TapSighashType::Default,
+        });
+    }
+
+    Ok(psbt)
+}
+
+#[derive(Debug, Clone)]
+pub enum AttachSignaturesError {
+    CountMismatch(bitcoin_transaction::SignatureCountMismatch),
+    /// The PSBT has fewer inputs than the template it was signed against.
+    NoSuchInput(usize),
+    MalformedSignature(usize),
+}
+
+impl From<bitcoin_transaction::SignatureCountMismatch> for AttachSignaturesError {
+    fn from(e: bitcoin_transaction::SignatureCountMismatch) -> Self {
+        AttachSignaturesError::CountMismatch(e)
+    }
+}
+
+impl std::fmt::Display for AttachSignaturesError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AttachSignaturesError::CountMismatch(e) => write!(f, "{e}"),
+            AttachSignaturesError::NoSuchInput(i) => {
+                write!(f, "this PSBT has no input {i} to sign")
+            }
+            AttachSignaturesError::MalformedSignature(i) => {
+                write!(f, "the signature for input {i} is not a schnorr signature")
+            }
+        }
+    }
+}
+
+impl std::error::Error for AttachSignaturesError {}
 
 /// Why a PSBT key origin doesn't name a script this key derives.
 enum NotOurs {
@@ -824,6 +883,100 @@ mod test {
         assert_eq!(
             template.outputs()[0].owner(),
             &SpkOwner::Foreign(ours.script_pubkey)
+        );
+    }
+
+    fn signature(tag: u8) -> frostsnap_core::message::EncodedSignature {
+        let mut bytes = [1u8; 64];
+        bytes[0] = tag;
+        frostsnap_core::message::EncodedSignature(bytes)
+    }
+
+    /// A PSBT input we cannot sign — no origin for its key, so the template calls it foreign.
+    fn foreign_input(value: u64, tag: u8) -> psbt::Input {
+        psbt::Input {
+            witness_utxo: Some(TxOut {
+                value: Amount::from_sat(value),
+                script_pubkey: ScriptBuf::from_bytes(
+                    [&[0x51u8, 0x20][..], &[tag; 32][..]].concat(),
+                ),
+            }),
+            ..Default::default()
+        }
+    }
+
+    /// The signature is for the *second* input. Placing it positionally would sign the
+    /// foreign one and leave ours bare.
+    #[test]
+    fn attaching_skips_a_foreign_input() {
+        let key = our_key();
+        let ours = BitcoinBip32Path::external(4);
+        let psbt = psbt_of(
+            vec![
+                foreign_input(100_000, 0xaa),
+                owned_input(key, ours, 100_000),
+            ],
+            vec![foreign_txout(150_000)],
+        );
+        let template = psbt_to_tx_template(&psbt, key).unwrap();
+
+        let signed = attach_signatures_to_psbt(&template, &[signature(7)], &psbt).unwrap();
+
+        assert!(
+            signed.inputs[0].tap_key_sig.is_none(),
+            "the foreign input must not receive our signature"
+        );
+        assert_eq!(
+            signed.inputs[1].tap_key_sig.unwrap().signature.serialize()[0],
+            7,
+            "our signature belongs on input 1"
+        );
+    }
+
+    #[test]
+    fn attaching_places_each_signature_among_interleaved_foreign_inputs() {
+        let key = our_key();
+        let psbt = psbt_of(
+            vec![
+                foreign_input(100_000, 0xaa),
+                owned_input(key, BitcoinBip32Path::external(1), 100_000),
+                owned_input(key, BitcoinBip32Path::external(2), 100_000),
+                foreign_input(100_000, 0xbb),
+            ],
+            vec![foreign_txout(350_000)],
+        );
+        let template = psbt_to_tx_template(&psbt, key).unwrap();
+
+        let signed =
+            attach_signatures_to_psbt(&template, &[signature(1), signature(2)], &psbt).unwrap();
+
+        assert!(signed.inputs[0].tap_key_sig.is_none());
+        assert_eq!(
+            signed.inputs[1].tap_key_sig.unwrap().signature.serialize()[0],
+            1
+        );
+        assert_eq!(
+            signed.inputs[2].tap_key_sig.unwrap().signature.serialize()[0],
+            2
+        );
+        assert!(signed.inputs[3].tap_key_sig.is_none());
+    }
+
+    #[test]
+    fn attaching_the_wrong_number_of_signatures_is_refused() {
+        let key = our_key();
+        let psbt = psbt_of(
+            vec![
+                foreign_input(100_000, 0xaa),
+                owned_input(key, BitcoinBip32Path::external(1), 100_000),
+            ],
+            vec![foreign_txout(150_000)],
+        );
+        let template = psbt_to_tx_template(&psbt, key).unwrap();
+
+        assert!(attach_signatures_to_psbt(&template, &[], &psbt).is_err());
+        assert!(
+            attach_signatures_to_psbt(&template, &[signature(1), signature(2)], &psbt).is_err()
         );
     }
 }

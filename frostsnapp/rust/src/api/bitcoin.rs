@@ -7,9 +7,10 @@ use flutter_rust_bridge::frb; // or, for example, easy_ext's;
 use frostsnap_coordinator::bitcoin::chain_sync::{
     default_backup_electrum_server, default_electrum_server, SUPPORTED_NETWORKS,
 };
+use frostsnap_coordinator::bitcoin::psbt_template;
 pub use frostsnap_coordinator::bitcoin::wallet::ConfirmationTime;
 pub use frostsnap_coordinator::frostsnap_core::{self, MasterAppkey};
-use frostsnap_core::bitcoin_transaction::TransactionTemplate;
+use frostsnap_core::bitcoin_transaction::{self, TransactionTemplate};
 use frostsnap_core::message::EncodedSignature;
 use tracing::{event, Level};
 
@@ -185,6 +186,10 @@ pub struct Transaction {
     pub last_seen: Option<u64>,
     pub prevouts: HashMap<bitcoin::OutPoint, bitcoin::TxOut>,
     pub is_mine: HashMap<bitcoin::ScriptBuf, u32>,
+    /// Present only when this came from a signing session. Signatures are ordered by the
+    /// template's owned inputs, so it is the only thing that can place them.
+    #[frb(ignore)]
+    pub template: Option<TransactionTemplate>,
 }
 
 impl Transaction {
@@ -212,70 +217,42 @@ impl Transaction {
             last_seen: None,
             prevouts,
             is_mine,
+            template: Some(tx_temp.clone()),
         }
     }
 
-    pub(crate) fn fill_signatures(&mut self, signatures: &[EncodedSignature]) {
-        for (txin, signature) in self.inner.input.iter_mut().zip(signatures) {
-            let schnorr_sig = bitcoin::taproot::Signature {
-                signature: bitcoin::secp256k1::schnorr::Signature::from_slice(&signature.0)
-                    .unwrap(),
-                sighash_type: bitcoin::sighash::TapSighashType::Default,
-            };
-            let witness = bitcoin::Witness::from_slice(&[schnorr_sig.to_vec()]);
-            txin.witness = witness;
+    pub(crate) fn fill_signatures(
+        &mut self,
+        template: &TransactionTemplate,
+        signatures: &[EncodedSignature],
+    ) -> Result<(), bitcoin_transaction::SignatureCountMismatch> {
+        for (i, signature) in template.signatures_by_input_index(signatures)? {
+            self.inner.input[i].witness = bitcoin_transaction::signature_witness(signature);
         }
+        Ok(())
     }
 
-    #[frb(sync)]
-    pub fn raw_txid(&self) -> Txid {
-        self.inner.compute_txid()
-    }
-
-    fn owned_input_indices(&self) -> impl Iterator<Item = usize> + '_ {
-        self.inner
-            .input
-            .iter()
-            .enumerate()
-            .filter(|(_, txin)| {
-                let prev_txout = match self.prevouts.get(&txin.previous_output) {
-                    Some(txout) => txout,
-                    None => return false,
-                };
-                self.is_mine.contains_key(&prev_txout.script_pubkey)
-            })
-            .map(|(vin, _)| vin)
-    }
-
+    /// `None` when the signatures cannot be placed — the transaction did not come from a
+    /// signing session, or the list does not match the inputs this wallet owns.
     #[frb(sync)]
     pub fn attach_signatures_to_psbt(
         &self,
         signatures: Vec<EncodedSignature>,
         psbt: &Psbt,
     ) -> Option<Psbt> {
-        let owned_indices = self.owned_input_indices().collect::<Vec<_>>();
-        if signatures.len() != owned_indices.len() {
-            return None;
+        let template = self.template.as_ref()?;
+        match psbt_template::attach_signatures_to_psbt(template, &signatures, psbt) {
+            Ok(psbt) => Some(psbt),
+            Err(e) => {
+                event!(Level::ERROR, error = e.to_string(), "couldn't sign PSBT");
+                None
+            }
         }
+    }
 
-        let mut psbt = psbt.clone();
-        let mut signatures = signatures.into_iter();
-
-        for i in owned_indices {
-            let signature = signatures.next();
-            // we are assuming the signatures are correct here.
-            let input = &mut psbt.inputs[i];
-            let schnorr_sig = bitcoin::taproot::Signature {
-                signature: bitcoin::secp256k1::schnorr::Signature::from_slice(
-                    &signature.unwrap().0,
-                )
-                .unwrap(),
-                sighash_type: bitcoin::sighash::TapSighashType::Default,
-            };
-            input.tap_key_sig = Some(schnorr_sig);
-        }
-
-        Some(psbt)
+    #[frb(sync)]
+    pub fn raw_txid(&self) -> Txid {
+        self.inner.compute_txid()
     }
 
     /// Computes the sum of all inputs, or only those whose previous output script pubkey is in
@@ -513,6 +490,7 @@ impl From<Vec<frostsnap_coordinator::bitcoin::wallet::Transaction>> for TxState 
 impl From<frostsnap_coordinator::bitcoin::wallet::Transaction> for Transaction {
     fn from(value: frostsnap_coordinator::bitcoin::wallet::Transaction) -> Self {
         Self {
+            template: None,
             inner: (value.inner).deref().clone(),
             txid: value.txid.to_string(),
             confirmation_time: value.confirmation_time,

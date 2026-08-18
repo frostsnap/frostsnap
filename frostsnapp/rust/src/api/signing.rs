@@ -17,6 +17,7 @@ use frostsnap_core::{
     WireSignTask,
 };
 use std::collections::{HashMap, HashSet};
+use tracing::{event, Level};
 
 /// An outgoing Bitcoin transaction that has not been successfully broadcast.
 ///
@@ -128,6 +129,7 @@ impl ActiveSignSessionExt for ActiveSignSession {
                     .collect::<HashMap<bitcoin::OutPoint, bitcoin::TxOut>>();
                 SigningDetails::Transaction {
                     transaction: Transaction {
+                        template: Some(tx_temp.clone()),
                         inner: raw_tx,
                         txid: txid.to_string(),
                         confirmation_time: None,
@@ -174,6 +176,7 @@ impl UnsignedTx {
         let raw_tx = self.template_tx.to_rust_bitcoin_tx();
         let txid = raw_tx.compute_txid();
         Transaction {
+            template: Some(self.template_tx.clone()),
             txid: txid.to_string(),
             confirmation_time: None,
             last_seen: None,
@@ -199,22 +202,11 @@ impl UnsignedTx {
     }
 
     #[frb(sync)]
-    pub fn complete(&self, signatures: Vec<EncodedSignature>) -> SignedTx {
-        let mut tx = self.template_tx.to_rust_bitcoin_tx();
-        for (txin, signature) in tx.input.iter_mut().zip(signatures) {
-            let schnorr_sig = bitcoin::taproot::Signature {
-                signature: bitcoin::secp256k1::schnorr::Signature::from_slice(&signature.0)
-                    .unwrap(),
-                sighash_type: bitcoin::sighash::TapSighashType::Default,
-            };
-            let witness = bitcoin::Witness::from_slice(&[schnorr_sig.to_vec()]);
-            txin.witness = witness;
-        }
-
-        SignedTx {
-            signed_tx: tx,
+    pub fn complete(&self, signatures: Vec<EncodedSignature>) -> Result<SignedTx> {
+        Ok(SignedTx {
+            signed_tx: self.template_tx.to_signed_rust_bitcoin_tx(&signatures)?,
             unsigned_tx: self.clone(),
-        }
+        })
     }
 
     #[frb(sync)]
@@ -393,7 +385,17 @@ impl Coordinator {
                 |(&session_id, session)| match &session.init.group_request.sign_task {
                     WireSignTask::BitcoinTransaction(tx_temp) => {
                         let mut tx = Transaction::from_template(tx_temp);
-                        tx.fill_signatures(&session.signatures);
+                        // Showing an unbroadcastable transaction is worse than omitting it:
+                        // its witnesses would be on inputs that did not produce them.
+                        if let Err(e) = tx.fill_signatures(tx_temp, &session.signatures) {
+                            event!(
+                                Level::ERROR,
+                                session = session_id.to_string(),
+                                error = e.to_string(),
+                                "signatures don't match the transaction they signed"
+                            );
+                            return None;
+                        }
                         Some(UnbroadcastedTx {
                             tx,
                             session_id,
