@@ -82,7 +82,52 @@ class _WalletSendPageState extends State<WalletSendPage> {
     sub.start().listen((_) => mounted ? setState(() {}) : null);
 
     addrController = AddressInputController(state);
+    // The initialization edge for isAddressMine: the Send button enables
+    // before the tx-state stream task has acquired the wallet, and tx_state →
+    // list_transactions runs lazily_initialize_key — without this call an
+    // immediate paste can query an uninitialized index and never recompute.
+    widget.superWallet.txState(masterAppkey: widget.masterAppkey);
+    addrController.controller.addListener(_onRecipientTextChanged);
     amountController = AmountInputController(state: state);
+  }
+
+  // The page doesn't otherwise rebuild while typing — the TextField repaints
+  // itself and AddressInputController only notifies on error changes — so the
+  // pill's visibility needs this poke.
+  void _onRecipientTextChanged() {
+    if (mounted) setState(() {});
+  }
+
+  /// Derived, not stored, from whichever recipient is on screen: the raw field
+  /// text while editing (a stale submitted recipient must not keep the pill
+  /// alive), the submitted recipient after advancing (a BIP21 paste's parsed
+  /// address rather than its URI text).
+  bool get recipientIsMine {
+    final submitted = pageIndex.index > SendPageIndex.recipient.index
+        ? state.recipient(recipient: 0)?.address?.toString()
+        : null;
+    return widget.superWallet.isAddressMine(
+      masterAppkey: widget.masterAppkey,
+      addressStr: submitted ?? addrController.controller.text,
+    );
+  }
+
+  /// Quiet tonal chip matching the device's "(to self: …)" wording.
+  Widget _toSelfPill(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10.0, vertical: 4.0),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.secondaryContainer,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        'to self',
+        style: theme.textTheme.labelMedium?.copyWith(
+          color: theme.colorScheme.onSecondaryContainer,
+        ),
+      ),
+    );
   }
 
   @override
@@ -213,6 +258,15 @@ class _WalletSendPageState extends State<WalletSendPage> {
                 textAlign: TextAlign.right,
                 style: monospaceTextStyle,
               ),
+              subtitle: !recipientIsMine
+                  ? null
+                  : Padding(
+                      padding: const EdgeInsets.only(top: 4.0),
+                      child: Align(
+                        alignment: Alignment.centerRight,
+                        child: _toSelfPill(context),
+                      ),
+                    ),
             ),
           if (pageIndex.index > SendPageIndex.amount.index)
             _buildCompletedAmountAndFee(context),
@@ -303,6 +357,11 @@ class _WalletSendPageState extends State<WalletSendPage> {
                 errorMaxLines: 2,
               ),
             ),
+            if (recipientIsMine)
+              Align(
+                alignment: Alignment.centerLeft,
+                child: _toSelfPill(context),
+              ),
             Row(
               spacing: 8.0,
               children: [

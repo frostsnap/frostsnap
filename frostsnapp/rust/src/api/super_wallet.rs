@@ -154,6 +154,24 @@ impl SuperWallet {
             .search_for_address(master_appkey, address_str, start, stop)
     }
 
+    /// Whether `address_str` parses as an address of this wallet's network that the
+    /// wallet itself derives. Answers from the tracked spk cache (revealed addresses
+    /// plus the indexer's lookahead window); `false` means "not known to be ours",
+    /// including a wallet whose descriptors are not yet installed.
+    #[frb(sync)]
+    pub fn is_address_mine(&self, master_appkey: MasterAppkey, address_str: String) -> bool {
+        let Ok(address) = address_str.trim().parse::<bitcoin::Address<_>>() else {
+            return false;
+        };
+        let Ok(address) = address.require_network(self.network) else {
+            return false;
+        };
+        self.inner
+            .lock()
+            .unwrap()
+            .is_spk_mine(master_appkey, address.script_pubkey())
+    }
+
     pub fn mark_address_shared(
         &self,
         master_appkey: MasterAppkey,

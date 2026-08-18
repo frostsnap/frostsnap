@@ -773,4 +773,47 @@ mod test {
             )),
         );
     }
+
+    #[test]
+    fn is_spk_mine_scopes_by_appkey_and_covers_both_keychains() {
+        use crate::bitcoin::chain_sync::{ChainClient, ElectrumConfig};
+        use crate::bitcoin::tofu::trusted_certs::TrustedCertificates;
+        use crate::persist::Persisted;
+        use crate::settings::ElectrumEnabled;
+        use std::sync::{Arc, Mutex};
+
+        let network = bitcoin::Network::Regtest;
+        let db = Arc::new(Mutex::new(rusqlite::Connection::open_in_memory().unwrap()));
+        let trusted =
+            Persisted::<TrustedCertificates>::new(&mut *db.lock().unwrap(), network).unwrap();
+        let (chain_client, _handler) = ChainClient::new(
+            bitcoin::constants::genesis_block(network).block_hash(),
+            ElectrumConfig {
+                enabled: ElectrumEnabled::None,
+                primary: String::new(),
+                backup: String::new(),
+            },
+            trusted,
+            db.clone(),
+        );
+        let mut wallet = CoordSuperWallet::load_or_init(db, network, chain_client).unwrap();
+
+        let appkey = MasterAppkey::derive_from_rootkey(Point::random(&mut rand::thread_rng()));
+        let other = MasterAppkey::derive_from_rootkey(Point::random(&mut rand::thread_rng()));
+        wallet.lazily_initialize_key(appkey);
+        wallet.lazily_initialize_key(other);
+
+        let descriptors = CoordSuperWallet::descriptors_for_key(appkey, network.into());
+        for (keychain, descriptor) in descriptors {
+            let spk = descriptor.at_derivation_index(0).unwrap().script_pubkey();
+            assert!(
+                wallet.is_spk_mine(appkey, spk.clone()),
+                "{keychain:?} spk must be ours"
+            );
+            assert!(
+                !wallet.is_spk_mine(other, spk),
+                "{keychain:?} spk must not be another appkey's"
+            );
+        }
+    }
 }
