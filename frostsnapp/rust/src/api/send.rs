@@ -49,7 +49,8 @@ impl SendPlan {
 
 impl SuperWallet {
     /// Plan a consolidation of exactly `outpoints`: they all go in, one change output back, no
-    /// recipient. Which coins is the caller's question — see [`Self::gap_stranded_outpoints`].
+    /// recipient. Which coins is the caller's question — see [`Self::gap_stranded_outpoints`]
+    /// and [`Self::all_unspent_outpoints`].
     /// Local and cheap; commit through [`Self::commit_send`] like any send plan.
     #[frb(sync)]
     pub fn plan_consolidate(
@@ -77,6 +78,26 @@ impl SuperWallet {
             .lock()
             .unwrap()
             .gap_stranded_outpoints(master_appkey, feerate)
+    }
+
+    /// Every coin worth moving at `feerate` — the input set a whole-wallet consolidation spends.
+    /// A coin carrying less than its own input cost is left alone rather than merged at a loss.
+    #[frb(sync)]
+    pub fn all_unspent_outpoints(
+        &self,
+        master_appkey: frostsnap_core::MasterAppkey,
+        feerate: f32,
+    ) -> Vec<OutPoint> {
+        self.inner
+            .lock()
+            .unwrap()
+            .all_unspent_outpoints(master_appkey, feerate)
+    }
+
+    /// How many coins the wallet holds — the "Consolidate (n)" menu action's badge and gate.
+    #[frb(sync)]
+    pub fn utxo_count(&self, master_appkey: frostsnap_core::MasterAppkey) -> u32 {
+        self.inner.lock().unwrap().utxo_count(master_appkey) as u32
     }
 
     /// Turn a plan into a signable transaction — the single point that allocates the change

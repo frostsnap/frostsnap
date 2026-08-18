@@ -126,10 +126,15 @@ class ConsolidatePage extends StatefulWidget {
   /// whole-wallet consolidation reuses it with a different planner.
   final SendPlan Function(double feerate) planner;
 
+  /// An optional line above the summary, for entry points that need to say something the rows
+  /// cannot (whole-wallet consolidation links every coin on-chain).
+  final String? description;
+
   const ConsolidatePage({
     super.key,
     this.scrollController,
     required this.planner,
+    this.description,
   });
 
   @override
@@ -409,10 +414,21 @@ class _ConsolidatePageState extends State<ConsolidatePage> {
       );
     }
 
+    final description = widget.description;
     final coins = plan?.inputCount() ?? 0;
     final summary = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        if (description != null)
+          Padding(
+            padding: EdgeInsets.fromLTRB(16, 8, 16, 0),
+            child: Text(
+              description,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
         if (plan != null) ...[
           ListTile(
             onTap: () => _plan(repick: true),
