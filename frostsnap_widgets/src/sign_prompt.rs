@@ -14,7 +14,10 @@ use embedded_graphics::{
     geometry::Size,
     pixelcolor::{Gray8, Rgb565},
 };
-use frostsnap_core::{bitcoin_transaction::PromptSignBitcoinTx, tweak::BitcoinBip32Path};
+use frostsnap_core::{
+    bitcoin_transaction::PromptSignBitcoinTx,
+    tweak::{BitcoinBip32Path, Keychain},
+};
 use frostsnap_fonts::{
     Gray4Font, NOTO_SANS_17_REGULAR, NOTO_SANS_18_LIGHT, NOTO_SANS_18_MEDIUM, NOTO_SANS_24_BOLD,
 };
@@ -33,17 +36,39 @@ const HOLD_TO_SIGN_TIME_MS: u32 = 3000;
 
 const FONT_TO_SELF_FOOTNOTE: &Gray4Font = &NOTO_SANS_17_REGULAR;
 
-/// Footnote marking a recipient the signing wallet itself derives, set small and in
-/// secondary gray so it annotates the page without competing with the amount or
-/// address. The keychain/index pair is the derivation the device attests.
-fn to_self_footnote(path: &BitcoinBip32Path) -> Text<Gray4TextStyle> {
+/// Split across the two pages an output already has, because they answer different
+/// questions. The amount page asks "where is this value going" and the whole answer is
+/// that it is coming back to us. The derivation names WHICH of our scripts, so it
+/// belongs under the address it derives, not under the amount.
+///
+/// Set small and in secondary gray so it annotates without competing with the amount or
+/// address it sits under.
+fn footnote(text: alloc::string::String) -> Text<Gray4TextStyle> {
     Text::new(
-        format!(
-            "(to self: {}/{})",
-            path.account_keychain.keychain as u32, path.index
-        ),
+        text,
         Gray4TextStyle::new(FONT_TO_SELF_FOOTNOTE, PALETTE.text_secondary),
     )
+}
+
+/// Under the amount: the fact, and nothing else.
+fn to_self_footnote() -> Text<Gray4TextStyle> {
+    footnote("To Self".to_string())
+}
+
+/// Under the address: which of our scripts it is. Names the keychain rather than
+/// printing its number, because this is a threshold wallet and a bare "1/3" reads as
+/// one-of-three signers, a different fact about a different thing.
+fn derivation_footnote(path: &BitcoinBip32Path) -> Text<Gray4TextStyle> {
+    footnote(format!("{} #{}", keychain_name(path), path.index))
+}
+
+/// The wording the app's own "to self" tooltip uses, so the two surfaces describe one
+/// output the same way.
+fn keychain_name(path: &BitcoinBip32Path) -> &'static str {
+    match path.account_keychain.keychain {
+        Keychain::External => "Receive",
+        Keychain::Internal => "Change",
+    }
 }
 
 /// Widget list that generates sign prompt pages
@@ -75,7 +100,7 @@ impl AmountPage {
             format!("Send Amount #{}", index + 1),
             Gray4TextStyle::new(FONT_PAGE_HEADER, PALETTE.text_secondary),
         );
-        let footnote = owned.map(to_self_footnote);
+        let footnote = owned.map(|_| to_self_footnote());
 
         let amount_display = BitcoinAmountDisplay::new(amount_sats);
 
@@ -126,7 +151,7 @@ impl AddressPage {
             format!("To Address #{}", index + 1),
             Gray4TextStyle::new(FONT_PAGE_HEADER, PALETTE.text_secondary),
         );
-        let footnote = owned.map(to_self_footnote);
+        let footnote = owned.map(derivation_footnote);
 
         let mixed_seed = rand_seed.wrapping_add((index as u32).wrapping_mul(0x9e3779b9));
         let address_display = AddressDisplay::new_with_seed(address.clone(), mixed_seed);
@@ -504,7 +529,17 @@ impl SignTxPrompt {
 
 #[cfg(test)]
 mod tests {
-    use super::warning_lines;
+    use super::{keychain_name, warning_lines};
+    use frostsnap_core::tweak::BitcoinBip32Path;
+
+    /// The footnote must name the keychain. This is a threshold wallet: a bare "1/3" is
+    /// indistinguishable from one-of-three signers, which is a claim about the access
+    /// structure rather than about where the money went.
+    #[test]
+    fn the_footnote_names_the_keychain_rather_than_numbering_it() {
+        assert_eq!(keychain_name(&BitcoinBip32Path::external(0)), "Receive");
+        assert_eq!(keychain_name(&BitcoinBip32Path::internal(3)), "Change");
+    }
 
     /// The sentence must name the quantity the rule divided by. In a mixed send every output is
     /// titled "Send Amount #n", owned ones included, so wording that reads as the total is wrong:

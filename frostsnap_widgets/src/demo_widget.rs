@@ -465,13 +465,15 @@ macro_rules! demo_widget {
                 };
                 let prompt = PromptSignBitcoinTx {
                     recipients: $crate::alloc::vec![
-                        recipient(p2tr_address, 100_000),
+                        recipient(p2tr_address.clone(), 100_000),
                         recipient(p2wsh_address, 200_000),
-                        recipient(p2wpkh_address.clone(), 300_000),
+                        recipient(p2wpkh_address, 300_000),
                         recipient(p2sh_address, 400_000),
                         recipient(p2pkh_address, 500_000),
+                        // Taproot: an output the wallet derives is always taproot, so a
+                        // non-taproot "to self" is a state the device can never be shown.
                         PromptRecipient {
-                            address: p2wpkh_address,
+                            address: p2tr_address.clone(),
                             amount: bitcoin::Amount::from_sat(150_000),
                             owned: Some(frostsnap_core::tweak::BitcoinBip32Path::internal(3)),
                         },
