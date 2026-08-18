@@ -33,6 +33,9 @@ pub mod coordinator;
 pub mod device;
 pub use schnorr_fun;
 pub mod bitcoin_transaction;
+/// Reading a PSBT needs std and tracing, and no device ever does it.
+#[cfg(feature = "coordinator")]
+pub mod psbt;
 mod symmetric_encryption;
 pub use symmetric_encryption::*;
 use tweak::Xpub;
