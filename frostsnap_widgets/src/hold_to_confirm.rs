@@ -218,7 +218,10 @@ where
         current_time: crate::Instant,
         is_release: bool,
     ) -> Option<crate::KeyTouch> {
-        // Handle touch on the border (which will pass it to content)
+        // This touch is about to flip `holding`, and elapsed time is accounted
+        // differently either side of that flip, so settle progress against the
+        // state that has actually been in effect since the last draw.
+        self.update_progress(current_time);
         self.content.handle_touch(point, current_time, is_release)
     }
 
@@ -243,9 +246,7 @@ where
     where
         D: DrawTarget<Color = Self::Color>,
     {
-        if self.is_holding() || self.content.get_progress() > Frac::ZERO {
-            self.update_progress(current_time);
-        }
+        self.update_progress(current_time);
 
         // Draw the border (which includes the content)
         self.content.draw(target, current_time)?;
