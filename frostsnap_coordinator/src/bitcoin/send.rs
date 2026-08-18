@@ -372,38 +372,18 @@ impl CoordSuperWallet {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::bitcoin::chain_sync::{ChainClient, ConnectionHandler, ElectrumConfig};
+    use crate::bitcoin::chain_sync::ConnectionHandler;
+    use crate::bitcoin::test_wallet;
     use crate::bitcoin::wallet::CoordSuperWallet;
-    use crate::persist::Persisted;
-    use crate::settings::ElectrumEnabled;
     use bdk_chain::{
         bitcoin::{hashes::Hash, BlockHash, TxIn},
         BlockId, CheckPoint, ConfirmationBlockTime, TxUpdate,
     };
     use frostsnap_core::schnorr_fun::fun::Point;
     use std::str::FromStr;
-    use std::sync::{Arc, Mutex};
+    use std::sync::Arc;
 
     const NETWORK: bitcoin::Network = bitcoin::Network::Bitcoin;
-
-    /// The handler owns the receiving ends of the client's channels, so it must outlive every
-    /// `ChainClient` call or `monitor_keychain`'s send panics.
-    fn chain_client(db: &Arc<Mutex<rusqlite::Connection>>) -> (ChainClient, ConnectionHandler) {
-        let trusted = {
-            let mut conn = db.lock().unwrap();
-            Persisted::new(&mut *conn, NETWORK).unwrap()
-        };
-        ChainClient::new(
-            bitcoin::constants::genesis_block(NETWORK).block_hash(),
-            ElectrumConfig {
-                enabled: ElectrumEnabled::None,
-                primary: String::new(),
-                backup: String::new(),
-            },
-            trusted,
-            db.clone(),
-        )
-    }
 
     struct Fixture {
         wallet: CoordSuperWallet,
@@ -415,11 +395,9 @@ mod test {
 
     impl Fixture {
         fn new() -> Self {
-            let db = Arc::new(Mutex::new(rusqlite::Connection::open_in_memory().unwrap()));
-            let (client, _handler) = chain_client(&db);
+            let (mut wallet, _handler) = test_wallet(NETWORK);
             let master_appkey =
                 MasterAppkey::derive_from_rootkey(Point::random(&mut rand::thread_rng()));
-            let mut wallet = CoordSuperWallet::load_or_init(db, NETWORK, client).unwrap();
             wallet.list_addresses(master_appkey);
             let recipient =
                 bitcoin::Address::from_str("bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4")

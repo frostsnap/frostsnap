@@ -83,6 +83,34 @@ fn peek_spk(approot: MasterAppkey, path: BitcoinBip32Path) -> ScriptBuf {
         .script_pubkey()
 }
 
+/// A wallet on an in-memory database. The handler owns the receiving ends of the chain
+/// client's channels, so it has to outlive the wallet.
+#[cfg(test)]
+pub(crate) fn test_wallet(
+    network: bitcoin::Network,
+) -> (wallet::CoordSuperWallet, chain_sync::ConnectionHandler) {
+    use std::sync::{Arc, Mutex};
+    let db = Arc::new(Mutex::new(rusqlite::Connection::open_in_memory().unwrap()));
+    let trusted = {
+        let mut conn = db.lock().unwrap();
+        crate::persist::Persisted::new(&mut *conn, network).unwrap()
+    };
+    let (client, handler) = chain_sync::ChainClient::new(
+        bitcoin::constants::genesis_block(network).block_hash(),
+        chain_sync::ElectrumConfig {
+            enabled: crate::settings::ElectrumEnabled::None,
+            primary: String::new(),
+            backup: String::new(),
+        },
+        trusted,
+        db.clone(),
+    );
+    (
+        wallet::CoordSuperWallet::load_or_init(db, network, client).unwrap(),
+        handler,
+    )
+}
+
 #[cfg(test)]
 mod test {
     use bitcoin::Network;
