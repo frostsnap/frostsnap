@@ -1,0 +1,218 @@
+//! A signature is produced per *owned* input, so its position in the list is not an input
+//! index. Every test here keeps a foreign input around, because that is the only thing that
+//! tells the two orderings apart.
+
+use bitcoin::{hashes::Hash, Amount, OutPoint, ScriptBuf, TxOut, Txid};
+use frostsnap_core::{
+    bitcoin_transaction::{LocalSpk, PushInput, TransactionTemplate},
+    message::EncodedSignature,
+    schnorr_fun::fun::{g, G},
+    tweak::{BitcoinBip32Path, NormalIndex},
+    MasterAppkey,
+};
+
+fn idx(n: u32) -> NormalIndex {
+    NormalIndex::new(n).expect("test index is in range")
+}
+
+fn key() -> MasterAppkey {
+    MasterAppkey::derive_from_rootkey(g!(2 * G).normalize())
+}
+
+fn outpoint(vout: u32) -> OutPoint {
+    OutPoint {
+        txid: Txid::from_byte_array([9u8; 32]),
+        vout,
+    }
+}
+
+fn foreign_spk(tag: u8) -> ScriptBuf {
+    ScriptBuf::from_bytes([&[0x51u8, 0x20][..], &[tag; 32][..]].concat())
+}
+
+fn signature(tag: u8) -> EncodedSignature {
+    // Any 64 bytes that parse as a schnorr signature; only their placement is under test.
+    let mut bytes = [1u8; 64];
+    bytes[0] = tag;
+    EncodedSignature(bytes)
+}
+
+/// `owned` names which input positions belong to us; the rest are foreign.
+fn template_with(owned: &[usize], total_inputs: usize) -> TransactionTemplate {
+    let key = key();
+    let mut template = TransactionTemplate::new();
+
+    for i in 0..total_inputs {
+        let value = Amount::from_sat(100_000);
+        if let Some(nth) = owned.iter().position(|o| *o == i) {
+            let path = BitcoinBip32Path::external(idx(nth as u32));
+            let txout = TxOut {
+                value,
+                script_pubkey: LocalSpk {
+                    master_appkey: key,
+                    bip32_path: path,
+                }
+                .spk(),
+            };
+            template
+                .push_owned_input(
+                    PushInput::spend_outpoint(&txout, outpoint(i as u32)),
+                    LocalSpk {
+                        master_appkey: key,
+                        bip32_path: path,
+                    },
+                )
+                .unwrap();
+        } else {
+            let txout = TxOut {
+                value,
+                script_pubkey: foreign_spk(i as u8),
+            };
+            template.push_foreign_input(PushInput::spend_outpoint(&txout, outpoint(i as u32)));
+        }
+    }
+
+    template.push_foreign_output(TxOut {
+        value: Amount::from_sat(50_000),
+        script_pubkey: foreign_spk(0xff),
+    });
+    template
+}
+
+#[test]
+fn a_foreign_input_before_ours_does_not_take_our_signature() {
+    let template = template_with(&[1], 2);
+
+    let sigs = [signature(7)];
+    let pairs = template.signatures_by_input_index(&sigs).unwrap();
+
+    assert_eq!(pairs.len(), 1);
+    assert_eq!(
+        pairs[0].0, 1,
+        "the signature belongs to input 1, not input 0"
+    );
+
+    let tx = template.to_signed_rust_bitcoin_tx(&[signature(7)]).unwrap();
+    assert!(
+        tx.input[0].witness.is_empty(),
+        "the foreign input must be left alone"
+    );
+    assert!(!tx.input[1].witness.is_empty());
+}
+
+#[test]
+fn foreign_inputs_on_both_sides_of_ours() {
+    let template = template_with(&[1, 2], 4);
+
+    let sigs = [signature(1), signature(2)];
+    let pairs = template.signatures_by_input_index(&sigs).unwrap();
+
+    assert_eq!(
+        pairs.iter().map(|(i, _)| *i).collect::<Vec<_>>(),
+        vec![1, 2]
+    );
+    assert_eq!(pairs[0].1 .0[0], 1);
+    assert_eq!(pairs[1].1 .0[0], 2);
+
+    let tx = template
+        .to_signed_rust_bitcoin_tx(&[signature(1), signature(2)])
+        .unwrap();
+    assert!(tx.input[0].witness.is_empty());
+    assert!(!tx.input[1].witness.is_empty());
+    assert!(!tx.input[2].witness.is_empty());
+    assert!(tx.input[3].witness.is_empty());
+}
+
+#[test]
+fn every_input_ours_is_unchanged() {
+    let template = template_with(&[0, 1], 2);
+
+    let sigs = [signature(1), signature(2)];
+    let pairs = template.signatures_by_input_index(&sigs).unwrap();
+
+    assert_eq!(
+        pairs.iter().map(|(i, _)| *i).collect::<Vec<_>>(),
+        vec![0, 1]
+    );
+}
+
+#[test]
+fn too_few_signatures_is_rejected_rather_than_truncated() {
+    let template = template_with(&[1, 2], 4);
+
+    let sigs = [signature(1)];
+    let err = template.signatures_by_input_index(&sigs).unwrap_err();
+
+    assert_eq!((err.expected, err.got), (2, 1));
+    assert!(template.to_signed_rust_bitcoin_tx(&[signature(1)]).is_err());
+}
+
+#[test]
+fn too_many_signatures_is_rejected() {
+    let template = template_with(&[1], 2);
+
+    let sigs = [signature(1), signature(2)];
+    let err = template.signatures_by_input_index(&sigs).unwrap_err();
+
+    assert_eq!((err.expected, err.got), (1, 2));
+}
+
+/// An input paying a script we also send to is still a foreign input. Asking "is this spk
+/// one of ours" cannot tell the difference; asking the template can.
+#[test]
+fn a_foreign_input_at_one_of_our_own_output_scripts_is_still_foreign() {
+    let key = key();
+    let our_path = BitcoinBip32Path::internal(idx(3));
+    let our_spk = LocalSpk {
+        master_appkey: key,
+        bip32_path: our_path,
+    }
+    .spk();
+
+    let mut template = TransactionTemplate::new();
+
+    let decoy = TxOut {
+        value: Amount::from_sat(100_000),
+        script_pubkey: our_spk.clone(),
+    };
+    template.push_foreign_input(PushInput::spend_outpoint(&decoy, outpoint(0)));
+
+    let ours = TxOut {
+        value: Amount::from_sat(100_000),
+        script_pubkey: LocalSpk {
+            master_appkey: key,
+            bip32_path: BitcoinBip32Path::external(idx(0)),
+        }
+        .spk(),
+    };
+    template
+        .push_owned_input(
+            PushInput::spend_outpoint(&ours, outpoint(1)),
+            LocalSpk {
+                master_appkey: key,
+                bip32_path: BitcoinBip32Path::external(idx(0)),
+            },
+        )
+        .unwrap();
+
+    template
+        .push_owned_output_checked(
+            &TxOut {
+                value: Amount::from_sat(150_000),
+                script_pubkey: our_spk,
+            },
+            LocalSpk {
+                master_appkey: key,
+                bip32_path: our_path,
+            },
+        )
+        .unwrap();
+
+    let sigs = [signature(7)];
+    let pairs = template.signatures_by_input_index(&sigs).unwrap();
+    assert_eq!(
+        pairs.iter().map(|(i, _)| *i).collect::<Vec<_>>(),
+        vec![1],
+        "input 0 pays a script we own but the template never owned that input"
+    );
+}

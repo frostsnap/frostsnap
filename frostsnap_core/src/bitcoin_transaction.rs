@@ -9,6 +9,7 @@ use bitcoin::{
 };
 
 use crate::{
+    message::EncodedSignature,
     tweak::{AppTweak, BitcoinBip32Path, Keychain},
     MasterAppkey,
 };
@@ -262,6 +263,42 @@ impl TransactionTemplate {
             .filter_map(|(i, input)| Some((i, input, input.owner.local_owner()?)))
     }
 
+    /// Pairs each signature with the index of the input it was produced for.
+    ///
+    /// Signatures arrive in the order [`Self::iter_sighashes_of_locally_owned_inputs`] produced
+    /// their sighashes, which skips foreign inputs. Their positions are therefore *not* input
+    /// indices, and pairing them positionally against every input silently signs the wrong one.
+    pub fn signatures_by_input_index<'a>(
+        &self,
+        signatures: &'a [EncodedSignature],
+    ) -> Result<Vec<(usize, &'a EncodedSignature)>, SignatureCountMismatch> {
+        let expected = self.iter_locally_owned_inputs().count();
+        if signatures.len() != expected {
+            return Err(SignatureCountMismatch {
+                expected,
+                got: signatures.len(),
+            });
+        }
+
+        Ok(self
+            .iter_locally_owned_inputs()
+            .map(|(i, _, _)| i)
+            .zip(signatures)
+            .collect())
+    }
+
+    /// The transaction with each signature witnessed onto the input it signs.
+    pub fn to_signed_rust_bitcoin_tx(
+        &self,
+        signatures: &[EncodedSignature],
+    ) -> Result<bitcoin::Transaction, SignatureCountMismatch> {
+        let mut tx = self.to_rust_bitcoin_tx();
+        for (i, signature) in self.signatures_by_input_index(signatures)? {
+            tx.input[i].witness = signature_witness(signature);
+        }
+        Ok(tx)
+    }
+
     pub fn iter_locally_owned_outputs(&self) -> impl Iterator<Item = (usize, &Output, &LocalSpk)> {
         self.outputs
             .iter()
@@ -437,6 +474,37 @@ impl PromptSignBitcoinTx {
 pub enum RootOwner {
     Local(MasterAppkey),
     Foreign(ScriptBuf),
+}
+
+/// A signature was produced for every locally owned input; a different count means the list
+/// did not come from this template.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SignatureCountMismatch {
+    pub expected: usize,
+    pub got: usize,
+}
+
+impl core::fmt::Display for SignatureCountMismatch {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(
+            f,
+            "expected {} signatures for this transaction's own inputs but got {}",
+            self.expected, self.got
+        )
+    }
+}
+
+#[cfg(feature = "std")]
+impl std::error::Error for SignatureCountMismatch {}
+
+/// A key-path taproot spend witness, which is what every input this wallet owns uses.
+pub fn signature_witness(signature: &EncodedSignature) -> bitcoin::Witness {
+    let signature = bitcoin::taproot::Signature {
+        signature: bitcoin::secp256k1::schnorr::Signature::from_slice(&signature.0)
+            .expect("a schnorr signature is 64 bytes"),
+        sighash_type: bitcoin::sighash::TapSighashType::Default,
+    };
+    bitcoin::Witness::from_slice(&[signature.to_vec()])
 }
 
 /// The provided spk doesn't match what was derived from the derivation path
