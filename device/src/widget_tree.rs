@@ -212,7 +212,7 @@ impl WidgetTree {
         rand_seed: u32,
     ) -> Self {
         let address_display =
-            AddressWithIndex::new_with_seed(address, bip32_path.index as usize, rand_seed);
+            AddressWithIndex::new_with_seed(address, bip32_path.index.to_u32() as usize, rand_seed);
         Self::AddressDisplay(Box::new(Center::new(address_display)))
     }
 }

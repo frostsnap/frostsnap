@@ -763,6 +763,9 @@ impl FfiCoordinator {
     ) -> anyhow::Result<()> {
         let coordinator = self.coordinator.lock().unwrap();
 
+        let address_index = frostsnap_core::tweak::NormalIndex::new(address_index)
+            .ok_or_else(|| anyhow!("address index {address_index} is not a normal bip32 child"))?;
+
         let verify_address_messages = coordinator.verify_address(key_id, address_index)?;
 
         let ui_protocol = VerifyAddressProtocol::new(verify_address_messages.clone(), stream);
