@@ -4,7 +4,7 @@
 //! re-plan) as often as it likes — a fee display bound to a plan cannot move the wallet's
 //! keychain indices.
 
-use super::wallet::{revealed_index, CoordSuperWallet, KeychainId};
+use super::wallet::{CoordSuperWallet, KeychainId};
 use anyhow::{anyhow, Result};
 use bdk_chain::{
     bitcoin::{self, Amount, OutPoint, TxOut},
@@ -17,7 +17,7 @@ use bdk_coin_select::{
 };
 use frostsnap_core::{
     bitcoin_transaction::{LocalSpk, PushInput, TransactionTemplate},
-    tweak::{BitcoinAccountKeychain, BitcoinBip32Path},
+    tweak::{BitcoinAccountKeychain, BitcoinBip32Path, NormalIndex},
     MasterAppkey,
 };
 use std::collections::{BTreeMap, BTreeSet};
@@ -213,7 +213,8 @@ impl CoordSuperWallet {
                 (
                     BitcoinBip32Path {
                         account_keychain,
-                        index: revealed_index(index),
+                        index: NormalIndex::new(index)
+                            .expect("bdk indexed this utxo against a spk it derived"),
                     },
                     utxos[position].outpoint,
                 )
@@ -356,7 +357,8 @@ impl CoordSuperWallet {
                     master_appkey: plan.master_appkey,
                     bip32_path: BitcoinBip32Path {
                         account_keychain: BitcoinAccountKeychain::internal(),
-                        index: revealed_index(index),
+                        index: NormalIndex::new(index)
+                            .expect("bdk never reveals a change spk past BIP32_MAX_INDEX"),
                     },
                 },
             );
@@ -381,7 +383,6 @@ mod test {
         BlockId, CheckPoint, ConfirmationBlockTime, TxUpdate,
     };
     use frostsnap_core::schnorr_fun::fun::Point;
-    use frostsnap_core::tweak::NormalIndex;
     use std::str::FromStr;
     use std::sync::{Arc, Mutex};
 

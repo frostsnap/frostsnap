@@ -205,7 +205,9 @@ impl CoordSuperWallet {
                     master_appkey,
                     BitcoinBip32Path {
                         account_keychain: keychain,
-                        index: revealed_index(i),
+                        index: NormalIndex::new(i).expect(
+                            "i is bounded by next_index, which bdk saturates at BIP32_MAX_INDEX",
+                        ),
                     },
                 )
             })
@@ -253,7 +255,8 @@ impl CoordSuperWallet {
             master_appkey,
             BitcoinBip32Path {
                 account_keychain: keychain,
-                index: revealed_index(index),
+                index: NormalIndex::new(index)
+                    .expect("bdk saturates next_index at BIP32_MAX_INDEX"),
             },
         )
     }
@@ -626,7 +629,9 @@ impl CoordSuperWallet {
                         master_appkey,
                         bip32_path: BitcoinBip32Path {
                             account_keychain,
-                            index: revealed_index(index),
+                            index: NormalIndex::new(index).expect(
+                                "bdk derived this spk from our descriptor so its index is normal",
+                            ),
                         },
                     },
                 ),
@@ -709,11 +714,6 @@ impl std::fmt::Display for PsbtValidationError {
     }
 }
 impl std::error::Error for PsbtValidationError {}
-
-/// bdk stops revealing at `BIP32_MAX_INDEX`, so any index it hands back is a normal child.
-pub(super) fn revealed_index(index: u32) -> NormalIndex {
-    NormalIndex::new(index).expect("bdk never reveals past BIP32_MAX_INDEX")
-}
 
 #[derive(Clone, Debug)]
 pub struct AddressInfo {
