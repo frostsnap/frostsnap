@@ -16,6 +16,7 @@ import 'package:frostsnap/psbt.dart';
 import 'package:frostsnap/snackbar.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/bitcoin.dart';
+import 'package:frostsnap/src/rust/lib.dart';
 import 'package:frostsnap/src/rust/api/device_list.dart';
 import 'package:frostsnap/src/rust/api/psbt_manager.dart';
 import 'package:frostsnap/src/rust/api/signing.dart';
@@ -769,9 +770,19 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
   broadcast(BuildContext context) async {
     if (mounted) setState(() => isBroadcasting = true);
     final walletCtx = WalletContext.of(context)!;
-    final tx = await txDetails.tx.withSignatures(
-      signatures: signingState?.finishedSignatures ?? [],
-    );
+    final RTransaction tx;
+    try {
+      tx = await txDetails.tx.withSignatures(
+        signatures: signingState?.finishedSignatures ?? [],
+      );
+    } catch (e) {
+      // Nothing broadcastable was produced, so there is nothing safe to send.
+      if (mounted) {
+        setState(() => isBroadcasting = false);
+        showErrorSnackbar(context, 'Cannot broadcast: $e');
+      }
+      return;
+    }
     var broadcastError = '';
     final broadcasted = await walletCtx.wallet.superWallet
         .broadcastTx(masterAppkey: walletCtx.masterAppkey, tx: tx)

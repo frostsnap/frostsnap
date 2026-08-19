@@ -16,7 +16,7 @@ use frostsnap_core::{
     message::EncodedSignature, AccessStructureRef, DeviceId, KeyId, SignSessionId, SymmetricKey,
     WireSignTask,
 };
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use tracing::{event, Level};
 
 /// An outgoing Bitcoin transaction that has not been successfully broadcast.
@@ -76,7 +76,7 @@ pub trait ActiveSignSessionExt {
     #[frb(sync)]
     fn state(&self) -> SigningState;
     #[frb(sync)]
-    fn details(&self) -> SigningDetails;
+    fn details(&self, master_appkey: MasterAppkey) -> SigningDetails;
     #[frb(sync)]
     fn access_structure_ref(&self) -> AccessStructureRef;
 }
@@ -100,7 +100,7 @@ impl ActiveSignSessionExt for ActiveSignSession {
     }
 
     #[frb(sync)]
-    fn details(&self) -> SigningDetails {
+    fn details(&self, master_appkey: MasterAppkey) -> SigningDetails {
         let session_init = &self.init;
 
         let res = match session_init.group_request.sign_task.clone() {
@@ -110,35 +110,9 @@ impl ActiveSignSessionExt for ActiveSignSession {
                 content: event.content,
                 hash_bytes: event.hash_bytes.to_lower_hex_string(),
             },
-            WireSignTask::BitcoinTransaction(tx_temp) => {
-                let raw_tx = tx_temp.to_rust_bitcoin_tx();
-                let txid = raw_tx.compute_txid();
-                let is_mine = tx_temp
-                    .iter_locally_owned_inputs()
-                    .map(|(_, _, spk)| (spk.spk(), spk.bip32_path.index.to_u32()))
-                    .chain(
-                        tx_temp
-                            .iter_locally_owned_outputs()
-                            .map(|(_, _, spk)| (spk.spk(), spk.bip32_path.index.to_u32())),
-                    )
-                    .collect::<HashMap<_, _>>();
-                let prevouts = tx_temp
-                    .inputs()
-                    .iter()
-                    .map(|input| (input.outpoint(), input.txout()))
-                    .collect::<HashMap<bitcoin::OutPoint, bitcoin::TxOut>>();
-                SigningDetails::Transaction {
-                    transaction: Transaction {
-                        template: Some(tx_temp.clone()),
-                        inner: raw_tx,
-                        txid: txid.to_string(),
-                        confirmation_time: None,
-                        last_seen: None,
-                        prevouts,
-                        is_mine,
-                    },
-                }
-            }
+            WireSignTask::BitcoinTransaction(tx_temp) => SigningDetails::Transaction {
+                transaction: Transaction::from_template(&tx_temp, master_appkey),
+            },
         };
         res
     }
@@ -171,34 +145,8 @@ impl UnsignedTx {
     }
 
     #[frb(sync)]
-    pub fn details(&self, super_wallet: &SuperWallet, master_appkey: MasterAppkey) -> Transaction {
-        let super_wallet = super_wallet.inner.lock().unwrap();
-        let raw_tx = self.template_tx.to_rust_bitcoin_tx();
-        let txid = raw_tx.compute_txid();
-        Transaction {
-            template: Some(self.template_tx.clone()),
-            txid: txid.to_string(),
-            confirmation_time: None,
-            last_seen: None,
-            prevouts: super_wallet
-                .get_prevouts(raw_tx.input.iter().map(|txin| txin.previous_output)),
-            is_mine: raw_tx
-                .output
-                .iter()
-                .chain(
-                    super_wallet
-                        .get_prevouts(raw_tx.input.iter().map(|txin| txin.previous_output))
-                        .values(),
-                )
-                .filter_map(|txout| {
-                    let spk = txout.script_pubkey.clone();
-                    super_wallet
-                        .spk_path(master_appkey, spk.clone())
-                        .map(|path| (spk, path.index.to_u32()))
-                })
-                .collect::<HashMap<_, _>>(),
-            inner: raw_tx,
-        }
+    pub fn details(&self, master_appkey: MasterAppkey) -> Transaction {
+        Transaction::from_template(&self.template_tx, master_appkey)
     }
 
     #[frb(sync)]
@@ -365,7 +313,7 @@ impl Coordinator {
                 let sign_task = &session.init.group_request.sign_task;
                 match sign_task {
                     WireSignTask::BitcoinTransaction(tx_temp) => {
-                        let tx = Transaction::from_template(tx_temp);
+                        let tx = Transaction::from_template(tx_temp, master_appkey);
                         let session_id = session.session_id();
                         Some(UnbroadcastedTx {
                             tx,
@@ -384,7 +332,7 @@ impl Coordinator {
             .filter_map(
                 |(&session_id, session)| match &session.init.group_request.sign_task {
                     WireSignTask::BitcoinTransaction(tx_temp) => {
-                        let mut tx = Transaction::from_template(tx_temp);
+                        let mut tx = Transaction::from_template(tx_temp, master_appkey);
                         // Showing an unbroadcastable transaction is worse than omitting it:
                         // its witnesses would be on inputs that did not produce them.
                         if let Err(e) = tx.fill_signatures(tx_temp, &session.signatures) {

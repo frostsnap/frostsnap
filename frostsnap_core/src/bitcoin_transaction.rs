@@ -263,6 +263,26 @@ impl TransactionTemplate {
             .filter_map(|(i, input)| Some((i, input, input.owner.local_owner()?)))
     }
 
+    /// Which scripts in this transaction `master_appkey` derives, on either side, and at what
+    /// path.
+    ///
+    /// The key is an argument rather than part of the answer so that a bare path is safe to
+    /// return: it can only be read back against the key that was asked about. A template may
+    /// carry scripts belonging to more than one key, and pairing one key's path with another
+    /// key is exactly how a PSBT output was once attributed to the wrong wallet.
+    ///
+    /// The template is the authority on what is ours; asking a wallet index instead answers
+    /// a different question and is bounded by whatever it has derived so far.
+    pub fn owned_spks(&self, master_appkey: MasterAppkey) -> BTreeMap<ScriptBuf, BitcoinBip32Path> {
+        self.inputs
+            .iter()
+            .filter_map(|i| i.owner.local_owner())
+            .chain(self.iter_locally_owned_outputs_as_inputs())
+            .filter(|owner| owner.master_appkey == master_appkey)
+            .map(|owner| (owner.spk(), owner.bip32_path))
+            .collect()
+    }
+
     /// Pairs each signature with the index of the input it was produced for.
     ///
     /// Signatures arrive in the order [`Self::iter_sighashes_of_locally_owned_inputs`] produced
@@ -297,6 +317,10 @@ impl TransactionTemplate {
             tx.input[i].witness = signature_witness(signature);
         }
         Ok(tx)
+    }
+
+    fn iter_locally_owned_outputs_as_inputs(&self) -> impl Iterator<Item = &LocalSpk> {
+        self.outputs.iter().filter_map(|o| o.owner.local_owner())
     }
 
     pub fn iter_locally_owned_outputs(&self) -> impl Iterator<Item = (usize, &Output, &LocalSpk)> {
