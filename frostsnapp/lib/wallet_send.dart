@@ -82,7 +82,47 @@ class _WalletSendPageState extends State<WalletSendPage> {
     sub.start().listen((_) => mounted ? setState(() {}) : null);
 
     addrController = AddressInputController(state);
+    addrController.controller.addListener(_onRecipientTextChanged);
     amountController = AmountInputController(state: state);
+  }
+
+  // The page doesn't otherwise rebuild while typing — the TextField repaints
+  // itself and AddressInputController only notifies on error changes — so the
+  // pill's visibility needs this poke.
+  void _onRecipientTextChanged() {
+    if (mounted) setState(() {});
+  }
+
+  /// Derived, not stored, from whichever recipient is on screen: the raw field
+  /// text while editing (a stale submitted recipient must not keep the pill
+  /// alive), the submitted recipient after advancing (a BIP21 paste's parsed
+  /// address rather than its URI text). Null when the recipient is not ours.
+  String? get ownedRecipientLabel {
+    final submitted = pageIndex.index > SendPageIndex.recipient.index
+        ? state.recipient(recipient: 0)?.address?.toString()
+        : null;
+    return widget.superWallet.ownedAddressLabel(
+      masterAppkey: widget.masterAppkey,
+      addressStr: submitted ?? addrController.controller.text,
+    );
+  }
+
+  /// Quiet tonal chip naming the output the way the signing device will.
+  Widget _toSelfPill(BuildContext context, String label) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10.0, vertical: 4.0),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.secondaryContainer,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        'To self: $label',
+        style: theme.textTheme.labelMedium?.copyWith(
+          color: theme.colorScheme.onSecondaryContainer,
+        ),
+      ),
+    );
   }
 
   @override
@@ -213,6 +253,16 @@ class _WalletSendPageState extends State<WalletSendPage> {
                 textAlign: TextAlign.right,
                 style: monospaceTextStyle,
               ),
+              subtitle: switch (ownedRecipientLabel) {
+                null => null,
+                final label => Padding(
+                  padding: const EdgeInsets.only(top: 4.0),
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: _toSelfPill(context, label),
+                  ),
+                ),
+              },
             ),
           if (pageIndex.index > SendPageIndex.amount.index)
             _buildCompletedAmountAndFee(context),
@@ -303,6 +353,11 @@ class _WalletSendPageState extends State<WalletSendPage> {
                 errorMaxLines: 2,
               ),
             ),
+            if (ownedRecipientLabel case final label?)
+              Align(
+                alignment: Alignment.centerLeft,
+                child: _toSelfPill(context, label),
+              ),
             Row(
               spacing: 8.0,
               children: [

@@ -123,14 +123,23 @@ impl CoordSuperWallet {
     }
 
     pub fn is_spk_mine(&self, master_appkey: MasterAppkey, spk: ScriptBuf) -> bool {
-        self.spk_index(master_appkey, spk).is_some()
+        self.spk_path(master_appkey, spk).is_some()
     }
 
-    pub fn spk_index(&self, master_appkey: MasterAppkey, spk: ScriptBuf) -> Option<u32> {
-        self.tx_graph
-            .index
-            .index_of_spk(spk)
-            .and_then(|((key, _), index)| (*key == master_appkey).then_some(*index))
+    /// The derivation this wallet reaches `spk` by, or `None` if it does not reach it.
+    /// The keychain is half the answer: receive #5 and change #5 are different scripts,
+    /// and an index alone cannot say which one was found.
+    pub fn spk_path(
+        &self,
+        master_appkey: MasterAppkey,
+        spk: ScriptBuf,
+    ) -> Option<BitcoinBip32Path> {
+        let &((key, account_keychain), index) = self.tx_graph.index.index_of_spk(spk)?;
+        (key == master_appkey).then(|| BitcoinBip32Path {
+            account_keychain,
+            index: NormalIndex::new(index)
+                .expect("bdk derived this spk, so its index is a normal child"),
+        })
     }
 
     fn descriptors_for_key(

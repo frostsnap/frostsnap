@@ -158,6 +158,17 @@ impl BitcoinBip32Path {
             index,
         }
     }
+
+    /// How an output the wallet derives is named to the user: "Receive #3", "Change #2".
+    /// Defined here because the device screen and the app both name it, and one output
+    /// read two ways is a worse answer than either.
+    pub fn label(&self) -> alloc::string::String {
+        let keychain = match self.account_keychain.keychain {
+            Keychain::External => "Receive",
+            Keychain::Internal => "Change",
+        };
+        alloc::format!("{} #{}", keychain, self.index)
+    }
 }
 
 #[derive(
@@ -503,6 +514,7 @@ impl DerivationPathExt for DerivationPath {
 
 #[cfg(test)]
 mod test {
+
     use super::*;
     use alloc::vec::Vec;
     use bitcoin::secp256k1::Secp256k1;

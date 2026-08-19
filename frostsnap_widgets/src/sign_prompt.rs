@@ -97,23 +97,46 @@ impl AmountPage {
 #[derive(Clone, frostsnap_macros::Widget)]
 pub struct AddressPage {
     #[widget_delegate]
-    center: Center<Padding<Column<(Text<Gray4TextStyle>, AddressDisplay)>>>,
+    center: Center<
+        Padding<
+            Column<(
+                Text<Gray4TextStyle>,
+                AddressDisplay,
+                Option<Text<Gray4TextStyle>>,
+            )>,
+        >,
+    >,
 }
 
 impl AddressPage {
     #[inline(never)]
-    pub fn new_with_seed(index: usize, address: &bitcoin::Address, rand_seed: u32) -> Self {
+    pub fn new_with_seed(
+        index: usize,
+        address: &bitcoin::Address,
+        rand_seed: u32,
+        owned: Option<&BitcoinBip32Path>,
+    ) -> Self {
         let title = Text::new(
             format!("To Address #{}", index + 1),
             Gray4TextStyle::new(FONT_PAGE_HEADER, PALETTE.text_secondary),
         );
+        // Names the keychain rather than printing its number: this is a threshold
+        // wallet, and a bare "1/3" reads as one-of-three signers — a claim about the
+        // access structure, not about where the money went.
+        let footnote = owned.map(|path| {
+            Text::new(
+                path.label(),
+                Gray4TextStyle::new(FONT_TO_SELF_FOOTNOTE, PALETTE.text_secondary),
+            )
+        });
 
         let mixed_seed = rand_seed.wrapping_add((index as u32).wrapping_mul(0x9e3779b9));
         let address_display = AddressDisplay::new_with_seed(address.clone(), mixed_seed);
 
-        let mut column = Column::new((title, address_display))
+        let mut column = Column::new((title, address_display, footnote))
             .with_main_axis_alignment(MainAxisAlignment::Start);
         column.set_gap(0, 10);
+        column.set_gap(1, if owned.is_some() { 8 } else { 0 });
         let padded = Padding::only(column).bottom(40).build();
 
         Self {
@@ -380,6 +403,7 @@ impl WidgetList for SignPromptPageList {
                         recipient_idx,
                         &recipient.address,
                         self.rand_seed,
+                        recipient.owned.as_ref(),
                     )),
                     true,
                 )
