@@ -428,7 +428,7 @@ macro_rules! demo_widget {
             }
             "sign_prompt" => {
                 use $crate::sign_prompt::SignTxPrompt;
-                use frostsnap_core::bitcoin_transaction::PromptSignBitcoinTx;
+                use frostsnap_core::bitcoin_transaction::{PromptRecipient, PromptSignBitcoinTx};
                 use core::str::FromStr;
 
                 // Create dummy transaction data with all address types
@@ -458,15 +458,29 @@ macro_rules! demo_widget {
                     .unwrap()
                     .assume_checked();
 
+                let recipient = |address: bitcoin::Address, sats: u64| PromptRecipient {
+                    address,
+                    amount: bitcoin::Amount::from_sat(sats),
+                    owned: None,
+                };
                 let prompt = PromptSignBitcoinTx {
-                    foreign_recipients: $crate::alloc::vec![
-                        (p2tr_address, bitcoin::Amount::from_sat(100_000)),   // 0.001 BTC
-                        (p2wsh_address, bitcoin::Amount::from_sat(200_000)),  // 0.002 BTC
-                        (p2wpkh_address, bitcoin::Amount::from_sat(300_000)), // 0.003 BTC
-                        (p2sh_address, bitcoin::Amount::from_sat(400_000)),   // 0.004 BTC
-                        (p2pkh_address, bitcoin::Amount::from_sat(500_000)),  // 0.005 BTC
+                    recipients: $crate::alloc::vec![
+                        recipient(p2tr_address.clone(), 100_000),
+                        recipient(p2wsh_address, 200_000),
+                        recipient(p2wpkh_address, 300_000),
+                        recipient(p2sh_address, 400_000),
+                        recipient(p2pkh_address, 500_000),
+                        // Taproot: an output the wallet derives is always taproot, so a
+                        // non-taproot "to self" is a state the device can never be shown.
+                        PromptRecipient {
+                            address: p2tr_address,
+                            amount: bitcoin::Amount::from_sat(150_000),
+                            owned: Some(frostsnap_core::tweak::BitcoinBip32Path::internal(
+                                frostsnap_core::tweak::NormalIndex::new(3).unwrap(),
+                            )),
+                        },
                     ],
-                    fee: bitcoin::Amount::from_sat(80_000), // 0.00080 BTC (>5% fee triggers warning)
+                    fee: bitcoin::Amount::from_sat(90_000), // >5% of the value moved, so the warning page shows
                     fee_rate_sats_per_vbyte: Some(12.5), // Example: 12.5 sats/vB fee rate
                 };
 

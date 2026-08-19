@@ -190,8 +190,8 @@ impl UnsignedTx {
                 .filter_map(|txout| {
                     let spk = txout.script_pubkey.clone();
                     super_wallet
-                        .spk_index(master_appkey, spk.clone())
-                        .map(|index| (spk, index))
+                        .spk_path(master_appkey, spk.clone())
+                        .map(|path| (spk, path.index.to_u32()))
                 })
                 .collect::<HashMap<_, _>>(),
             inner: raw_tx,

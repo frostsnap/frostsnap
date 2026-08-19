@@ -14,7 +14,7 @@ use embedded_graphics::{
     geometry::Size,
     pixelcolor::{Gray8, Rgb565},
 };
-use frostsnap_core::bitcoin_transaction::PromptSignBitcoinTx;
+use frostsnap_core::{bitcoin_transaction::PromptSignBitcoinTx, tweak::BitcoinBip32Path};
 use frostsnap_fonts::{
     Gray4Font, NOTO_SANS_17_REGULAR, NOTO_SANS_18_LIGHT, NOTO_SANS_18_MEDIUM, NOTO_SANS_24_BOLD,
 };
@@ -30,6 +30,8 @@ const FONT_CAUTION_TEXT: &Gray4Font = &NOTO_SANS_17_REGULAR;
 const HIGH_FEE_ABSOLUTE_THRESHOLD_SATS: u64 = 100_000;
 const HIGH_FEE_PERCENTAGE_THRESHOLD: u64 = 5;
 const HOLD_TO_SIGN_TIME_MS: u32 = 3000;
+
+const FONT_TO_SELF_FOOTNOTE: &Gray4Font = &NOTO_SANS_17_REGULAR;
 
 /// Widget list that generates sign prompt pages
 #[derive(Clone)]
@@ -48,17 +50,26 @@ pub struct AmountPage {
             Text<Gray4TextStyle>,
             BitcoinAmountDisplay,
             Text<Gray4TextStyle>,
+            Option<Text<Gray4TextStyle>>,
         )>,
     >,
 }
 
 impl AmountPage {
     #[inline(never)]
-    pub fn new(index: usize, amount_sats: u64) -> Self {
+    pub fn new(index: usize, amount_sats: u64, owned: Option<&BitcoinBip32Path>) -> Self {
         let title = Text::new(
             format!("Send Amount #{}", index + 1),
             Gray4TextStyle::new(FONT_PAGE_HEADER, PALETTE.text_secondary),
         );
+        // Under the amount, the whole answer to "where is this value going" is that it
+        // comes back to us; WHICH of our scripts it lands on belongs under the address.
+        let footnote = owned.map(|_| {
+            Text::new(
+                "To Self".to_string(),
+                Gray4TextStyle::new(FONT_TO_SELF_FOOTNOTE, PALETTE.text_secondary),
+            )
+        });
 
         let amount_display = BitcoinAmountDisplay::new(amount_sats);
 
@@ -67,10 +78,14 @@ impl AmountPage {
             Gray4TextStyle::new(FONT_PAGE_HEADER, PALETTE.text_secondary),
         );
 
-        let mut column = Column::new((title, amount_display, btc_text))
+        let mut column = Column::new((title, amount_display, btc_text, footnote))
             .with_main_axis_alignment(MainAxisAlignment::Center)
             .with_cross_axis_alignment(CrossAxisAlignment::Center);
-        column.set_uniform_gap(10);
+        // Gaps keep an unowned page pixel-identical to the pre-footnote layout: the
+        // empty slot contributes no height and no gap.
+        column.set_gap(0, 10);
+        column.set_gap(1, 10);
+        column.set_gap(2, if owned.is_some() { 8 } else { 0 });
 
         Self {
             center: Center::new(column),
@@ -82,23 +97,46 @@ impl AmountPage {
 #[derive(Clone, frostsnap_macros::Widget)]
 pub struct AddressPage {
     #[widget_delegate]
-    center: Center<Padding<Column<(Text<Gray4TextStyle>, AddressDisplay)>>>,
+    center: Center<
+        Padding<
+            Column<(
+                Text<Gray4TextStyle>,
+                AddressDisplay,
+                Option<Text<Gray4TextStyle>>,
+            )>,
+        >,
+    >,
 }
 
 impl AddressPage {
     #[inline(never)]
-    pub fn new_with_seed(index: usize, address: &bitcoin::Address, rand_seed: u32) -> Self {
+    pub fn new_with_seed(
+        index: usize,
+        address: &bitcoin::Address,
+        rand_seed: u32,
+        owned: Option<&BitcoinBip32Path>,
+    ) -> Self {
         let title = Text::new(
             format!("To Address #{}", index + 1),
             Gray4TextStyle::new(FONT_PAGE_HEADER, PALETTE.text_secondary),
         );
+        // Names the keychain rather than printing its number: this is a threshold
+        // wallet, and a bare "1/3" reads as one-of-three signers — a claim about the
+        // access structure, not about where the money went.
+        let footnote = owned.map(|path| {
+            Text::new(
+                path.label(),
+                Gray4TextStyle::new(FONT_TO_SELF_FOOTNOTE, PALETTE.text_secondary),
+            )
+        });
 
         let mixed_seed = rand_seed.wrapping_add((index as u32).wrapping_mul(0x9e3779b9));
         let address_display = AddressDisplay::new_with_seed(address.clone(), mixed_seed);
 
-        let mut column = Column::new((title, address_display))
+        let mut column = Column::new((title, address_display, footnote))
             .with_main_axis_alignment(MainAxisAlignment::Start);
         column.set_gap(0, 10);
+        column.set_gap(1, if owned.is_some() { 8 } else { 0 });
         let padded = Padding::only(column).bottom(40).build();
 
         Self {
@@ -174,7 +212,7 @@ pub struct WarningPage {
 
 impl WarningPage {
     #[inline(never)]
-    fn new(fee_sats: u64, _total_sent: u64) -> Self {
+    fn new(fee_sats: u64, leaves_wallet: bool) -> Self {
         let warning_bmp =
             Bmp::<Gray8>::from_slice(WARNING_ICON_DATA).expect("Failed to load warning icon BMP");
         let warning_icon = Image::new(GrayToAlpha::new(warning_bmp, PALETTE.warning));
@@ -197,12 +235,20 @@ impl WarningPage {
             Gray4TextStyle::new(FONT_CAUTION_TITLE, PALETTE.on_background),
         );
 
+        // The wording must name the quantity the rule divided by: in a mixed send every
+        // output is titled "Send Amount #n", owned ones included, so anything reading as
+        // the total is wrong — the proportional rule uses only what leaves.
         let (line1, line2) = if fee_sats > HIGH_FEE_ABSOLUTE_THRESHOLD_SATS {
             ("Fee is greater".to_string(), "than 0.001 BTC".to_string())
+        } else if leaves_wallet {
+            (
+                "Fee exceeds 5% of".to_string(),
+                "the amount leaving".to_string(),
+            )
         } else {
             (
-                "Fee exceeds 5% of the".to_string(),
-                "amount being sent".to_string(),
+                "Fee exceeds 5% of".to_string(),
+                "the value moved".to_string(),
             )
         };
 
@@ -289,11 +335,11 @@ type SignPromptPage = AnyOf<(
 )>;
 
 impl SignPromptPageList {
-    fn new_with_seed(prompt: PromptSignBitcoinTx, rand_seed: u32) -> Self {
-        let num_recipients = prompt.foreign_recipients.len();
+    pub fn new_with_seed(prompt: PromptSignBitcoinTx, rand_seed: u32) -> Self {
+        let num_recipients = prompt.recipients.len();
         let has_warning = Self::has_high_fee(&prompt);
 
-        let total_pages = num_recipients * 2 + 1 + if has_warning { 1 } else { 0 } + 1;
+        let total_pages = num_recipients * 2 + has_warning as usize + 2;
 
         Self {
             prompt,
@@ -309,16 +355,8 @@ impl SignPromptPageList {
             return true;
         }
 
-        let total_sent: u64 = prompt
-            .foreign_recipients
-            .iter()
-            .map(|(_, amount)| amount.to_sat())
-            .sum();
-        if total_sent > 0 && fee_sats > total_sent * HIGH_FEE_PERCENTAGE_THRESHOLD / 100 {
-            return true;
-        }
-
-        false
+        let at_risk_sats = prompt.value_at_risk().to_sat();
+        at_risk_sats > 0 && fee_sats > at_risk_sats * HIGH_FEE_PERCENTAGE_THRESHOLD / 100
     }
 }
 
@@ -334,45 +372,51 @@ impl WidgetList for SignPromptPageList {
             return None;
         }
 
-        let num_recipients = self.prompt.foreign_recipients.len();
+        let num_recipients = self.prompt.recipients.len();
         let recipient_pages = num_recipients * 2;
         let has_warning = Self::has_high_fee(&self.prompt);
 
+        let warning_page = if has_warning {
+            Some(recipient_pages)
+        } else {
+            None
+        };
+        let fee_page = recipient_pages + has_warning as usize;
+
         let (page, use_fb) = if index < recipient_pages {
             let recipient_idx = index / 2;
+            let recipient = &self.prompt.recipients[recipient_idx];
             let is_amount = index.is_multiple_of(2);
 
             if is_amount {
-                let (_, amount) = &self.prompt.foreign_recipients[recipient_idx];
                 (
-                    SignPromptPage::new(AmountPage::new(recipient_idx, amount.to_sat())),
+                    SignPromptPage::new(AmountPage::new(
+                        recipient_idx,
+                        recipient.amount.to_sat(),
+                        recipient.owned.as_ref(),
+                    )),
                     false,
                 )
             } else {
-                let (address, _) = &self.prompt.foreign_recipients[recipient_idx];
                 (
                     SignPromptPage::new(AddressPage::new_with_seed(
                         recipient_idx,
-                        address,
+                        &recipient.address,
                         self.rand_seed,
+                        recipient.owned.as_ref(),
                     )),
                     true,
                 )
             }
-        } else if has_warning && index == recipient_pages {
-            let total_sent: u64 = self
-                .prompt
-                .foreign_recipients
-                .iter()
-                .map(|(_, amount)| amount.to_sat())
-                .sum();
+        } else if Some(index) == warning_page {
             (
-                SignPromptPage::new(WarningPage::new(self.prompt.fee.to_sat(), total_sent)),
+                SignPromptPage::new(WarningPage::new(
+                    self.prompt.fee.to_sat(),
+                    self.prompt.foreign_value().is_some(),
+                )),
                 false,
             )
-        } else if (has_warning && index == recipient_pages + 1)
-            || (!has_warning && index == recipient_pages)
-        {
+        } else if index == fee_page {
             (
                 SignPromptPage::new(FeePage::new(
                     self.prompt.fee.to_sat(),

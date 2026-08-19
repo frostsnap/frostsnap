@@ -154,6 +154,25 @@ impl SuperWallet {
             .search_for_address(master_appkey, address_str, start, stop)
     }
 
+    /// How this wallet names `address_str` if it derives it — "Receive #3", "Change #2" —
+    /// or `None` when the address is not ours, not this network's, or not an address.
+    /// The wording is core's, the same the device's own footnote is built from, so one
+    /// output reads identically in the app and on the screen that signs it.
+    #[frb(sync)]
+    pub fn owned_address_label(
+        &self,
+        master_appkey: MasterAppkey,
+        address_str: String,
+    ) -> Option<String> {
+        let address = address_str.trim().parse::<bitcoin::Address<_>>().ok()?;
+        let address = address.require_network(self.network).ok()?;
+        self.inner
+            .lock()
+            .unwrap()
+            .spk_path(master_appkey, address.script_pubkey())
+            .map(|path| path.label())
+    }
+
     pub fn mark_address_shared(
         &self,
         master_appkey: MasterAppkey,
