@@ -43,7 +43,10 @@ fn test_feerate_estimation_accuracy() {
     });
 
     // Get the estimated feerate from template
-    let template_feerate = template.feerate().expect("should calculate feerate");
+    let template_feerate = template
+        .as_seen_by(master_appkey)
+        .feerate()
+        .expect("should calculate feerate");
     let template_fee = template.fee().expect("should calculate fee");
 
     // The real transaction has these metrics

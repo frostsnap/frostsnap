@@ -244,6 +244,45 @@ impl TransactionTemplate {
         })
     }
 
+    pub fn fee(&self) -> Option<u64> {
+        self.inputs
+            .iter()
+            .map(|input| input.value)
+            .sum::<u64>()
+            .checked_sub(self.outputs.iter().map(|output| output.value).sum())
+    }
+
+    pub fn feerate(&self) -> Option<f64> {
+        let mut tx = self.to_rust_bitcoin_tx();
+
+        for (i, input) in self.inputs.iter().enumerate() {
+            if input.owner().local_owner().is_some() {
+                tx.input[i].witness.push([0u8; 64]);
+            } else {
+                return None;
+            }
+        }
+
+        let vbytes = tx.weight().to_vbytes_ceil() as f64;
+        Some(self.fee()? as f64 / vbytes)
+    }
+
+    pub fn net_value(&self) -> BTreeMap<RootOwner, i64> {
+        let mut spk_to_value: BTreeMap<RootOwner, i64> = Default::default();
+
+        for input in &self.inputs {
+            let value = spk_to_value.entry(input.owner.root_owner()).or_default();
+            *value -= i64::try_from(input.value).expect("input ridiciously large");
+        }
+
+        for output in &self.outputs {
+            let value = spk_to_value.entry(output.owner.root_owner()).or_default();
+            *value += i64::try_from(output.value).expect("input ridiciously large");
+        }
+
+        spk_to_value
+    }
+
     pub fn iter_sighashes_of_locally_owned_inputs(
         &self,
     ) -> impl Iterator<Item = (LocalSpk, TapSighash)> + '_ {
@@ -263,23 +302,20 @@ impl TransactionTemplate {
             .filter_map(|(i, input)| Some((i, input, input.owner.local_owner()?)))
     }
 
-    /// Which scripts in this transaction `master_appkey` derives, on either side, and at what
-    /// path.
+    /// Every script this transaction owns, on either side, with the path that derives it.
     ///
-    /// The key is an argument rather than part of the answer so that a bare path is safe to
-    /// return: it can only be read back against the key that was asked about. A template may
-    /// carry scripts belonging to more than one key, and pairing one key's path with another
-    /// key is exactly how a PSBT output was once attributed to the wrong wallet.
+    /// A bare path is safe to return because a template reaching a reader has been normalised
+    /// by [`Self::as_seen_by`], so "owned" can only mean one key.
     ///
-    /// The template is the authority on what is ours; asking a wallet index instead answers
-    /// a different question and is bounded by whatever it has derived so far.
-    pub fn owned_spks(&self, master_appkey: MasterAppkey) -> BTreeMap<ScriptBuf, BitcoinBip32Path> {
-        self.inputs
-            .iter()
-            .filter_map(|i| i.owner.local_owner())
-            .chain(self.iter_locally_owned_outputs_as_inputs())
-            .filter(|owner| owner.master_appkey == master_appkey)
-            .map(|owner| (owner.spk(), owner.bip32_path))
+    /// The template is the authority on what is ours; asking a wallet index instead answers a
+    /// different question, and one bounded by whatever it has derived so far.
+    pub fn owned_spks(&self) -> BTreeMap<ScriptBuf, BitcoinBip32Path> {
+        self.iter_locally_owned_inputs()
+            .map(|(_, _, owner)| (owner.spk(), owner.bip32_path))
+            .chain(
+                self.iter_locally_owned_outputs()
+                    .map(|(_, _, owner)| (owner.spk(), owner.bip32_path)),
+            )
             .collect()
     }
 
@@ -319,10 +355,6 @@ impl TransactionTemplate {
         Ok(tx)
     }
 
-    fn iter_locally_owned_outputs_as_inputs(&self) -> impl Iterator<Item = &LocalSpk> {
-        self.outputs.iter().filter_map(|o| o.owner.local_owner())
-    }
-
     pub fn iter_locally_owned_outputs(&self) -> impl Iterator<Item = (usize, &Output, &LocalSpk)> {
         self.outputs
             .iter()
@@ -335,45 +367,6 @@ impl TransactionTemplate {
         self.inputs
             .iter()
             .any(|input| input.owner.local_owner().is_some())
-    }
-
-    pub fn fee(&self) -> Option<u64> {
-        self.inputs
-            .iter()
-            .map(|input| input.value)
-            .sum::<u64>()
-            .checked_sub(self.outputs.iter().map(|output| output.value).sum())
-    }
-
-    pub fn feerate(&self) -> Option<f64> {
-        let mut tx = self.to_rust_bitcoin_tx();
-
-        for (i, input) in self.inputs.iter().enumerate() {
-            if input.owner().local_owner().is_some() {
-                tx.input[i].witness.push([0u8; 64]);
-            } else {
-                return None;
-            }
-        }
-
-        let vbytes = tx.weight().to_vbytes_ceil() as f64;
-        Some(self.fee()? as f64 / vbytes)
-    }
-
-    pub fn net_value(&self) -> BTreeMap<RootOwner, i64> {
-        let mut spk_to_value: BTreeMap<RootOwner, i64> = Default::default();
-
-        for input in &self.inputs {
-            let value = spk_to_value.entry(input.owner.root_owner()).or_default();
-            *value -= i64::try_from(input.value).expect("input ridiciously large");
-        }
-
-        for output in &self.outputs {
-            let value = spk_to_value.entry(output.owner.root_owner()).or_default();
-            *value += i64::try_from(output.value).expect("input ridiciously large");
-        }
-
-        spk_to_value
     }
 
     pub fn foreign_recipients(&self) -> impl Iterator<Item = (&Script, u64)> {
@@ -437,6 +430,42 @@ impl TransactionTemplate {
             recipients,
             fee,
             fee_rate_sats_per_vbyte,
+        }
+    }
+    /// This transaction as `master_appkey` sees it: anything owned by another key becomes a
+    /// foreign script.
+    ///
+    /// Ownership is relative to a key, and every reader below says "local" without naming one.
+    /// Normalising once here means they cannot be wrong: a sibling key's output is money
+    /// leaving, and a sibling key's input is one we cannot sign, which is exactly what
+    /// `Foreign` already means to them.
+    pub fn as_seen_by(&self, master_appkey: MasterAppkey) -> Self {
+        let foreign_to_us = |owner: &SpkOwner| match owner {
+            SpkOwner::Local(local) if local.master_appkey != master_appkey => {
+                SpkOwner::Foreign(local.spk())
+            }
+            owner => owner.clone(),
+        };
+
+        Self {
+            version: self.version,
+            lock_time: self.lock_time,
+            inputs: self
+                .inputs
+                .iter()
+                .map(|input| Input {
+                    owner: foreign_to_us(&input.owner),
+                    ..input.clone()
+                })
+                .collect(),
+            outputs: self
+                .outputs
+                .iter()
+                .map(|output| Output {
+                    owner: foreign_to_us(&output.owner),
+                    value: output.value,
+                })
+                .collect(),
         }
     }
 }
