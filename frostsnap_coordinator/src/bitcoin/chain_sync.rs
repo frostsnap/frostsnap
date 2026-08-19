@@ -340,7 +340,7 @@ pub const fn default_backup_electrum_server(network: bitcoin::Network) -> &'stat
 
 pub struct ConnectionHandler {
     client: KeychainClient,
-    client_recv: KeychainClientReceiver,
+    pub(super) client_recv: KeychainClientReceiver,
     req_recv: mpsc::UnboundedReceiver<Message>,
     cache: Cache,
     genesis_hash: BlockHash,

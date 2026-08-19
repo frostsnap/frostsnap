@@ -1393,4 +1393,29 @@ mod test {
         f.wallet.commit_send(&fresh, []).unwrap();
         assert_eq!(f.last_revealed_internal(), Some(0));
     }
+
+    /// The asymmetry's obligation: the indexer reaches a frontier the server was never asked
+    /// about, so a local reveal has to become a subscription or the coin is spendable while its
+    /// own spend goes unseen.
+    #[test]
+    fn a_frontier_reached_locally_is_pushed_to_the_chain_source() {
+        use bdk_electrum_streaming::ClientAction;
+
+        let mut f = Fixture::new();
+        // Past SUBSCRIPTION_LOOKAHEAD, so only a fresh track_descriptor can cover it.
+        let far = 400;
+        f.fund_keychain(BitcoinAccountKeychain::internal(), far, 60_000, 100);
+
+        let mut widest = None;
+        while let Ok(action) = f._handler.client_recv.try_recv() {
+            if let ClientAction::AddDescriptor { next_index, .. } = action {
+                widest = Some(widest.map_or(next_index, |w: u32| w.max(next_index)));
+            }
+        }
+
+        assert!(
+            widest.is_some_and(|w| w > far),
+            "the chain source must be told to look past {far}, got {widest:?}"
+        );
+    }
 }
