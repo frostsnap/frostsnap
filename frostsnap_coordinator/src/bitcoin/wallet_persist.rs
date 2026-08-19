@@ -11,7 +11,9 @@ use bdk_chain::{
 
 impl Persist<rusqlite::Connection> for WalletIndexedTxGraph {
     type Update = WalletIndexedTxGraphChangeSet;
-    type LoadParams = ();
+    /// The indexer's lookahead, an argument rather than a constant read here: how far a database is
+    /// searched is the caller's decision, not the persistence layer's.
+    type LoadParams = u32;
 
     fn migrate(conn: &mut rusqlite::Connection) -> Result<()> {
         let db_tx = conn.transaction()?;
@@ -23,14 +25,10 @@ impl Persist<rusqlite::Connection> for WalletIndexedTxGraph {
         Ok(())
     }
 
-    fn load(conn: &mut rusqlite::Connection, _: Self::LoadParams) -> anyhow::Result<Self> {
+    fn load(conn: &mut rusqlite::Connection, lookahead: Self::LoadParams) -> anyhow::Result<Self> {
         let db_tx = conn.transaction()?;
-        // 50 scripts past the reveal frontier are derived, indexed against, and watched by the
-        // chain source (bdk's default is 25): slop for indices the frontier doesn't know about -
-        // restored wallets, other devices on the key, externally built PSBTs paying our own far
-        // indices. Anything further past the frontier is outside the discovery contract.
         let mut indexed_tx_graph = Self::new(
-            bdk_chain::indexer::keychain_txout::KeychainTxOutIndex::new(50, false),
+            bdk_chain::indexer::keychain_txout::KeychainTxOutIndex::new(lookahead, false),
         );
         indexed_tx_graph.apply_changeset(WalletIndexedTxGraphChangeSet {
             tx_graph: bdk_chain::tx_graph::ChangeSet::from_sqlite(&db_tx)?,
