@@ -56,6 +56,10 @@ class StrandedCoinsBanner extends StatelessWidget {
                         planner: (feerate) =>
                             walletCtx.superWallet.planConsolidate(
                               masterAppkey: walletCtx.masterAppkey,
+                              outpoints: walletCtx.superWallet
+                                  .gapStrandedOutpoints(
+                                    masterAppkey: walletCtx.masterAppkey,
+                                  ),
                               feerate: feerate,
                             ),
                       ),

@@ -325,6 +325,79 @@ impl CoordSuperWallet {
             .map(|(position, _)| position)
             .collect()
     }
+    /// The coins a [`RISKY_GAP`]-window restore could not discover and that are worth rescuing —
+    /// the input set the nudge's remedy consolidates.
+    pub fn gap_stranded_outpoints(&mut self, master_appkey: MasterAppkey) -> Vec<OutPoint> {
+        self.stranded_rescuable(master_appkey)
+            .into_iter()
+            .map(|(_, outpoint, _)| outpoint)
+            .collect()
+    }
+
+    /// Resolve outpoints the caller named into the identities a plan pins: derivation path and
+    /// the value each carries right now. Every one must still be an unspent coin of this key —
+    /// a caller planning against a coin the wallet does not hold is working from a stale list,
+    /// and saying which coin is what lets it recover.
+    ///
+    /// A set, not a list: a coin can be spent once, and a repeat would otherwise be priced and
+    /// counted twice while producing a transaction that spends the same prevout twice. Nothing
+    /// downstream catches that — the doubled value balances against a change output sized to it,
+    /// so the plan's own accounting check passes.
+    fn owned_unspent(
+        &mut self,
+        master_appkey: MasterAppkey,
+        outpoints: impl IntoIterator<Item = OutPoint>,
+    ) -> Result<Vec<(BitcoinBip32Path, OutPoint, u64)>> {
+        let held: BTreeMap<OutPoint, (BitcoinBip32Path, u64)> = self
+            .all_unspent(master_appkey)
+            .into_iter()
+            .map(|(path, outpoint, value)| (outpoint, (path, value)))
+            .collect();
+        let mut named = BTreeSet::new();
+        outpoints
+            .into_iter()
+            .map(|outpoint| {
+                if !named.insert(outpoint) {
+                    return Err(anyhow!(
+                        "{outpoint} was named twice, and a coin spends once"
+                    ));
+                }
+                let &(path, value) = held
+                    .get(&outpoint)
+                    .ok_or_else(|| anyhow!("{outpoint} is not an unspent coin of this wallet"))?;
+                Ok((path, outpoint, value))
+            })
+            .collect()
+    }
+
+    /// Every unspent coin, as consolidation identities.
+    fn all_unspent(
+        &mut self,
+        master_appkey: MasterAppkey,
+    ) -> Vec<(BitcoinBip32Path, OutPoint, u64)> {
+        self.lazily_initialize_key(master_appkey);
+        self.tx_graph
+            .graph()
+            .filter_chain_unspents(
+                self.chain.as_ref(),
+                self.chain.tip().block_id(),
+                CanonicalizationParams::default(),
+                self.tx_graph
+                    .index
+                    .keychain_outpoints_in_range(Self::key_index_range(master_appkey)),
+            )
+            .map(|(((_, account_keychain), index), utxo)| {
+                (
+                    BitcoinBip32Path {
+                        account_keychain,
+                        index: NormalIndex::new(index).expect("bdk never derives a hardened index"),
+                    },
+                    utxo.outpoint,
+                    utxo.txout.value.to_sat(),
+                )
+            })
+            .collect()
+    }
 
     /// The coins the consolidation nudge counts and [`Self::plan_consolidate`] spends — one
     /// source, so the remedy always clears the nudge. A coin qualifies when it is unspent, a
@@ -388,18 +461,22 @@ impl CoordSuperWallet {
 
     /// Plan a consolidation: every coin the nudge counts goes in, and ONE output — change,
     /// allocated by [`Self::commit_send`] like any other — comes back. There is no recipient
-    /// and no coin selection; the input set is the point. A coin effective-negative at
-    /// `feerate` is still included — the user is explicitly rescuing it, and leaving it behind
-    /// would leave the nudge standing after its own remedy. Refuses when the coins cannot pay
-    /// the fee and still leave a usable output.
+    /// and no coin selection; the input set is the caller's, which is the point. A coin
+    /// effective-negative at `feerate` is still included: the caller asked for this coin, and
+    /// second-guessing it would leave behind exactly the coin it wanted moved. Refuses when the
+    /// coins cannot pay the fee and still leave a usable output.
+    ///
+    /// Which coins to pass is the caller's question, and the answer the nudge uses is
+    /// [`Self::gap_stranded_outpoints`].
     pub fn plan_consolidate(
         &mut self,
         master_appkey: MasterAppkey,
+        outpoints: impl IntoIterator<Item = OutPoint>,
         feerate: f32,
     ) -> Result<SendPlan> {
-        let coins = self.stranded_rescuable(master_appkey);
+        let coins = self.owned_unspent(master_appkey, outpoints)?;
         if coins.is_empty() {
-            return Err(anyhow!("there are no gap-stranded coins to consolidate"));
+            return Err(anyhow!("there are no coins to consolidate"));
         }
 
         let candidates = coins
@@ -453,24 +530,8 @@ impl CoordSuperWallet {
     ) -> Result<TransactionTemplate> {
         self.lazily_initialize_key(plan.master_appkey);
 
-        let still_unspent = self
-            .tx_graph
-            .graph()
-            .filter_chain_unspents(
-                self.chain.as_ref(),
-                self.chain.tip().block_id(),
-                CanonicalizationParams::default(),
-                plan.selected
-                    .iter()
-                    .map(|&(path, outpoint, _)| (path, outpoint)),
-            )
-            .count();
-        if still_unspent != plan.selected.len() {
-            return Err(anyhow!(
-                "a planned input is no longer spendable ({still_unspent} of {} remain)",
-                plan.selected.len()
-            ));
-        }
+        self.owned_unspent(plan.master_appkey, plan.selected_outpoints())
+            .map_err(|err| anyhow!("a planned input is no longer spendable: {err}"))?;
 
         let mut template = TransactionTemplate::new();
 
@@ -734,6 +795,13 @@ mod test {
                 .tx_graph
                 .index
                 .last_revealed_index((self.master_appkey, BitcoinAccountKeychain::internal()))
+        }
+
+        /// The input set the nudge's remedy consolidates, composed the way its call site does.
+        fn plan_stranded(&mut self, feerate: f32) -> Result<SendPlan> {
+            let outpoints = self.wallet.gap_stranded_outpoints(self.master_appkey);
+            self.wallet
+                .plan_consolidate(self.master_appkey, outpoints, feerate)
         }
 
         fn plan(&mut self, sats: u64) -> SendPlan {
@@ -1048,7 +1116,7 @@ mod test {
         let stranded_int = f.fund_keychain(BitcoinAccountKeychain::internal(), 25, 200_000, 102);
         let revealed_before = f.last_revealed_internal();
 
-        let plan = f.wallet.plan_consolidate(f.master_appkey, 10.0).unwrap();
+        let plan = f.plan_stranded(10.0).unwrap();
 
         let planned: BTreeSet<OutPoint> = plan.selected_outpoints().collect();
         assert_eq!(planned, BTreeSet::from([stranded_ext, stranded_int]));
@@ -1099,6 +1167,28 @@ mod test {
         );
     }
 
+    /// What an outpoint argument opened up that a wallet-chosen input set could not: naming a coin
+    /// twice. Nothing downstream catches it — the doubled value is matched by a change output
+    /// sized to it, so the plan balances — and committing would spend one prevout twice.
+    #[test]
+    fn a_coin_named_twice_is_refused() {
+        let mut f = Fixture::new();
+        let coin = f.fund(0, 1_000_000, 100);
+        let other = f.fund(1, 1_000_000, 101);
+
+        let err = f
+            .wallet
+            .plan_consolidate(f.master_appkey, [coin, coin], 10.0)
+            .expect_err("a coin spends once");
+        assert!(err.to_string().contains("named twice"), "got: {err}");
+
+        let plan = f
+            .wallet
+            .plan_consolidate(f.master_appkey, [coin, other], 10.0)
+            .expect("two distinct coins are fine");
+        assert_eq!(plan.input_total(), 2_000_000);
+    }
+
     /// The first of two refusals: the coins cannot cover the fee at all.
     #[test]
     fn consolidation_refuses_when_the_coins_cannot_pay_the_fee() {
@@ -1108,8 +1198,7 @@ mod test {
 
         assert_eq!(f.wallet.gap_stranded_value(f.master_appkey), (1, 700));
         let err = f
-            .wallet
-            .plan_consolidate(f.master_appkey, 10.0)
+            .plan_stranded(10.0)
             .expect_err("700 sats cannot fund the consolidation");
         assert!(err.to_string().contains("not enough"), "got: {err}");
     }
@@ -1126,8 +1215,7 @@ mod test {
         assert_eq!(f.wallet.gap_stranded_value(f.master_appkey), (1, 1_400));
 
         let err = f
-            .wallet
-            .plan_consolidate(f.master_appkey, 10.0)
+            .plan_stranded(10.0)
             .expect_err("290 sats of change is dust");
         assert!(err.to_string().contains("not enough"), "got: {err}");
 
@@ -1135,7 +1223,7 @@ mod test {
         let mut f = Fixture::new();
         f.fund(0, 1_000_000, 100);
         f.fund(21, 1_600, 101);
-        let plan = f.wallet.plan_consolidate(f.master_appkey, 10.0).unwrap();
+        let plan = f.plan_stranded(10.0).unwrap();
         assert_eq!(plan.change_value, Some(490));
     }
 
@@ -1149,7 +1237,7 @@ mod test {
         f.fund(60, 400_000, 102);
         assert_eq!(f.wallet.gap_stranded_value(f.master_appkey), (2, 900_000));
 
-        let plan = f.wallet.plan_consolidate(f.master_appkey, 10.0).unwrap();
+        let plan = f.plan_stranded(10.0).unwrap();
         let template = f.wallet.commit_send(&plan, []).unwrap();
         assert_eq!(template.fee(), Some(plan.fee), "fee shown is fee paid");
         assert_eq!(
@@ -1186,7 +1274,7 @@ mod test {
         let marginal = f.fund(51, 1_500, 102);
         assert_eq!(f.wallet.gap_stranded_value(f.master_appkey), (2, 501_500));
 
-        let plan = f.wallet.plan_consolidate(f.master_appkey, 50.0).unwrap();
+        let plan = f.plan_stranded(50.0).unwrap();
         assert!(
             plan.selected_outpoints().any(|op| op == marginal),
             "the marginal coin must be rescued even though the rate makes it not worth its own weight"
