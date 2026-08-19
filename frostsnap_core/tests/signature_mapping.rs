@@ -216,3 +216,142 @@ fn a_foreign_input_at_one_of_our_own_output_scripts_is_still_foreign() {
         "input 0 pays a script we own but the template never owned that input"
     );
 }
+
+/// `is_mine` in the app is built from this. Sourcing it from a wallet index instead answers
+/// "has the wallet derived this spk yet", which is bounded by lookahead.
+#[test]
+fn owned_spks_covers_both_sides_at_any_depth() {
+    let key = key();
+    let deep_input = BitcoinBip32Path::external(idx(500_000));
+    let deep_output = BitcoinBip32Path::internal(idx(400_000));
+
+    let mut template = TransactionTemplate::new();
+
+    let foreign = TxOut {
+        value: Amount::from_sat(100_000),
+        script_pubkey: foreign_spk(0xaa),
+    };
+    template.push_foreign_input(PushInput::spend_outpoint(&foreign, outpoint(0)));
+
+    let ours = TxOut {
+        value: Amount::from_sat(100_000),
+        script_pubkey: LocalSpk {
+            master_appkey: key,
+            bip32_path: deep_input,
+        }
+        .spk(),
+    };
+    template
+        .push_owned_input(
+            PushInput::spend_outpoint(&ours, outpoint(1)),
+            LocalSpk {
+                master_appkey: key,
+                bip32_path: deep_input,
+            },
+        )
+        .unwrap();
+
+    template
+        .push_owned_output_checked(
+            &TxOut {
+                value: Amount::from_sat(150_000),
+                script_pubkey: LocalSpk {
+                    master_appkey: key,
+                    bip32_path: deep_output,
+                }
+                .spk(),
+            },
+            LocalSpk {
+                master_appkey: key,
+                bip32_path: deep_output,
+            },
+        )
+        .unwrap();
+    template.push_foreign_output(TxOut {
+        value: Amount::from_sat(40_000),
+        script_pubkey: foreign_spk(0xbb),
+    });
+
+    let owned = template.owned_spks(key);
+
+    assert_eq!(
+        owned.len(),
+        2,
+        "one input and one output, no foreign scripts"
+    );
+    assert_eq!(
+        owned.get(&ours.script_pubkey).copied(),
+        Some(deep_input),
+        "an input far past any lookahead is still ours"
+    );
+    assert_eq!(
+        owned
+            .get(
+                &LocalSpk {
+                    master_appkey: key,
+                    bip32_path: deep_output
+                }
+                .spk()
+            )
+            .copied(),
+        Some(deep_output),
+        "an output far past any lookahead is still ours"
+    );
+    assert!(!owned.contains_key(&foreign_spk(0xaa)));
+    assert!(!owned.contains_key(&foreign_spk(0xbb)));
+}
+
+/// A template can carry scripts belonging to more than one key at the same path. Asking for
+/// one key must not hand back the other's script — which, paired with the asking key, is how
+/// a PSBT output once got attributed to whichever wallet happened to be signing.
+#[test]
+fn owned_spks_excludes_scripts_belonging_to_another_key() {
+    let ours = key();
+    let sibling = MasterAppkey::derive_from_rootkey(g!(3 * G).normalize());
+    let our_path = BitcoinBip32Path::external(idx(1));
+    let sibling_path = BitcoinBip32Path::external(idx(1));
+
+    let our_spk = LocalSpk {
+        master_appkey: ours,
+        bip32_path: our_path,
+    };
+    let sibling_spk = LocalSpk {
+        master_appkey: sibling,
+        bip32_path: sibling_path,
+    };
+
+    let mut template = TransactionTemplate::new();
+    let txout = TxOut {
+        value: Amount::from_sat(100_000),
+        script_pubkey: our_spk.spk(),
+    };
+    template
+        .push_owned_input(
+            PushInput::spend_outpoint(&txout, outpoint(0)),
+            our_spk.clone(),
+        )
+        .unwrap();
+    template
+        .push_owned_output_checked(
+            &TxOut {
+                value: Amount::from_sat(90_000),
+                script_pubkey: sibling_spk.spk(),
+            },
+            sibling_spk.clone(),
+        )
+        .unwrap();
+
+    let ours_only = template.owned_spks(ours);
+    assert_eq!(ours_only.get(&our_spk.spk()).copied(), Some(our_path));
+    assert!(
+        !ours_only.contains_key(&sibling_spk.spk()),
+        "the sibling's script is not ours to claim"
+    );
+
+    let theirs_only = template.owned_spks(sibling);
+    assert_eq!(
+        theirs_only.get(&sibling_spk.spk()).copied(),
+        Some(sibling_path)
+    );
+    assert!(!theirs_only.contains_key(&our_spk.spk()));
+}
