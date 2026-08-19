@@ -637,6 +637,71 @@ mod test {
             }
         }
 
+        /// Deliver a spend of one of our coins that pays change to `change_index`, with the server
+        /// naming nothing.
+        ///
+        /// This is the shape the whole recovery rests on and the one `fund_keychain` cannot make: a
+        /// server only reports activity on scripts it subscribes to, so change sent past that window
+        /// arrives as an unattributed output of a transaction we hold only because we own a spent
+        /// prevout. Nothing in the update points at it.
+        fn spend_paying_unannounced_change(
+            &mut self,
+            spend: OutPoint,
+            change_index: u32,
+            change_value: u64,
+            height: u32,
+        ) {
+            let change_spk = crate::bitcoin::peek_spk(
+                self.master_appkey,
+                BitcoinBip32Path {
+                    account_keychain: BitcoinAccountKeychain::internal(),
+                    index: NormalIndex::new(change_index).expect("fixture index below 2^31"),
+                },
+            );
+            let tx = bitcoin::Transaction {
+                version: bitcoin::transaction::Version::TWO,
+                lock_time: bitcoin::absolute::LockTime::ZERO,
+                input: vec![TxIn {
+                    previous_output: spend,
+                    ..Default::default()
+                }],
+                output: vec![
+                    TxOut {
+                        value: Amount::from_sat(10_000),
+                        script_pubkey: self.recipient.script_pubkey(),
+                    },
+                    TxOut {
+                        value: Amount::from_sat(change_value),
+                        script_pubkey: change_spk,
+                    },
+                ],
+            };
+            let block = BlockId {
+                height,
+                hash: BlockHash::from_byte_array([height as u8; 32]),
+            };
+            self.blocks.push(block);
+            let mut tx_update = TxUpdate::default();
+            tx_update.txs = vec![Arc::new(tx.clone())];
+            tx_update.anchors = [(
+                ConfirmationBlockTime {
+                    block_id: block,
+                    confirmation_time: 1_700_000_000,
+                },
+                tx.compute_txid(),
+            )]
+            .into();
+            self.wallet
+                .apply_update(bdk_electrum_streaming::Update {
+                    tx_update,
+                    last_active_indices: Default::default(),
+                    chain_update: Some(
+                        CheckPoint::from_block_ids(self.blocks.iter().copied()).unwrap(),
+                    ),
+                })
+                .unwrap();
+        }
+
         fn last_revealed_internal(&self) -> Option<u32> {
             self.wallet
                 .tx_graph
@@ -653,6 +718,65 @@ mod test {
                 )
                 .unwrap()
         }
+    }
+
+    /// The feature, in the shape that produced it. 0.3 could pay change far past the frontier it
+    /// persisted; the transaction is held anyway because we own a spent prevout, and nothing in the
+    /// update points at the change. Attributing it is purely a matter of having derived that far, so
+    /// this fails at the old lookahead of 50 and passes at `LOOKAHEAD`.
+    #[test]
+    fn change_the_server_never_named_is_attributed_and_spendable() {
+        let mut f = Fixture::new();
+        let coin = f.fund(0, 100_000, 100);
+        f.spend_paying_unannounced_change(coin, 800, 60_000, 101);
+
+        assert_eq!(
+            f.last_revealed_internal(),
+            Some(800),
+            "the frontier must land on the index that was actually paid"
+        );
+        // The funding coin is spent, so the recovered change is the only thing a plan can spend.
+        let plan = f.plan(20_000);
+        assert_eq!(plan.input_count(), 1);
+        assert_eq!(plan.input_total(), 60_000);
+    }
+
+    /// `LOOKAHEAD` is a parameter, not a boundary: nothing records that a database has been searched,
+    /// so a coin the shipped constant passes over is still there for a larger one to find. That is
+    /// what makes raising it in a later release a repair rather than a no-op, and it is the one
+    /// property that cannot be checked end to end — a drive cannot vary a compiled-in constant.
+    #[test]
+    fn a_wider_lookahead_finds_what_the_shipped_one_passed_over() {
+        let beyond = crate::bitcoin::wallet::LOOKAHEAD + 500;
+        let mut f = Fixture::new();
+        let coin = f.fund(0, 100_000, 100);
+        f.spend_paying_unannounced_change(coin, beyond, 60_000, 101);
+        assert_eq!(
+            f.last_revealed_internal(),
+            None,
+            "beyond the window there is nothing to attribute it with"
+        );
+
+        let db = f.wallet.db.clone();
+        let (client, _handler) = chain_client(&db);
+        let mut wider =
+            CoordSuperWallet::load_or_init_with_lookahead(db, NETWORK, client, beyond + 10)
+                .unwrap();
+        // Touching the key is what rebuilds attribution, and the wider window is what lets that
+        // pass recognise the change.
+        wider.lazily_initialize_key(f.master_appkey);
+
+        // Spendability, not the frontier: the funding coin is spent, so a plan that balances at all
+        // is paying from change the narrower window could not see.
+        let plan = wider
+            .plan_send(f.master_appkey, [(f.recipient.clone(), Some(20_000))], 1.0)
+            .unwrap();
+        assert_eq!(plan.input_count(), 1);
+        assert_eq!(
+            plan.input_total(),
+            60_000,
+            "the same database, searched further, gives the coin back"
+        );
     }
 
     #[test]
