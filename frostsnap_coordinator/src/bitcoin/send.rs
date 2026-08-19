@@ -61,6 +61,23 @@ impl SendPlan {
         self.fee
     }
 
+    pub fn input_count(&self) -> usize {
+        self.selected.len()
+    }
+
+    /// The total value the plan spends. The plan pins outpoints, not values, so this is the
+    /// accounting identity fee + outputs rather than a wallet lookup — it is what the committed
+    /// transaction consumes even if the wallet's view moves after planning.
+    pub fn input_total(&self) -> u64 {
+        self.fee
+            + self.change_value.unwrap_or(0)
+            + self
+                .recipients
+                .iter()
+                .map(|txo| txo.value.to_sat())
+                .sum::<u64>()
+    }
+
     /// What this plan pays recipient `index`, the value the committed transaction carries.
     ///
     /// For send max this is the maximum as the selection fixed it, not as the wallet reports it
@@ -275,6 +292,124 @@ impl CoordSuperWallet {
             .collect()
     }
 
+    /// The coins the consolidation nudge counts and [`Self::plan_consolidate`] spends — one
+    /// source, so the remedy always clears the nudge. A coin qualifies when it is unspent, a
+    /// [`RISKY_GAP`]-window restore cannot reach its index, and it is worth more than its own
+    /// spend cost at a modest 10 sat/vB: rescuing anything below that eats the coin. 10 rather
+    /// than the 1 sat/vB relay floor because this runs where no feerate exists (a passive,
+    /// offline-capable wallet-home getter) and the floor would nudge over coins whose rescue is
+    /// only theoretically broadcastable.
+    fn stranded_rescuable(
+        &mut self,
+        master_appkey: MasterAppkey,
+    ) -> Vec<(BitcoinBip32Path, OutPoint, u64)> {
+        self.lazily_initialize_key(master_appkey);
+        let (keychain_indices, utxos): (Vec<(KeychainId, u32)>, Vec<bdk_chain::FullTxOut<_>>) =
+            self.tx_graph
+                .graph()
+                .filter_chain_unspents(
+                    self.chain.as_ref(),
+                    self.chain.tip().block_id(),
+                    CanonicalizationParams::default(),
+                    self.tx_graph
+                        .index
+                        .keychain_outpoints_in_range(Self::key_index_range(master_appkey)),
+                )
+                .unzip();
+        self.gap_stranded(master_appkey, &keychain_indices)
+            .into_iter()
+            .filter_map(|position| {
+                let candidate = Candidate {
+                    input_count: 1,
+                    value: utxos[position].txout.value.to_sat(),
+                    weight: TR_KEYSPEND_TXIN_WEIGHT,
+                    is_segwit: true,
+                };
+                (candidate.effective_value(FeeRate::from_sat_per_vb(10.0)) > 0.0).then(|| {
+                    let ((_, account_keychain), index) = keychain_indices[position];
+                    (
+                        BitcoinBip32Path {
+                            account_keychain,
+                            index: NormalIndex::new(index)
+                                .expect("bdk never derives a hardened index"),
+                        },
+                        utxos[position].outpoint,
+                        candidate.value,
+                    )
+                })
+            })
+            .collect()
+    }
+
+    /// How many spendable coins a [`RISKY_GAP`]-window restore could not discover, and their
+    /// total value in sats — what the consolidation nudge shows. Any outgoing plan rescues them
+    /// (see [`Self::plan_send`]); [`Self::plan_consolidate`] rescues them without a payment.
+    pub fn gap_stranded_value(&mut self, master_appkey: MasterAppkey) -> (u64, u64) {
+        self.stranded_rescuable(master_appkey)
+            .iter()
+            .fold((0, 0), |(count, sats), (_, _, value)| {
+                (count + 1, sats + value)
+            })
+    }
+
+    /// Plan a consolidation: every coin the nudge counts goes in, and ONE output — change,
+    /// allocated by [`Self::commit_send`] like any other — comes back. There is no recipient
+    /// and no coin selection; the input set is the point. A coin effective-negative at
+    /// `feerate` is still included — the user is explicitly rescuing it, and leaving it behind
+    /// would leave the nudge standing after its own remedy. Refuses when the coins cannot pay
+    /// the fee and still leave a usable output.
+    pub fn plan_consolidate(
+        &mut self,
+        master_appkey: MasterAppkey,
+        feerate: f32,
+    ) -> Result<SendPlan> {
+        let coins = self.stranded_rescuable(master_appkey);
+        if coins.is_empty() {
+            return Err(anyhow!("there are no gap-stranded coins to consolidate"));
+        }
+
+        let candidates = coins
+            .iter()
+            .map(|&(_, _, value)| Candidate {
+                input_count: 1,
+                value,
+                weight: TR_KEYSPEND_TXIN_WEIGHT,
+                is_segwit: true,
+            })
+            .collect::<Vec<_>>();
+        let mut cs = CoinSelector::new(&candidates);
+        for position in 0..candidates.len() {
+            cs.select(position);
+        }
+        let target = Target {
+            fee: TargetFee::from_feerate(FeeRate::from_sat_per_vb(feerate)),
+            outputs: TargetOutputs::fund_outputs([]),
+        };
+        let fee = cs.implied_fee(target, DrainWeights::TR_KEYSPEND);
+        let sum = cs.selected_value();
+        let change_value = sum
+            .checked_sub(fee)
+            .filter(|value| *value >= TR_DUST_RELAY_MIN_VALUE)
+            .ok_or_else(|| {
+                anyhow!(
+                    "the {} stranded coin(s) hold {sum} sats — not enough to pay the {fee} sat \
+                     fee and leave a usable output",
+                    coins.len()
+                )
+            })?;
+
+        Ok(SendPlan {
+            master_appkey,
+            selected: coins
+                .into_iter()
+                .map(|(bip32_path, outpoint, _)| (bip32_path, outpoint))
+                .collect(),
+            recipients: vec![],
+            change_value: Some(change_value),
+            fee,
+        })
+    }
+
     /// Turn a [`SendPlan`] into a signable template. This is the wallet's single change-address
     /// allocation point: the lowest revealed-unused index not in `reserved_change`, revealing
     /// fresh only when nothing passes. `reserved_change` is the caller's view of in-flight
@@ -382,6 +517,7 @@ mod test {
         bitcoin::{hashes::Hash, BlockHash, TxIn},
         BlockId, CheckPoint, ConfirmationBlockTime, TxUpdate,
     };
+    use bdk_coin_select::Drain;
     use frostsnap_core::schnorr_fun::fun::Point;
     use frostsnap_core::tweak::NormalIndex;
     use std::str::FromStr;
@@ -707,6 +843,194 @@ mod test {
                 .iter()
                 .any(|&(_, outpoint)| outpoint == stranded_change),
             "change past the risky gap must be force-spent too"
+        );
+    }
+
+    /// The nudge and the rescue must agree: the summary counts exactly the coins a plan would
+    /// force, so a banner built on it can always be satisfied by one send.
+    #[test]
+    fn gap_stranded_value_counts_only_rescuable_coins() {
+        let mut f = Fixture::new();
+        f.fund(0, 1_000_000, 100);
+        assert_eq!(f.wallet.gap_stranded_value(f.master_appkey), (0, 0));
+
+        f.fund(30, 500_000, 101);
+        // Stranded and above its spend cost at the 1 sat/vB relay floor, but below it at the
+        // summary's 10 sat/vB bar — pins that the bar is 10, not merely relayable.
+        f.fund(45, 300, 102);
+        assert_eq!(f.wallet.gap_stranded_value(f.master_appkey), (1, 500_000));
+    }
+
+    /// The plan spends the nudge's exact coin set — nothing reachable, nothing extra — into a
+    /// single output, and planning commits the wallet to nothing.
+    #[test]
+    fn consolidation_spends_exactly_the_nudged_coins_into_one_change_output() {
+        let mut f = Fixture::new();
+        f.fund(0, 1_000_000, 100);
+        let stranded_ext = f.fund(30, 500_000, 101);
+        let stranded_int = f.fund_keychain(BitcoinAccountKeychain::internal(), 25, 200_000, 102);
+        let revealed_before = f.last_revealed_internal();
+
+        let plan = f.wallet.plan_consolidate(f.master_appkey, 10.0).unwrap();
+
+        let planned: BTreeSet<OutPoint> = plan
+            .selected
+            .iter()
+            .map(|&(_, outpoint)| outpoint)
+            .collect();
+        assert_eq!(planned, BTreeSet::from([stranded_ext, stranded_int]));
+        assert!(plan.recipients.is_empty());
+        let change = plan.change_value.expect("the one output is change");
+        assert_eq!(
+            plan.fee + change,
+            700_000,
+            "every input sat is accounted for"
+        );
+
+        let candidates = [
+            Candidate {
+                input_count: 1,
+                value: 500_000,
+                weight: TR_KEYSPEND_TXIN_WEIGHT,
+                is_segwit: true,
+            },
+            Candidate {
+                input_count: 1,
+                value: 200_000,
+                weight: TR_KEYSPEND_TXIN_WEIGHT,
+                is_segwit: true,
+            },
+        ];
+        let mut cs = CoinSelector::new(&candidates);
+        cs.select(0);
+        cs.select(1);
+        let implied = cs
+            .implied_feerate(
+                TargetOutputs::fund_outputs([]),
+                Drain {
+                    weights: DrainWeights::TR_KEYSPEND,
+                    value: change,
+                },
+            )
+            .expect("valid selection")
+            .as_sat_vb();
+        assert!(
+            (10.0..10.5).contains(&implied),
+            "the plan pays the requested feerate, got {implied} sat/vB"
+        );
+
+        assert_eq!(
+            f.last_revealed_internal(),
+            revealed_before,
+            "planning must not reveal"
+        );
+    }
+
+    /// The first of two refusals: the coins cannot cover the fee at all.
+    #[test]
+    fn consolidation_refuses_when_the_coins_cannot_pay_the_fee() {
+        let mut f = Fixture::new();
+        f.fund(0, 1_000_000, 100);
+        f.fund(21, 700, 101); // above the nudge bar, below one input+output of fee at 10 sat/vB
+
+        assert_eq!(f.wallet.gap_stranded_value(f.master_appkey), (1, 700));
+        let err = f
+            .wallet
+            .plan_consolidate(f.master_appkey, 10.0)
+            .expect_err("700 sats cannot fund the consolidation");
+        assert!(err.to_string().contains("not enough"), "got: {err}");
+    }
+
+    /// The second: the coins do cover the fee, and what is left is under the dust floor. Its own
+    /// test because the two refusals answer with one message, and the case above reaches this one's
+    /// branch never — it fails the subtraction, so the floor could be deleted without it noticing.
+    #[test]
+    fn consolidation_refuses_a_dust_change_output() {
+        let mut f = Fixture::new();
+        f.fund(0, 1_000_000, 100);
+        // Covers the 1,110 sat fee and leaves 290: a real output, under the 330 sat relay floor.
+        f.fund(21, 1_400, 101);
+        assert_eq!(f.wallet.gap_stranded_value(f.master_appkey), (1, 1_400));
+
+        let err = f
+            .wallet
+            .plan_consolidate(f.master_appkey, 10.0)
+            .expect_err("290 sats of change is dust");
+        assert!(err.to_string().contains("not enough"), "got: {err}");
+
+        // Same coin, same fee, 490 left: the refusal above was the floor and not a shortfall.
+        let mut f = Fixture::new();
+        f.fund(0, 1_000_000, 100);
+        f.fund(21, 1_600, 101);
+        let plan = f.wallet.plan_consolidate(f.master_appkey, 10.0).unwrap();
+        assert_eq!(plan.change_value, Some(490));
+    }
+
+    /// Committing flows through the ordinary change allocation, and broadcasting the result is
+    /// the remedy the nudge promised: the stranded set empties.
+    #[test]
+    fn committed_consolidation_clears_the_nudge() {
+        let mut f = Fixture::new();
+        f.fund(0, 1_000_000, 100);
+        f.fund(30, 500_000, 101);
+        f.fund(60, 400_000, 102);
+        assert_eq!(f.wallet.gap_stranded_value(f.master_appkey), (2, 900_000));
+
+        let plan = f.wallet.plan_consolidate(f.master_appkey, 10.0).unwrap();
+        let template = f.wallet.commit_send(&plan, []).unwrap();
+        assert_eq!(template.fee(), Some(plan.fee), "fee shown is fee paid");
+        assert_eq!(
+            f.last_revealed_internal(),
+            Some(0),
+            "the single output rides the ordinary change allocation"
+        );
+
+        let tx = template.to_rust_bitcoin_tx();
+        assert_eq!(tx.output.len(), 1, "consolidation has exactly one output");
+        assert_eq!(tx.output[0].value.to_sat(), plan.change_value.unwrap());
+        let spent: BTreeSet<OutPoint> = tx.input.iter().map(|txin| txin.previous_output).collect();
+        assert_eq!(
+            spent,
+            plan.selected
+                .iter()
+                .map(|&(_, op)| op)
+                .collect::<BTreeSet<_>>()
+        );
+
+        f.wallet.broadcast_success(tx);
+        assert_eq!(
+            f.wallet.gap_stranded_value(f.master_appkey),
+            (0, 0),
+            "the remedy clears the nudge"
+        );
+    }
+
+    /// The feerate seam stays closed: a coin the nudge admitted (positive at the 10 sat/vB
+    /// bar) but effective-NEGATIVE at the plan's higher rate is still rescued. plan_send's
+    /// effective-value filtering is selection behavior, not consolidation behavior — porting it
+    /// here would leave the banner standing after its own remedy confirms.
+    #[test]
+    fn a_coin_effective_negative_at_the_plan_rate_is_still_rescued() {
+        let mut f = Fixture::new();
+        f.fund(0, 1_000_000, 100);
+        f.fund(30, 500_000, 101);
+        // ~575 sats of input cost at 10 sat/vB, ~2875 at 50: admitted by the nudge, negative
+        // at the plan rate.
+        let marginal = f.fund(51, 1_500, 102);
+        assert_eq!(f.wallet.gap_stranded_value(f.master_appkey), (2, 501_500));
+
+        let plan = f.wallet.plan_consolidate(f.master_appkey, 50.0).unwrap();
+        assert!(
+            plan.selected.iter().any(|&(_, outpoint)| outpoint == marginal),
+            "the marginal coin must be rescued even though the rate makes it not worth its own weight"
+        );
+
+        let template = f.wallet.commit_send(&plan, []).unwrap();
+        f.wallet.broadcast_success(template.to_rust_bitcoin_tx());
+        assert_eq!(
+            f.wallet.gap_stranded_value(f.master_appkey),
+            (0, 0),
+            "the remedy clears the nudge at any rate"
         );
     }
 

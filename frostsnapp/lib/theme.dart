@@ -25,6 +25,28 @@ RoundedRectangleBorder cardShape(BuildContext context) =>
       ),
     );
 
+/// The left-hand label of a transaction-summary row — the send review and the consolidation
+/// review are the same surface visually, so they share this rather than each inventing a style.
+Widget summaryRowLabel(BuildContext context, String text) =>
+    Text(text, style: Theme.of(context).textTheme.labelLarge);
+
+/// A small chip annotating a summary row: 'Max' on an amount, the feerate on a fee.
+Widget summaryRowChip(BuildContext context, String data) {
+  final theme = Theme.of(context);
+  return Card(
+    color: theme.colorScheme.secondaryContainer,
+    child: Padding(
+      padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 6.0),
+      child: Text(
+        data,
+        style: theme.textTheme.labelSmall?.copyWith(
+          color: theme.colorScheme.onSecondaryContainer,
+        ),
+      ),
+    ),
+  );
+}
+
 Color tintSurfaceContainer(
   BuildContext context, {
   required Color tint,

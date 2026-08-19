@@ -175,20 +175,7 @@ class _WalletSendPageState extends State<WalletSendPage> {
     }
     final amount = plan?.recipientValue(index: 0) ?? liveAmount;
 
-    Widget leadingCard(String data) {
-      return Card(
-        color: theme.colorScheme.secondaryContainer,
-        child: Padding(
-          padding: EdgeInsets.symmetric(vertical: 2.0, horizontal: 6.0),
-          child: Text(
-            data,
-            style: theme.textTheme.labelSmall?.copyWith(
-              color: theme.colorScheme.onSecondaryContainer,
-            ),
-          ),
-        ),
-      );
-    }
+    Widget leadingCard(String data) => summaryRowChip(context, data);
 
     return Column(
       children: [
@@ -597,7 +584,7 @@ class _WalletSendPageState extends State<WalletSendPage> {
   }
 
   Widget completedCardLabel(BuildContext context, String text) =>
-      Text(text, style: Theme.of(context).textTheme.labelLarge);
+      summaryRowLabel(context, text);
 
   Future<ConfirmationTarget?> showFeeRateDialog(BuildContext context) async {
     final walletCtx = WalletContext.of(context)!;
