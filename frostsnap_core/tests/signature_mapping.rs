@@ -84,7 +84,10 @@ fn a_foreign_input_before_ours_does_not_take_our_signature() {
     let template = template_with(&[1], 2);
 
     let sigs = [signature(7)];
-    let pairs = template.signatures_by_input_index(&sigs).unwrap();
+    let pairs = template
+        .as_seen_by(key())
+        .signatures_by_input_index(&sigs)
+        .unwrap();
 
     assert_eq!(pairs.len(), 1);
     assert_eq!(
@@ -92,7 +95,10 @@ fn a_foreign_input_before_ours_does_not_take_our_signature() {
         "the signature belongs to input 1, not input 0"
     );
 
-    let tx = template.to_signed_rust_bitcoin_tx(&[signature(7)]).unwrap();
+    let tx = template
+        .as_seen_by(key())
+        .to_signed_rust_bitcoin_tx(&[signature(7)])
+        .unwrap();
     assert!(
         tx.input[0].witness.is_empty(),
         "the foreign input must be left alone"
@@ -105,7 +111,10 @@ fn foreign_inputs_on_both_sides_of_ours() {
     let template = template_with(&[1, 2], 4);
 
     let sigs = [signature(1), signature(2)];
-    let pairs = template.signatures_by_input_index(&sigs).unwrap();
+    let pairs = template
+        .as_seen_by(key())
+        .signatures_by_input_index(&sigs)
+        .unwrap();
 
     assert_eq!(
         pairs.iter().map(|(i, _)| *i).collect::<Vec<_>>(),
@@ -115,6 +124,7 @@ fn foreign_inputs_on_both_sides_of_ours() {
     assert_eq!(pairs[1].1 .0[0], 2);
 
     let tx = template
+        .as_seen_by(key())
         .to_signed_rust_bitcoin_tx(&[signature(1), signature(2)])
         .unwrap();
     assert!(tx.input[0].witness.is_empty());
@@ -128,7 +138,10 @@ fn every_input_ours_is_unchanged() {
     let template = template_with(&[0, 1], 2);
 
     let sigs = [signature(1), signature(2)];
-    let pairs = template.signatures_by_input_index(&sigs).unwrap();
+    let pairs = template
+        .as_seen_by(key())
+        .signatures_by_input_index(&sigs)
+        .unwrap();
 
     assert_eq!(
         pairs.iter().map(|(i, _)| *i).collect::<Vec<_>>(),
@@ -141,10 +154,16 @@ fn too_few_signatures_is_rejected_rather_than_truncated() {
     let template = template_with(&[1, 2], 4);
 
     let sigs = [signature(1)];
-    let err = template.signatures_by_input_index(&sigs).unwrap_err();
+    let err = template
+        .as_seen_by(key())
+        .signatures_by_input_index(&sigs)
+        .unwrap_err();
 
     assert_eq!((err.expected, err.got), (2, 1));
-    assert!(template.to_signed_rust_bitcoin_tx(&[signature(1)]).is_err());
+    assert!(template
+        .as_seen_by(key())
+        .to_signed_rust_bitcoin_tx(&[signature(1)])
+        .is_err());
 }
 
 #[test]
@@ -152,7 +171,10 @@ fn too_many_signatures_is_rejected() {
     let template = template_with(&[1], 2);
 
     let sigs = [signature(1), signature(2)];
-    let err = template.signatures_by_input_index(&sigs).unwrap_err();
+    let err = template
+        .as_seen_by(key())
+        .signatures_by_input_index(&sigs)
+        .unwrap_err();
 
     assert_eq!((err.expected, err.got), (1, 2));
 }
@@ -209,7 +231,10 @@ fn a_foreign_input_at_one_of_our_own_output_scripts_is_still_foreign() {
         .unwrap();
 
     let sigs = [signature(7)];
-    let pairs = template.signatures_by_input_index(&sigs).unwrap();
+    let pairs = template
+        .as_seen_by(key)
+        .signatures_by_input_index(&sigs)
+        .unwrap();
     assert_eq!(
         pairs.iter().map(|(i, _)| *i).collect::<Vec<_>>(),
         vec![1],
@@ -272,7 +297,7 @@ fn owned_spks_covers_both_sides_at_any_depth() {
         script_pubkey: foreign_spk(0xbb),
     });
 
-    let owned = template.owned_spks(key);
+    let owned = template.as_seen_by(key).owned_spks();
 
     assert_eq!(
         owned.len(),
@@ -301,57 +326,96 @@ fn owned_spks_covers_both_sides_at_any_depth() {
     assert!(!owned.contains_key(&foreign_spk(0xbb)));
 }
 
-/// A template can carry scripts belonging to more than one key at the same path. Asking for
-/// one key must not hand back the other's script — which, paired with the asking key, is how
-/// a PSBT output once got attributed to whichever wallet happened to be signing.
+/// A template can carry another key's scripts. Seen by ours they are foreign: an input we
+/// cannot sign and an output that is money leaving — which is what `Foreign` already means to
+/// every reader, so none of them can be wrong about it.
 #[test]
-fn owned_spks_excludes_scripts_belonging_to_another_key() {
+fn another_keys_scripts_become_foreign() {
     let ours = key();
     let sibling = MasterAppkey::derive_from_rootkey(g!(3 * G).normalize());
     let our_path = BitcoinBip32Path::external(idx(1));
-    let sibling_path = BitcoinBip32Path::external(idx(1));
+    let their_path = BitcoinBip32Path::external(idx(1));
 
     let our_spk = LocalSpk {
         master_appkey: ours,
         bip32_path: our_path,
     };
-    let sibling_spk = LocalSpk {
+    let their_spk = LocalSpk {
         master_appkey: sibling,
-        bip32_path: sibling_path,
+        bip32_path: their_path,
     };
 
     let mut template = TransactionTemplate::new();
-    let txout = TxOut {
+    let our_input = TxOut {
         value: Amount::from_sat(100_000),
         script_pubkey: our_spk.spk(),
     };
     template
         .push_owned_input(
-            PushInput::spend_outpoint(&txout, outpoint(0)),
+            PushInput::spend_outpoint(&our_input, outpoint(0)),
             our_spk.clone(),
+        )
+        .unwrap();
+    let their_input = TxOut {
+        value: Amount::from_sat(100_000),
+        script_pubkey: their_spk.spk(),
+    };
+    template
+        .push_owned_input(
+            PushInput::spend_outpoint(&their_input, outpoint(1)),
+            their_spk.clone(),
         )
         .unwrap();
     template
         .push_owned_output_checked(
             &TxOut {
-                value: Amount::from_sat(90_000),
-                script_pubkey: sibling_spk.spk(),
+                value: Amount::from_sat(150_000),
+                script_pubkey: their_spk.spk(),
             },
-            sibling_spk.clone(),
+            their_spk.clone(),
         )
         .unwrap();
 
-    let ours_only = template.owned_spks(ours);
-    assert_eq!(ours_only.get(&our_spk.spk()).copied(), Some(our_path));
+    let mine = template.as_seen_by(ours);
+
+    assert_eq!(
+        mine.iter_locally_owned_inputs()
+            .map(|(i, _, _)| i)
+            .collect::<Vec<_>>(),
+        vec![0],
+        "their input is not ours to sign"
+    );
+    assert_eq!(
+        mine.signatures_by_input_index(&[signature(7)])
+            .unwrap()
+            .into_iter()
+            .map(|(i, _)| i)
+            .collect::<Vec<_>>(),
+        vec![0],
+        "our one signature belongs on our one input"
+    );
+    assert!(!mine.owned_spks().contains_key(&their_spk.spk()));
+    assert_eq!(
+        mine.foreign_recipients().collect::<Vec<_>>(),
+        vec![(their_spk.spk().as_script(), 150_000)],
+        "their output is a recipient, at their address and for its real value"
+    );
     assert!(
-        !ours_only.contains_key(&sibling_spk.spk()),
-        "the sibling's script is not ours to claim"
+        mine.feerate().is_none(),
+        "we cannot witness their input, so the weight is unknown"
     );
 
-    let theirs_only = template.owned_spks(sibling);
+    // The other direction is the same story with the keys swapped.
+    let theirs = template.as_seen_by(sibling);
     assert_eq!(
-        theirs_only.get(&sibling_spk.spk()).copied(),
-        Some(sibling_path)
+        theirs
+            .iter_locally_owned_inputs()
+            .map(|(i, _, _)| i)
+            .collect::<Vec<_>>(),
+        vec![1]
     );
-    assert!(!theirs_only.contains_key(&our_spk.spk()));
+    assert_eq!(theirs.foreign_recipients().count(), 0);
+
+    // Nothing was mutated: the original still knows who owns what.
+    assert_eq!(template.iter_locally_owned_inputs().count(), 2);
 }

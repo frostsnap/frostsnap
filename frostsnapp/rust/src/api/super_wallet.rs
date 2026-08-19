@@ -319,6 +319,7 @@ impl SuperWallet {
 
         Ok(UnsignedTx {
             template_tx: template,
+            master_appkey,
         })
     }
 }
