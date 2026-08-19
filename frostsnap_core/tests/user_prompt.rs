@@ -45,7 +45,9 @@ fn push_change(template: &mut TransactionTemplate, sats: u64, index: u32) {
 }
 
 fn prompt(template: &TransactionTemplate) -> PromptSignBitcoinTx {
-    template.user_prompt(bitcoin::Network::Bitcoin)
+    template
+        .as_seen_by(MasterAppkey::derive_from_rootkey(G.normalize()))
+        .user_prompt(bitcoin::Network::Bitcoin)
 }
 
 fn summary(prompt: &PromptSignBitcoinTx) -> Vec<(u64, Option<BitcoinBip32Path>)> {

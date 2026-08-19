@@ -35,7 +35,7 @@ pub enum SignTask {
         event: Box<crate::nostr::UnsignedEvent>,
     },
     BitcoinTransaction {
-        tx_template: bitcoin_transaction::TransactionTemplate,
+        tx_template: bitcoin_transaction::TransactionTemplate<bitcoin_transaction::ScopedTo>,
         network: bitcoin::Network,
     },
 }
@@ -117,10 +117,7 @@ impl WireSignTask {
                 // allocated change or revealed an address past the ceiling would have its own task
                 // refused here. Reaching that is implausible today, and closing it properly means
                 // one shared issuance boundary in the wallet, which is the cleanup.
-                for (_, _, owner) in tx_template
-                    .as_seen_by(master_appkey)
-                    .iter_locally_owned_outputs()
-                {
+                for (_, _, owner) in tx_template.iter_locally_owned_outputs() {
                     let path = owner.bip32_path;
 
                     if path.account_keychain.account != BitcoinAccount::default() {
@@ -134,10 +131,7 @@ impl WireSignTask {
                     }
                 }
 
-                if !tx_template
-                    .as_seen_by(master_appkey)
-                    .has_any_inputs_to_sign()
-                {
+                if !tx_template.has_any_inputs_to_sign() {
                     return Err(SignTaskError::NothingToSign);
                 }
 
@@ -184,7 +178,6 @@ impl CheckedSignTask {
                 app_tweak: AppTweak::Nostr,
             }],
             SignTask::BitcoinTransaction { tx_template, .. } => tx_template
-                .as_seen_by(self.master_appkey)
                 .iter_sighashes_of_locally_owned_inputs()
                 .map(|(owner, sighash)| SignItem {
                     message: sighash.as_raw_hash().to_byte_array().to_vec(),

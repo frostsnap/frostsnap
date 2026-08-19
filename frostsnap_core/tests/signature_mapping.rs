@@ -416,6 +416,14 @@ fn another_keys_scripts_become_foreign() {
     );
     assert_eq!(theirs.foreign_recipients().count(), 0);
 
-    // Nothing was mutated: the original still knows who owns what.
-    assert_eq!(template.iter_locally_owned_inputs().count(), 2);
+    // Nothing was mutated: the original still knows who owns what. It cannot be *asked*
+    // whose they are without naming a key, which is the point, so read the owners directly.
+    assert_eq!(
+        template
+            .inputs()
+            .iter()
+            .filter(|input| input.owner().local_owner().is_some())
+            .count(),
+        2
+    );
 }

@@ -8,7 +8,7 @@ use anyhow::{anyhow, Result};
 use bitcoin::hex::DisplayHex;
 use flutter_rust_bridge::frb;
 pub use frostsnap_coordinator::signing::SigningState;
-pub use frostsnap_core::bitcoin_transaction::TransactionTemplate;
+pub use frostsnap_core::bitcoin_transaction::{ScopedTo, TransactionTemplate};
 pub use frostsnap_core::coordinator::ActiveSignSession;
 pub use frostsnap_core::coordinator::{SignSessionProgress, StartSign};
 use frostsnap_core::MasterAppkey;
@@ -111,7 +111,7 @@ impl ActiveSignSessionExt for ActiveSignSession {
                 hash_bytes: event.hash_bytes.to_lower_hex_string(),
             },
             WireSignTask::BitcoinTransaction(tx_temp) => SigningDetails::Transaction {
-                transaction: Transaction::from_template(&tx_temp, master_appkey),
+                transaction: Transaction::from_template(&tx_temp.as_seen_by(master_appkey)),
             },
         };
         res
@@ -125,12 +125,24 @@ impl ActiveSignSessionExt for ActiveSignSession {
 
 #[derive(Clone, Debug)]
 pub struct UnsignedTx {
-    pub template_tx: TransactionTemplate,
+    /// The form that will be sent. Held unscoped because that is what goes on the wire, and
+    /// there is deliberately no way back from a scoped one.
+    ///
+    /// Crate-private so frb generates no accessor: it cannot name a second instantiation of
+    /// a generic, and Dart asks through the methods below anyway.
+    pub(crate) template_tx: TransactionTemplate,
     /// Whose transaction this is. Every question about ownership needs it.
     pub master_appkey: MasterAppkey,
 }
 
 impl UnsignedTx {
+    /// This transaction as its own key sees it. Cheap enough for the handful of UI-rate
+    /// reads below, and it keeps the sendable form the only one stored.
+    #[frb(ignore)]
+    fn scoped(&self) -> TransactionTemplate<ScopedTo> {
+        self.template_tx.as_seen_by(self.master_appkey)
+    }
+
     #[frb(sync)]
     pub fn txid(&self) -> String {
         self.template_tx.txid().to_string()
@@ -143,34 +155,33 @@ impl UnsignedTx {
 
     #[frb(sync)]
     pub fn feerate(&self) -> Option<f64> {
-        self.template_tx.feerate()
+        self.scoped().feerate()
     }
 
     #[frb(sync)]
-    pub fn details(&self, master_appkey: MasterAppkey) -> Transaction {
-        Transaction::from_template(&self.template_tx, master_appkey)
+    pub fn details(&self) -> Transaction {
+        Transaction::from_template(&self.scoped())
     }
 
     #[frb(sync)]
     pub fn complete(&self, signatures: Vec<EncodedSignature>) -> Result<SignedTx> {
         Ok(SignedTx {
-            signed_tx: self.template_tx.to_signed_rust_bitcoin_tx(&signatures)?,
+            signed_tx: self.scoped().to_signed_rust_bitcoin_tx(&signatures)?,
             unsigned_tx: self.clone(),
         })
     }
 
     #[frb(sync)]
-    pub fn effect(
-        &self,
-        master_appkey: MasterAppkey,
-        network: BitcoinNetwork,
-    ) -> Result<EffectOfTx> {
+    pub fn effect(&self, network: BitcoinNetwork) -> Result<EffectOfTx> {
+        // Taking a key as an argument would let a caller ask about one this transaction is
+        // not for; it is a property of the transaction, not of the question.
+        let master_appkey = self.master_appkey;
         use frostsnap_core::bitcoin_transaction::RootOwner;
         let fee = self
             .template_tx
             .fee()
             .ok_or(anyhow!("invalid transaction"))?;
-        let mut net_value = self.template_tx.net_value();
+        let mut net_value = self.scoped().net_value();
         let value_for_this_key = net_value
             .remove(&RootOwner::Local(master_appkey))
             .ok_or(anyhow!("this transaction has no effect on this key"))?;
@@ -178,9 +189,9 @@ impl UnsignedTx {
         let foreign_receiving_addresses = net_value
             .into_iter()
             .filter_map(|(owner, value)| match owner {
-                RootOwner::Local(_) => Some(Err(anyhow!(
-                    "we don't support spending from multiple different keys"
-                ))),
+                // Unreachable on a scoped template: another key's scripts are already foreign
+                // to it, and reported below as what they are — money leaving.
+                RootOwner::Local(_) => None,
                 RootOwner::Foreign(spk) => {
                     if value > 0 {
                         Some(Ok((
@@ -199,7 +210,7 @@ impl UnsignedTx {
         Ok(EffectOfTx {
             net_value: value_for_this_key,
             fee,
-            feerate: self.template_tx.feerate(),
+            feerate: self.scoped().feerate(),
             foreign_receiving_addresses,
         })
     }
@@ -218,12 +229,8 @@ impl SignedTx {
     }
 
     #[frb(sync)]
-    pub fn effect(
-        &self,
-        master_appkey: MasterAppkey,
-        network: BitcoinNetwork,
-    ) -> Result<EffectOfTx> {
-        self.unsigned_tx.effect(master_appkey, network)
+    pub fn effect(&self, network: BitcoinNetwork) -> Result<EffectOfTx> {
+        self.unsigned_tx.effect(network)
     }
 }
 
@@ -315,7 +322,7 @@ impl Coordinator {
                 let sign_task = &session.init.group_request.sign_task;
                 match sign_task {
                     WireSignTask::BitcoinTransaction(tx_temp) => {
-                        let tx = Transaction::from_template(tx_temp, master_appkey);
+                        let tx = Transaction::from_template(&tx_temp.as_seen_by(master_appkey));
                         let session_id = session.session_id();
                         Some(UnbroadcastedTx {
                             tx,
@@ -334,10 +341,13 @@ impl Coordinator {
             .filter_map(
                 |(&session_id, session)| match &session.init.group_request.sign_task {
                     WireSignTask::BitcoinTransaction(tx_temp) => {
-                        let mut tx = Transaction::from_template(tx_temp, master_appkey);
+                        let mut tx = Transaction::from_template(&tx_temp.as_seen_by(master_appkey));
                         // Showing an unbroadcastable transaction is worse than omitting it:
                         // its witnesses would be on inputs that did not produce them.
-                        if let Err(e) = tx.fill_signatures(tx_temp, &session.signatures) {
+                        if let Err(e) = tx.fill_signatures(
+                            &tx_temp.as_seen_by(master_appkey),
+                            &session.signatures,
+                        ) {
                             event!(
                                 Level::ERROR,
                                 session = session_id.to_string(),
