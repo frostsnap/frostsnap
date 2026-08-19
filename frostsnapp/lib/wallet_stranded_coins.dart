@@ -13,6 +13,12 @@ import 'package:frostsnap/wallet.dart';
 import 'package:frostsnap/wallet_send_feerate_picker.dart';
 import 'package:frostsnap/wallet_tx_details.dart';
 
+/// The feerate the nudge judges a coin's rescue against. Nothing is spent at this rate — it is the
+/// bar for mentioning a coin at all, chosen so we only raise the alarm about a coin whose rescue
+/// would pay for itself at an ordinary feerate. What a rescue actually moves is decided at the rate
+/// the user picks in the fee picker, which can be higher or lower than this.
+const nudgeFeerate = 10.0;
+
 /// Nudges the user to consolidate coins sitting past the recovery gap.
 ///
 /// A standard restore crawls addresses and stalls at the first unused stretch wider than its
@@ -34,7 +40,10 @@ class StrandedCoinsBanner extends StatelessWidget {
         var sats = 0;
         if (snapshot.hasData) {
           final (strandedCount, strandedSats) = walletCtx.superWallet
-              .gapStrandedValue(masterAppkey: walletCtx.masterAppkey);
+              .gapStrandedValue(
+                masterAppkey: walletCtx.masterAppkey,
+                feerate: nudgeFeerate,
+              );
           count = strandedCount;
           sats = strandedSats;
         }
@@ -59,6 +68,7 @@ class StrandedCoinsBanner extends StatelessWidget {
                               outpoints: walletCtx.superWallet
                                   .gapStrandedOutpoints(
                                     masterAppkey: walletCtx.masterAppkey,
+                                    feerate: feerate,
                                   ),
                               feerate: feerate,
                             ),

@@ -294,11 +294,19 @@ impl SuperWallet {
         }
     }
 
-    /// How many spendable coins a standard restore could miss, and their total sats — the
-    /// wallet's next outgoing transaction consolidates them automatically.
+    /// How many spendable coins a standard restore could miss and would be worth rescuing at
+    /// `feerate`, and their total sats — the wallet's next outgoing transaction consolidates them
+    /// automatically.
+    ///
+    /// `feerate` is the bar for mentioning a coin at all, not a price: nothing is spent here, and
+    /// the caller decides what counts as worth rescuing. What a rescue actually moves is decided
+    /// later, at the rate the user picks.
     #[frb(sync, type_64bit_int)]
-    pub fn gap_stranded_value(&self, master_appkey: MasterAppkey) -> (u64, u64) {
-        self.inner.lock().unwrap().gap_stranded_value(master_appkey)
+    pub fn gap_stranded_value(&self, master_appkey: MasterAppkey, feerate: f32) -> (u64, u64) {
+        self.inner
+            .lock()
+            .unwrap()
+            .gap_stranded_value(master_appkey, feerate)
     }
 
     pub fn psbt_to_unsigned_tx(

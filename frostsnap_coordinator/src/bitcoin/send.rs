@@ -325,10 +325,18 @@ impl CoordSuperWallet {
             .map(|(position, _)| position)
             .collect()
     }
-    /// The coins a [`RISKY_GAP`]-window restore could not discover and that are worth rescuing —
-    /// the input set the nudge's remedy consolidates.
-    pub fn gap_stranded_outpoints(&mut self, master_appkey: MasterAppkey) -> Vec<OutPoint> {
-        self.stranded_rescuable(master_appkey)
+    /// The coins a [`RISKY_GAP`]-window restore could not discover and that are worth rescuing at
+    /// `feerate` — the input set the nudge's remedy consolidates.
+    ///
+    /// Filtered at the rate the user picked, not at whatever rate made the nudge appear: the
+    /// threshold for mentioning a coin and the price of moving it are different questions, and only
+    /// this one spends money.
+    pub fn gap_stranded_outpoints(
+        &mut self,
+        master_appkey: MasterAppkey,
+        feerate: f32,
+    ) -> Vec<OutPoint> {
+        self.stranded_rescuable(master_appkey, feerate)
             .into_iter()
             .map(|(_, outpoint, _)| outpoint)
             .collect()
@@ -402,13 +410,16 @@ impl CoordSuperWallet {
     /// The coins the consolidation nudge counts and [`Self::plan_consolidate`] spends — one
     /// source, so the remedy always clears the nudge. A coin qualifies when it is unspent, a
     /// [`RISKY_GAP`]-window restore cannot reach its index, and it is worth more than its own
-    /// spend cost at a modest 10 sat/vB: rescuing anything below that eats the coin. 10 rather
-    /// than the 1 sat/vB relay floor because this runs where no feerate exists (a passive,
-    /// offline-capable wallet-home getter) and the floor would nudge over coins whose rescue is
-    /// only theoretically broadcastable.
+    /// spend cost at `feerate`: rescuing anything below that eats the coin.
+    ///
+    /// The rate is the caller's, and the two callers mean different things by it. Deciding whether
+    /// to raise the nudge at all is a question about a hypothetical rate, since no rate has been
+    /// picked yet; deciding what a rescue spends is a question about the rate the user chose. Only
+    /// the second determines what leaves the wallet.
     fn stranded_rescuable(
         &mut self,
         master_appkey: MasterAppkey,
+        feerate: f32,
     ) -> Vec<(BitcoinBip32Path, OutPoint, u64)> {
         self.lazily_initialize_key(master_appkey);
         let (keychain_indices, utxos): (Vec<(KeychainId, u32)>, Vec<bdk_chain::FullTxOut<_>>) =
@@ -432,7 +443,7 @@ impl CoordSuperWallet {
                     weight: TR_KEYSPEND_TXIN_WEIGHT,
                     is_segwit: true,
                 };
-                (candidate.effective_value(FeeRate::from_sat_per_vb(10.0)) > 0.0).then(|| {
+                (candidate.effective_value(FeeRate::from_sat_per_vb(feerate)) > 0.0).then(|| {
                     let ((_, account_keychain), index) = keychain_indices[position];
                     (
                         BitcoinBip32Path {
@@ -448,11 +459,16 @@ impl CoordSuperWallet {
             .collect()
     }
 
-    /// How many spendable coins a [`RISKY_GAP`]-window restore could not discover, and their
-    /// total value in sats — what the consolidation nudge shows. Any outgoing plan rescues them
-    /// (see [`Self::plan_send`]); [`Self::plan_consolidate`] rescues them without a payment.
-    pub fn gap_stranded_value(&mut self, master_appkey: MasterAppkey) -> (u64, u64) {
-        self.stranded_rescuable(master_appkey)
+    /// How many coins a [`RISKY_GAP`]-window restore could not discover and would be worth
+    /// rescuing at `feerate`, and their total value in sats — what the consolidation nudge shows,
+    /// and whether it appears at all.
+    ///
+    /// `feerate` here is a high-water mark rather than a price: nothing is being spent, and the
+    /// caller is asking whether a coin's rescue would be worth paying for at an ordinary rate. It
+    /// does not constrain what [`Self::gap_stranded_outpoints`] later returns, which answers the
+    /// same question at the rate the user actually picked.
+    pub fn gap_stranded_value(&mut self, master_appkey: MasterAppkey, feerate: f32) -> (u64, u64) {
+        self.stranded_rescuable(master_appkey, feerate)
             .iter()
             .fold((0, 0), |(count, sats), (_, _, value)| {
                 (count + 1, sats + value)
@@ -612,6 +628,11 @@ mod test {
     use std::sync::{Arc, Mutex};
 
     const NETWORK: bitcoin::Network = bitcoin::Network::Bitcoin;
+
+    /// The rate the app raises the nudge at: worth mentioning a coin whose rescue pays for itself
+    /// at an ordinary feerate. It is the app's number, not the wallet's — these tests pass it
+    /// explicitly for the same reason the Dart caller does.
+    const NUDGE_BAR: f32 = 10.0;
 
     /// The handler owns the receiving ends of the client's channels, so it must outlive every
     /// `ChainClient` call or `monitor_keychain`'s send panics.
@@ -799,7 +820,9 @@ mod test {
 
         /// The input set the nudge's remedy consolidates, composed the way its call site does.
         fn plan_stranded(&mut self, feerate: f32) -> Result<SendPlan> {
-            let outpoints = self.wallet.gap_stranded_outpoints(self.master_appkey);
+            let outpoints = self
+                .wallet
+                .gap_stranded_outpoints(self.master_appkey, feerate);
             self.wallet
                 .plan_consolidate(self.master_appkey, outpoints, feerate)
         }
@@ -1097,13 +1120,19 @@ mod test {
     fn gap_stranded_value_counts_only_rescuable_coins() {
         let mut f = Fixture::new();
         f.fund(0, 1_000_000, 100);
-        assert_eq!(f.wallet.gap_stranded_value(f.master_appkey), (0, 0));
+        assert_eq!(
+            f.wallet.gap_stranded_value(f.master_appkey, NUDGE_BAR),
+            (0, 0)
+        );
 
         f.fund(30, 500_000, 101);
         // Stranded and above its spend cost at the 1 sat/vB relay floor, but below it at the
         // summary's 10 sat/vB bar — pins that the bar is 10, not merely relayable.
         f.fund(45, 300, 102);
-        assert_eq!(f.wallet.gap_stranded_value(f.master_appkey), (1, 500_000));
+        assert_eq!(
+            f.wallet.gap_stranded_value(f.master_appkey, NUDGE_BAR),
+            (1, 500_000)
+        );
     }
 
     /// The plan spends the nudge's exact coin set — nothing reachable, nothing extra — into a
@@ -1196,7 +1225,10 @@ mod test {
         f.fund(0, 1_000_000, 100);
         f.fund(21, 700, 101); // above the nudge bar, below one input+output of fee at 10 sat/vB
 
-        assert_eq!(f.wallet.gap_stranded_value(f.master_appkey), (1, 700));
+        assert_eq!(
+            f.wallet.gap_stranded_value(f.master_appkey, NUDGE_BAR),
+            (1, 700)
+        );
         let err = f
             .plan_stranded(10.0)
             .expect_err("700 sats cannot fund the consolidation");
@@ -1212,7 +1244,10 @@ mod test {
         f.fund(0, 1_000_000, 100);
         // Covers the 1,110 sat fee and leaves 290: a real output, under the 330 sat relay floor.
         f.fund(21, 1_400, 101);
-        assert_eq!(f.wallet.gap_stranded_value(f.master_appkey), (1, 1_400));
+        assert_eq!(
+            f.wallet.gap_stranded_value(f.master_appkey, NUDGE_BAR),
+            (1, 1_400)
+        );
 
         let err = f
             .plan_stranded(10.0)
@@ -1235,7 +1270,10 @@ mod test {
         f.fund(0, 1_000_000, 100);
         f.fund(30, 500_000, 101);
         f.fund(60, 400_000, 102);
-        assert_eq!(f.wallet.gap_stranded_value(f.master_appkey), (2, 900_000));
+        assert_eq!(
+            f.wallet.gap_stranded_value(f.master_appkey, NUDGE_BAR),
+            (2, 900_000)
+        );
 
         let plan = f.plan_stranded(10.0).unwrap();
         let template = f.wallet.commit_send(&plan, []).unwrap();
@@ -1254,38 +1292,47 @@ mod test {
 
         f.wallet.broadcast_success(tx);
         assert_eq!(
-            f.wallet.gap_stranded_value(f.master_appkey),
+            f.wallet.gap_stranded_value(f.master_appkey, NUDGE_BAR),
             (0, 0),
             "the remedy clears the nudge"
         );
     }
 
-    /// The feerate seam stays closed: a coin the nudge admitted (positive at the 10 sat/vB
-    /// bar) but effective-NEGATIVE at the plan's higher rate is still rescued. plan_send's
-    /// effective-value filtering is selection behavior, not consolidation behavior — porting it
-    /// here would leave the banner standing after its own remedy confirms.
+    /// A coin the nudge mentioned but that costs more to move than it carries at the rate the user
+    /// picked is left where it is. The nudge's bar is a hypothetical — worth telling you about — and
+    /// this is the real price.
+    ///
+    /// The trade-off is deliberate and has a cost worth naming: the remedy does not clear the nudge
+    /// here. The coin stays out of a restore's reach and the banner keeps saying so, correctly,
+    /// because at this rate moving it would burn more than it holds. A later consolidation at a
+    /// lower rate rescues it.
     #[test]
-    fn a_coin_effective_negative_at_the_plan_rate_is_still_rescued() {
+    fn a_coin_not_worth_moving_at_the_chosen_rate_is_left_where_it_is() {
         let mut f = Fixture::new();
         f.fund(0, 1_000_000, 100);
-        f.fund(30, 500_000, 101);
-        // ~575 sats of input cost at 10 sat/vB, ~2875 at 50: admitted by the nudge, negative
-        // at the plan rate.
-        let marginal = f.fund(51, 1_500, 102);
-        assert_eq!(f.wallet.gap_stranded_value(f.master_appkey), (2, 501_500));
+        let worth_moving = f.fund(30, 500_000, 101);
+        // ~575 sats of input cost at 10 sat/vB, ~2,875 at 50: above the nudge's bar, under the
+        // price of moving it at the rate this plan pays.
+        f.fund(51, 1_500, 102);
+        assert_eq!(
+            f.wallet.gap_stranded_value(f.master_appkey, NUDGE_BAR),
+            (2, 501_500),
+            "the nudge counts it, because at an ordinary rate its rescue pays for itself"
+        );
 
         let plan = f.plan_stranded(50.0).unwrap();
-        assert!(
-            plan.selected_outpoints().any(|op| op == marginal),
-            "the marginal coin must be rescued even though the rate makes it not worth its own weight"
+        assert_eq!(
+            plan.selected_outpoints().collect::<BTreeSet<_>>(),
+            BTreeSet::from([worth_moving]),
+            "only the coin whose rescue is worth its own fee at this rate"
         );
 
         let template = f.wallet.commit_send(&plan, []).unwrap();
         f.wallet.broadcast_success(template.to_rust_bitcoin_tx());
         assert_eq!(
-            f.wallet.gap_stranded_value(f.master_appkey),
-            (0, 0),
-            "the remedy clears the nudge at any rate"
+            f.wallet.gap_stranded_value(f.master_appkey, NUDGE_BAR),
+            (1, 1_500),
+            "so the nudge survives its own remedy, still naming the coin left behind"
         );
     }
 

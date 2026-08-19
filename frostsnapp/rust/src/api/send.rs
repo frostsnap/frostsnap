@@ -65,16 +65,18 @@ impl SuperWallet {
         )?))
     }
 
-    /// The coins a future restore could miss — the input set the nudge's remedy consolidates.
+    /// The coins a future restore could miss and that are worth moving at `feerate` — the input
+    /// set the nudge's remedy consolidates.
     #[frb(sync)]
     pub fn gap_stranded_outpoints(
         &self,
         master_appkey: frostsnap_core::MasterAppkey,
+        feerate: f32,
     ) -> Vec<OutPoint> {
         self.inner
             .lock()
             .unwrap()
-            .gap_stranded_outpoints(master_appkey)
+            .gap_stranded_outpoints(master_appkey, feerate)
     }
 
     /// Turn a plan into a signable transaction — the single point that allocates the change
