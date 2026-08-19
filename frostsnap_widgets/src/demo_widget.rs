@@ -1,3 +1,10 @@
+/// The one release literal, shared with the device by inclusion because a host
+/// crate cannot depend on the riscv32-only device crate.
+pub fn firmware_version() -> alloc::string::String {
+    let (major, minor, patch): (u8, u8, u8) = include!("../../device/firmware_version.rs");
+    alloc::format!("{}.{}.{}", major, minor, patch)
+}
+
 /// Macro for selecting and running demo widgets
 #[macro_export]
 macro_rules! demo_widget {
@@ -137,7 +144,7 @@ macro_rules! demo_widget {
             }
             "welcome" => {
                 use $crate::Standby;
-                let mut widget = Standby::new();
+                let mut widget = Standby::new($crate::demo_widget::firmware_version());
                 widget.set_welcome();
                 $run_macro!(widget);
             }
@@ -986,7 +993,7 @@ macro_rules! demo_widget {
                 };
 
                 let device_name = "Alice";
-                let mut widget = Standby::new();
+                let mut widget = Standby::new($crate::demo_widget::firmware_version());
                 widget.set_key(device_name, held_share);
                 $run_macro!(widget);
             }
@@ -1013,7 +1020,7 @@ macro_rules! demo_widget {
                 };
 
                 let device_name = "Alice";
-                let mut widget = Standby::new();
+                let mut widget = Standby::new($crate::demo_widget::firmware_version());
                 widget.set_key(device_name, held_share);
                 $run_macro!(widget);
             }
@@ -1155,7 +1162,7 @@ macro_rules! demo_widget {
                 impl StandbyTransitionsDemo {
                     fn new() -> Self {
                         Self {
-                            widget: Standby::new(),
+                            widget: Standby::new($crate::demo_widget::firmware_version()),
                             last_switch_time: None,
                             state_index: 0,
                         }
