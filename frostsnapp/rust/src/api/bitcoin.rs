@@ -186,8 +186,8 @@ pub struct Transaction {
     pub last_seen: Option<u64>,
     pub prevouts: HashMap<bitcoin::OutPoint, bitcoin::TxOut>,
     pub is_mine: HashMap<bitcoin::ScriptBuf, u32>,
-    /// Present only when this came from a signing session. Signatures are ordered by the
-    /// template's owned inputs, so it is the only thing that can place them.
+    /// Present only when this came from a signing session, already normalised to the key it
+    /// belongs to. Signatures are ordered by that key's owned inputs.
     #[frb(ignore)]
     pub template: Option<TransactionTemplate>,
 }
@@ -197,10 +197,11 @@ impl Transaction {
         tx_temp: &TransactionTemplate,
         master_appkey: MasterAppkey,
     ) -> Self {
+        let tx_temp = &tx_temp.as_seen_by(master_appkey);
         let raw_tx = tx_temp.to_rust_bitcoin_tx();
         let txid = tx_temp.txid();
         let is_mine = tx_temp
-            .owned_spks(master_appkey)
+            .owned_spks()
             .into_iter()
             .map(|(spk, path)| (spk, path.index.to_u32()))
             .collect::<HashMap<_, _>>();
@@ -644,7 +645,10 @@ mod test {
         for signatures in [vec![], vec![signature(7)], vec![signature(1), signature(2)]] {
             assert_eq!(
                 tx.with_signatures(signatures.clone()).ok(),
-                template.to_signed_rust_bitcoin_tx(&signatures).ok(),
+                template
+                    .as_seen_by(key())
+                    .to_signed_rust_bitcoin_tx(&signatures)
+                    .ok(),
                 "with_signatures must not have its own idea of where a signature goes"
             );
         }

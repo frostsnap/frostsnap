@@ -57,6 +57,7 @@ impl SuperWallet {
             .reserved_change_indices(plan.0.master_appkey(), BitcoinAccount::default());
         let mut inner = self.inner.lock().unwrap();
         Ok(UnsignedTx {
+            master_appkey: plan.0.master_appkey(),
             template_tx: inner.commit_send(&plan.0, reserved)?,
         })
     }

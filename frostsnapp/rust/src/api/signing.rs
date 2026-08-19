@@ -126,6 +126,8 @@ impl ActiveSignSessionExt for ActiveSignSession {
 #[derive(Clone, Debug)]
 pub struct UnsignedTx {
     pub template_tx: TransactionTemplate,
+    /// Whose transaction this is. Every question about ownership needs it.
+    pub master_appkey: MasterAppkey,
 }
 
 impl UnsignedTx {

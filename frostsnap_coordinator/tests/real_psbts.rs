@@ -95,7 +95,7 @@ fn core_payment_to_our_own_change_address_owns_both_outputs() {
         owned(key, BitcoinBip32Path::internal(idx(3)))
     );
     assert_eq!(
-        template.foreign_recipients().count(),
+        template.as_seen_by(key).foreign_recipients().count(),
         0,
         "nothing here leaves the wallet"
     );
