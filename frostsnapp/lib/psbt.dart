@@ -79,10 +79,7 @@ class LoadPsbtPageState extends State<LoadPsbtPage> {
     }
 
     final txDetails = TxDetailsModel(
-      tx: unsignedTx.details(
-        superWallet: wallet.superWallet,
-        masterAppkey: wallet.masterAppkey,
-      ),
+      tx: unsignedTx.details(),
       chainTipHeight: wallet.superWallet.height(),
       now: DateTime.now(),
     );

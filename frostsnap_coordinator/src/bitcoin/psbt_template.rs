@@ -910,7 +910,7 @@ mod test {
     #[test]
     fn attaching_skips_a_foreign_input() {
         let key = our_key();
-        let ours = BitcoinBip32Path::external(4);
+        let ours = BitcoinBip32Path::external(idx(4));
         let psbt = psbt_of(
             vec![
                 foreign_input(100_000, 0xaa),
@@ -939,8 +939,8 @@ mod test {
         let psbt = psbt_of(
             vec![
                 foreign_input(100_000, 0xaa),
-                owned_input(key, BitcoinBip32Path::external(1), 100_000),
-                owned_input(key, BitcoinBip32Path::external(2), 100_000),
+                owned_input(key, BitcoinBip32Path::external(idx(1)), 100_000),
+                owned_input(key, BitcoinBip32Path::external(idx(2)), 100_000),
                 foreign_input(100_000, 0xbb),
             ],
             vec![foreign_txout(350_000)],
@@ -968,7 +968,7 @@ mod test {
         let psbt = psbt_of(
             vec![
                 foreign_input(100_000, 0xaa),
-                owned_input(key, BitcoinBip32Path::external(1), 100_000),
+                owned_input(key, BitcoinBip32Path::external(idx(1)), 100_000),
             ],
             vec![foreign_txout(150_000)],
         );

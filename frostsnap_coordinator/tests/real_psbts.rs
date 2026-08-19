@@ -123,3 +123,31 @@ fn our_derivation_agrees_with_bitcoin_core() {
         );
     }
 }
+
+/// `Transaction::details` used to source prevouts from the wallet's own graph, which cannot
+/// contain a PSBT's foreign inputs — and one missing prevout is enough to make the fee
+/// unknowable. The template carries every prevout the PSBT declared, which is why building
+/// from it fixes the fee display rather than papering over it.
+#[test]
+fn a_template_from_a_real_psbt_carries_every_prevout() {
+    let key = wallet_key();
+
+    for bytes in [
+        include_bytes!("fixtures/core_selfsend.psbt").as_slice(),
+        include_bytes!("fixtures/core_stranger.psbt").as_slice(),
+        include_bytes!("fixtures/core_to_internal.psbt").as_slice(),
+    ] {
+        let psbt = Psbt::deserialize(bytes).unwrap();
+        let template = psbt_to_tx_template(&psbt, key).unwrap();
+
+        assert_eq!(
+            template.inputs().len(),
+            psbt.unsigned_tx.input.len(),
+            "every input is represented"
+        );
+        assert!(
+            template.fee().is_some(),
+            "a template knows its own fee without consulting a wallet"
+        );
+    }
+}

@@ -1,3 +1,4 @@
+use anyhow::{anyhow, Result};
 pub use bitcoin::Transaction as RTransaction;
 pub use bitcoin::{
     psbt::Error as PsbtError, Address, Network as BitcoinNetwork, OutPoint, Psbt, ScriptBuf, TxOut,
@@ -197,13 +198,9 @@ impl Transaction {
         let raw_tx = tx_temp.to_rust_bitcoin_tx();
         let txid = tx_temp.txid();
         let is_mine = tx_temp
-            .iter_locally_owned_inputs()
-            .map(|(_, _, spk)| (spk.spk(), spk.bip32_path.index.to_u32()))
-            .chain(
-                tx_temp
-                    .iter_locally_owned_outputs()
-                    .map(|(_, _, spk)| (spk.spk(), spk.bip32_path.index.to_u32())),
-            )
+            .owned_spks()
+            .into_iter()
+            .map(|(spk, path)| (spk, path.index.to_u32()))
             .collect::<HashMap<_, _>>();
         let prevouts = tx_temp
             .inputs()
@@ -397,18 +394,16 @@ impl Transaction {
     }
 
     /// Return a transaction with the following signatures added.
-    pub fn with_signatures(&self, signatures: Vec<EncodedSignature>) -> RTransaction {
-        let mut tx = self.inner.clone();
-        for (txin, signature) in tx.input.iter_mut().zip(signatures) {
-            let schnorr_sig = bitcoin::taproot::Signature {
-                signature: bitcoin::secp256k1::schnorr::Signature::from_slice(&signature.0)
-                    .unwrap(),
-                sighash_type: bitcoin::sighash::TapSighashType::Default,
-            };
-            let witness = bitcoin::Witness::from_slice(&[schnorr_sig.to_vec()]);
-            txin.witness = witness;
-        }
-        tx
+    ///
+    /// Errors when the signatures cannot be placed: this came from wallet history rather
+    /// than a signing session, or the list does not match the inputs this wallet owns.
+    /// Broadcasting nothing beats broadcasting a transaction witnessed on the wrong input.
+    pub fn with_signatures(&self, signatures: Vec<EncodedSignature>) -> Result<RTransaction> {
+        let template = self
+            .template
+            .as_ref()
+            .ok_or_else(|| anyhow!("this transaction did not come from a signing session"))?;
+        Ok(template.to_signed_rust_bitcoin_tx(&signatures)?)
     }
 }
 
@@ -566,4 +561,145 @@ pub fn compute_txid_of_psbt(psbt: &Psbt) -> Txid {
 #[frb(sync)]
 pub fn txid_hex_string(txid: &Txid) -> String {
     txid.to_string()
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use bitcoin::{hashes::Hash, Amount, OutPoint, ScriptBuf, TxOut, Txid};
+    use frostsnap_core::{
+        bitcoin_transaction::{LocalSpk, PushInput},
+        schnorr_fun::fun::{g, G},
+        tweak::{BitcoinBip32Path, NormalIndex},
+    };
+
+    fn idx(n: u32) -> NormalIndex {
+        NormalIndex::new(n).expect("test index is in range")
+    }
+
+    fn key() -> MasterAppkey {
+        MasterAppkey::derive_from_rootkey(g!(2 * G).normalize())
+    }
+
+    fn signature(tag: u8) -> EncodedSignature {
+        let mut bytes = [1u8; 64];
+        bytes[0] = tag;
+        EncodedSignature(bytes)
+    }
+
+    fn outpoint(vout: u32) -> OutPoint {
+        OutPoint {
+            txid: Txid::from_byte_array([9u8; 32]),
+            vout,
+        }
+    }
+
+    /// Input 0 is foreign, input 1 is ours.
+    fn template_with_a_foreign_input_first() -> TransactionTemplate {
+        let key = key();
+        let path = BitcoinBip32Path::external(idx(0));
+        let mut template = TransactionTemplate::new();
+
+        let foreign = TxOut {
+            value: Amount::from_sat(100_000),
+            script_pubkey: ScriptBuf::from_bytes([&[0x51u8, 0x20][..], &[0xaa; 32][..]].concat()),
+        };
+        template.push_foreign_input(PushInput::spend_outpoint(&foreign, outpoint(0)));
+
+        let ours = TxOut {
+            value: Amount::from_sat(100_000),
+            script_pubkey: LocalSpk {
+                master_appkey: key,
+                bip32_path: path,
+            }
+            .spk(),
+        };
+        template
+            .push_owned_input(
+                PushInput::spend_outpoint(&ours, outpoint(1)),
+                LocalSpk {
+                    master_appkey: key,
+                    bip32_path: path,
+                },
+            )
+            .unwrap();
+        template.push_foreign_output(TxOut {
+            value: Amount::from_sat(150_000),
+            script_pubkey: ScriptBuf::from_bytes([&[0x51u8, 0x20][..], &[0xbb; 32][..]].concat()),
+        });
+        template
+    }
+
+    /// What a signed transaction should *look* like is pinned in `frostsnap_core`; restating
+    /// it here would duplicate it more weakly. What only this layer can get wrong is placing
+    /// signatures itself instead of asking the template — which is how four copies of that
+    /// loop drifted apart — so this asserts agreement rather than behaviour.
+    #[test]
+    fn with_signatures_agrees_with_the_template_it_delegates_to() {
+        let template = template_with_a_foreign_input_first();
+        let tx = Transaction::from_template(&template);
+
+        for signatures in [vec![], vec![signature(7)], vec![signature(1), signature(2)]] {
+            assert_eq!(
+                tx.with_signatures(signatures.clone()).ok(),
+                template.to_signed_rust_bitcoin_tx(&signatures).ok(),
+                "with_signatures must not have its own idea of where a signature goes"
+            );
+        }
+    }
+
+    /// A transaction read back from the wallet has no template, so nothing can say which
+    /// input a signature belongs to. Refusing beats guessing.
+    #[test]
+    fn with_signatures_refuses_a_transaction_that_did_not_come_from_signing() {
+        let mut tx = Transaction::from_template(&template_with_a_foreign_input_first());
+        tx.template = None;
+
+        assert!(tx.with_signatures(vec![signature(7)]).is_err());
+    }
+
+    /// The old `details()` built this from the wallet index, which only knows scripts it has
+    /// already derived — so an owned output past the lookahead was shown as a stranger's.
+    #[test]
+    fn recipients_marks_an_owned_output_past_any_lookahead_as_ours() {
+        let key = key();
+        let deep = BitcoinBip32Path::internal(idx(400_000));
+        let mut template = template_with_a_foreign_input_first();
+        template
+            .push_owned_output_checked(
+                &TxOut {
+                    value: Amount::from_sat(40_000),
+                    script_pubkey: LocalSpk {
+                        master_appkey: key,
+                        bip32_path: deep,
+                    }
+                    .spk(),
+                },
+                LocalSpk {
+                    master_appkey: key,
+                    bip32_path: deep,
+                },
+            )
+            .unwrap();
+
+        let tx = Transaction::from_template(&template);
+        let recipients = tx.recipients();
+
+        let ours = recipients.last().unwrap();
+        assert!(ours.is_mine, "an owned output is ours at any depth");
+        assert_eq!(ours.derivation_index, Some(400_000));
+        assert!(!recipients[0].is_mine, "the foreign output is not ours");
+    }
+
+    /// The old `details()` looked prevouts up in the wallet's graph, which does not contain a
+    /// PSBT's foreign inputs. `_sum_inputs` returns `None` if any is missing, so fee and
+    /// feerate disappeared from the review screen for exactly those transactions.
+    #[test]
+    fn fee_survives_an_input_the_wallet_has_never_seen() {
+        let tx = Transaction::from_template(&template_with_a_foreign_input_first());
+
+        assert_eq!(tx.prevouts.len(), 2, "both inputs, foreign one included");
+        assert_eq!(tx.fee(), Some(50_000));
+        assert!(tx.feerate().is_some());
+    }
 }

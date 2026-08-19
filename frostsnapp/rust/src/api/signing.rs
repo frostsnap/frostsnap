@@ -16,7 +16,7 @@ use frostsnap_core::{
     message::EncodedSignature, AccessStructureRef, DeviceId, KeyId, SignSessionId, SymmetricKey,
     WireSignTask,
 };
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use tracing::{event, Level};
 
 /// An outgoing Bitcoin transaction that has not been successfully broadcast.
@@ -110,35 +110,9 @@ impl ActiveSignSessionExt for ActiveSignSession {
                 content: event.content,
                 hash_bytes: event.hash_bytes.to_lower_hex_string(),
             },
-            WireSignTask::BitcoinTransaction(tx_temp) => {
-                let raw_tx = tx_temp.to_rust_bitcoin_tx();
-                let txid = raw_tx.compute_txid();
-                let is_mine = tx_temp
-                    .iter_locally_owned_inputs()
-                    .map(|(_, _, spk)| (spk.spk(), spk.bip32_path.index.to_u32()))
-                    .chain(
-                        tx_temp
-                            .iter_locally_owned_outputs()
-                            .map(|(_, _, spk)| (spk.spk(), spk.bip32_path.index.to_u32())),
-                    )
-                    .collect::<HashMap<_, _>>();
-                let prevouts = tx_temp
-                    .inputs()
-                    .iter()
-                    .map(|input| (input.outpoint(), input.txout()))
-                    .collect::<HashMap<bitcoin::OutPoint, bitcoin::TxOut>>();
-                SigningDetails::Transaction {
-                    transaction: Transaction {
-                        template: Some(tx_temp.clone()),
-                        inner: raw_tx,
-                        txid: txid.to_string(),
-                        confirmation_time: None,
-                        last_seen: None,
-                        prevouts,
-                        is_mine,
-                    },
-                }
-            }
+            WireSignTask::BitcoinTransaction(tx_temp) => SigningDetails::Transaction {
+                transaction: Transaction::from_template(&tx_temp),
+            },
         };
         res
     }
@@ -171,34 +145,8 @@ impl UnsignedTx {
     }
 
     #[frb(sync)]
-    pub fn details(&self, super_wallet: &SuperWallet, master_appkey: MasterAppkey) -> Transaction {
-        let super_wallet = super_wallet.inner.lock().unwrap();
-        let raw_tx = self.template_tx.to_rust_bitcoin_tx();
-        let txid = raw_tx.compute_txid();
-        Transaction {
-            template: Some(self.template_tx.clone()),
-            txid: txid.to_string(),
-            confirmation_time: None,
-            last_seen: None,
-            prevouts: super_wallet
-                .get_prevouts(raw_tx.input.iter().map(|txin| txin.previous_output)),
-            is_mine: raw_tx
-                .output
-                .iter()
-                .chain(
-                    super_wallet
-                        .get_prevouts(raw_tx.input.iter().map(|txin| txin.previous_output))
-                        .values(),
-                )
-                .filter_map(|txout| {
-                    let spk = txout.script_pubkey.clone();
-                    super_wallet
-                        .spk_index(master_appkey, spk.clone())
-                        .map(|index| (spk, index))
-                })
-                .collect::<HashMap<_, _>>(),
-            inner: raw_tx,
-        }
+    pub fn details(&self) -> Transaction {
+        Transaction::from_template(&self.template_tx)
     }
 
     #[frb(sync)]

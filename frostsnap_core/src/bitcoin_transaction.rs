@@ -263,6 +263,21 @@ impl TransactionTemplate {
             .filter_map(|(i, input)| Some((i, input, input.owner.local_owner()?)))
     }
 
+    /// Every script this key owns in this transaction, on either side, with the path that
+    /// derives it.
+    ///
+    /// The template is the authority on what is ours; asking a wallet index instead answers
+    /// a different question and is bounded by whatever it has derived so far.
+    pub fn owned_spks(&self) -> BTreeMap<ScriptBuf, BitcoinBip32Path> {
+        self.iter_locally_owned_inputs()
+            .map(|(_, _, owner)| (owner.spk(), owner.bip32_path))
+            .chain(
+                self.iter_locally_owned_outputs()
+                    .map(|(_, _, owner)| (owner.spk(), owner.bip32_path)),
+            )
+            .collect()
+    }
+
     /// Pairs each signature with the index of the input it was produced for.
     ///
     /// Signatures arrive in the order [`Self::iter_sighashes_of_locally_owned_inputs`] produced

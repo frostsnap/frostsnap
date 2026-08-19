@@ -7,9 +7,13 @@ use frostsnap_core::{
     bitcoin_transaction::{LocalSpk, PushInput, TransactionTemplate},
     message::EncodedSignature,
     schnorr_fun::fun::{g, G},
-    tweak::BitcoinBip32Path,
+    tweak::{BitcoinBip32Path, NormalIndex},
     MasterAppkey,
 };
+
+fn idx(n: u32) -> NormalIndex {
+    NormalIndex::new(n).expect("test index is in range")
+}
 
 fn key() -> MasterAppkey {
     MasterAppkey::derive_from_rootkey(g!(2 * G).normalize())
@@ -41,7 +45,7 @@ fn template_with(owned: &[usize], total_inputs: usize) -> TransactionTemplate {
     for i in 0..total_inputs {
         let value = Amount::from_sat(100_000);
         if let Some(nth) = owned.iter().position(|o| *o == i) {
-            let path = BitcoinBip32Path::external(nth as u32);
+            let path = BitcoinBip32Path::external(idx(nth as u32));
             let txout = TxOut {
                 value,
                 script_pubkey: LocalSpk {
@@ -158,7 +162,7 @@ fn too_many_signatures_is_rejected() {
 #[test]
 fn a_foreign_input_at_one_of_our_own_output_scripts_is_still_foreign() {
     let key = key();
-    let our_path = BitcoinBip32Path::internal(3);
+    let our_path = BitcoinBip32Path::internal(idx(3));
     let our_spk = LocalSpk {
         master_appkey: key,
         bip32_path: our_path,
@@ -177,7 +181,7 @@ fn a_foreign_input_at_one_of_our_own_output_scripts_is_still_foreign() {
         value: Amount::from_sat(100_000),
         script_pubkey: LocalSpk {
             master_appkey: key,
-            bip32_path: BitcoinBip32Path::external(0),
+            bip32_path: BitcoinBip32Path::external(idx(0)),
         }
         .spk(),
     };
@@ -186,7 +190,7 @@ fn a_foreign_input_at_one_of_our_own_output_scripts_is_still_foreign() {
             PushInput::spend_outpoint(&ours, outpoint(1)),
             LocalSpk {
                 master_appkey: key,
-                bip32_path: BitcoinBip32Path::external(0),
+                bip32_path: BitcoinBip32Path::external(idx(0)),
             },
         )
         .unwrap();
@@ -211,4 +215,88 @@ fn a_foreign_input_at_one_of_our_own_output_scripts_is_still_foreign() {
         vec![1],
         "input 0 pays a script we own but the template never owned that input"
     );
+}
+
+/// `is_mine` in the app is built from this. Sourcing it from a wallet index instead answers
+/// "has the wallet derived this spk yet", which is bounded by lookahead.
+#[test]
+fn owned_spks_covers_both_sides_at_any_depth() {
+    let key = key();
+    let deep_input = BitcoinBip32Path::external(idx(500_000));
+    let deep_output = BitcoinBip32Path::internal(idx(400_000));
+
+    let mut template = TransactionTemplate::new();
+
+    let foreign = TxOut {
+        value: Amount::from_sat(100_000),
+        script_pubkey: foreign_spk(0xaa),
+    };
+    template.push_foreign_input(PushInput::spend_outpoint(&foreign, outpoint(0)));
+
+    let ours = TxOut {
+        value: Amount::from_sat(100_000),
+        script_pubkey: LocalSpk {
+            master_appkey: key,
+            bip32_path: deep_input,
+        }
+        .spk(),
+    };
+    template
+        .push_owned_input(
+            PushInput::spend_outpoint(&ours, outpoint(1)),
+            LocalSpk {
+                master_appkey: key,
+                bip32_path: deep_input,
+            },
+        )
+        .unwrap();
+
+    template
+        .push_owned_output_checked(
+            &TxOut {
+                value: Amount::from_sat(150_000),
+                script_pubkey: LocalSpk {
+                    master_appkey: key,
+                    bip32_path: deep_output,
+                }
+                .spk(),
+            },
+            LocalSpk {
+                master_appkey: key,
+                bip32_path: deep_output,
+            },
+        )
+        .unwrap();
+    template.push_foreign_output(TxOut {
+        value: Amount::from_sat(40_000),
+        script_pubkey: foreign_spk(0xbb),
+    });
+
+    let owned = template.owned_spks();
+
+    assert_eq!(
+        owned.len(),
+        2,
+        "one input and one output, no foreign scripts"
+    );
+    assert_eq!(
+        owned.get(&ours.script_pubkey).copied(),
+        Some(deep_input),
+        "an input far past any lookahead is still ours"
+    );
+    assert_eq!(
+        owned
+            .get(
+                &LocalSpk {
+                    master_appkey: key,
+                    bip32_path: deep_output
+                }
+                .spk()
+            )
+            .copied(),
+        Some(deep_output),
+        "an output far past any lookahead is still ours"
+    );
+    assert!(!owned.contains_key(&foreign_spk(0xaa)));
+    assert!(!owned.contains_key(&foreign_spk(0xbb)));
 }
