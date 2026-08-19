@@ -34,9 +34,36 @@ impl SendPlan {
     pub fn recipient_value(&self, index: u32) -> Option<u64> {
         self.0.recipient_value(index as usize)
     }
+
+    #[frb(sync)]
+    pub fn input_count(&self) -> u32 {
+        self.0.input_count() as u32
+    }
+
+    #[frb(sync, type_64bit_int)]
+    pub fn input_total(&self) -> u64 {
+        self.0.input_total()
+    }
 }
 
 impl SuperWallet {
+    /// Plan a consolidation of the gap-stranded coins: the nudge's exact coin set in, one
+    /// change output back, no recipient. Local and cheap; commit through
+    /// [`Self::commit_send`] like any send plan.
+    #[frb(sync)]
+    pub fn plan_consolidate(
+        &self,
+        master_appkey: frostsnap_core::MasterAppkey,
+        feerate: f32,
+    ) -> anyhow::Result<SendPlan> {
+        Ok(SendPlan(
+            self.inner
+                .lock()
+                .unwrap()
+                .plan_consolidate(master_appkey, feerate)?,
+        ))
+    }
+
     /// Turn a plan into a signable transaction — the single point that allocates the change
     /// address. The change index skips every index reserved by an in-flight signing session
     /// (active AND finished-but-unbroadcast, queried live from the coordinator — the wallet

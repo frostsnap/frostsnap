@@ -294,6 +294,13 @@ impl SuperWallet {
         }
     }
 
+    /// How many spendable coins a standard restore could miss, and their total sats — the
+    /// wallet's next outgoing transaction consolidates them automatically.
+    #[frb(sync, type_64bit_int)]
+    pub fn gap_stranded_value(&self, master_appkey: MasterAppkey) -> (u64, u64) {
+        self.inner.lock().unwrap().gap_stranded_value(master_appkey)
+    }
+
     pub fn psbt_to_unsigned_tx(
         &self,
         psbt: &Psbt,

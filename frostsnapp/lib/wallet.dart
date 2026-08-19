@@ -26,6 +26,7 @@ import 'package:frostsnap/wallet_more.dart';
 import 'package:frostsnap/wallet_receive.dart';
 import 'package:frostsnap/wallet_send.dart';
 import 'package:frostsnap/settings.dart';
+import 'package:frostsnap/wallet_stranded_coins.dart';
 import 'package:frostsnap/wallet_tx_details.dart';
 import 'package:rxdart/rxdart.dart';
 
@@ -375,6 +376,7 @@ class _TxListState extends State<TxList> {
             frostKey: frostKey,
           ),
         ),
+        SliverToBoxAdapter(child: StrandedCoinsBanner()),
         StreamBuilder(
           stream: MergeStream<void>([
             walletCtx.signingSessionSignals,
