@@ -383,6 +383,7 @@ mod test {
         BlockId, CheckPoint, ConfirmationBlockTime, TxUpdate,
     };
     use frostsnap_core::schnorr_fun::fun::Point;
+    use frostsnap_core::tweak::NormalIndex;
     use std::str::FromStr;
     use std::sync::{Arc, Mutex};
 
@@ -834,7 +835,8 @@ mod test {
                         master_appkey,
                         BitcoinBip32Path {
                             account_keychain: BitcoinAccountKeychain::external(),
-                            index: far,
+                            index: NormalIndex::new(far)
+                                .expect("far is lookahead + 10, well inside the normal range"),
                         },
                     ),
                 }],
