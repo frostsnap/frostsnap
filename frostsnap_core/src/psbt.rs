@@ -1,6 +1,7 @@
 use crate::{
     bitcoin_transaction::{
-        LocalSpk, PushInput, SignatureCountMismatch, SpkDoesntMatchPathError, TransactionTemplate,
+        LocalSpk, PushInput, ScopedTo, SignatureCountMismatch, SpkDoesntMatchPathError,
+        TransactionTemplate,
     },
     message::EncodedSignature,
     tweak::{AppTweakKind, BitcoinBip32Path},
@@ -146,7 +147,10 @@ impl TransactionTemplate {
 
         Ok(template)
     }
+}
 
+/// Only a template narrowed to one key can say which input a signature belongs to.
+impl TransactionTemplate<ScopedTo> {
     /// Writes each signature onto the PSBT input it was produced for.
     ///
     /// The counterpart to [`Self::from_psbt`]: the template decided which inputs were ours,
@@ -470,7 +474,9 @@ mod test {
             vec![foreign_txout(90_000)],
         );
 
-        let template = TransactionTemplate::from_psbt(&psbt, key).unwrap();
+        let template = TransactionTemplate::from_psbt(&psbt, key)
+            .unwrap()
+            .as_seen_by(key);
 
         assert_eq!(
             template.inputs()[0].owner().local_owner(),
@@ -645,7 +651,9 @@ mod test {
             vec![owned_output(key, change_path), psbt::Output::default()],
         );
 
-        let template = TransactionTemplate::from_psbt(&psbt, key).unwrap();
+        let template = TransactionTemplate::from_psbt(&psbt, key)
+            .unwrap()
+            .as_seen_by(key);
 
         assert_eq!(
             template.outputs()[0].owner().local_owner(),
@@ -676,7 +684,9 @@ mod test {
             vec![owned_output(sibling, sibling_path)],
         );
 
-        let template = TransactionTemplate::from_psbt(&psbt, key).unwrap();
+        let template = TransactionTemplate::from_psbt(&psbt, key)
+            .unwrap()
+            .as_seen_by(key);
 
         assert_eq!(
             template.outputs()[0].owner(),
@@ -762,7 +772,9 @@ mod test {
             vec![annotation],
         );
 
-        let template = TransactionTemplate::from_psbt(&psbt, key).unwrap();
+        let template = TransactionTemplate::from_psbt(&psbt, key)
+            .unwrap()
+            .as_seen_by(key);
 
         assert_eq!(
             template.outputs()[0].owner(),
@@ -788,7 +800,9 @@ mod test {
             vec![annotation],
         );
 
-        let template = TransactionTemplate::from_psbt(&psbt, key).unwrap();
+        let template = TransactionTemplate::from_psbt(&psbt, key)
+            .unwrap()
+            .as_seen_by(key);
 
         assert_eq!(
             template.outputs()[0].owner(),
@@ -837,7 +851,9 @@ mod test {
             vec![owned_output(key, deep)],
         );
 
-        let template = TransactionTemplate::from_psbt(&psbt, key).unwrap();
+        let template = TransactionTemplate::from_psbt(&psbt, key)
+            .unwrap()
+            .as_seen_by(key);
 
         assert_eq!(
             template.outputs()[0].owner().local_owner(),
@@ -883,7 +899,9 @@ mod test {
             vec![annotation],
         );
 
-        let template = TransactionTemplate::from_psbt(&psbt, key).unwrap();
+        let template = TransactionTemplate::from_psbt(&psbt, key)
+            .unwrap()
+            .as_seen_by(key);
 
         assert_eq!(
             template.outputs()[0].owner(),
@@ -923,7 +941,9 @@ mod test {
             ],
             vec![foreign_txout(150_000)],
         );
-        let template = TransactionTemplate::from_psbt(&psbt, key).unwrap();
+        let template = TransactionTemplate::from_psbt(&psbt, key)
+            .unwrap()
+            .as_seen_by(key);
 
         let signed = template
             .attach_signatures_to_psbt(&[signature(7)], &psbt)
@@ -952,7 +972,9 @@ mod test {
             ],
             vec![foreign_txout(350_000)],
         );
-        let template = TransactionTemplate::from_psbt(&psbt, key).unwrap();
+        let template = TransactionTemplate::from_psbt(&psbt, key)
+            .unwrap()
+            .as_seen_by(key);
 
         let signed = template
             .attach_signatures_to_psbt(&[signature(1), signature(2)], &psbt)
@@ -980,7 +1002,9 @@ mod test {
             ],
             vec![foreign_txout(150_000)],
         );
-        let template = TransactionTemplate::from_psbt(&psbt, key).unwrap();
+        let template = TransactionTemplate::from_psbt(&psbt, key)
+            .unwrap()
+            .as_seen_by(key);
 
         assert!(template.attach_signatures_to_psbt(&[], &psbt).is_err());
         assert!(template

@@ -10,7 +10,7 @@ use frostsnap_coordinator::bitcoin::chain_sync::{
 };
 pub use frostsnap_coordinator::bitcoin::wallet::ConfirmationTime;
 pub use frostsnap_coordinator::frostsnap_core::{self, MasterAppkey};
-use frostsnap_core::bitcoin_transaction::{self, TransactionTemplate};
+use frostsnap_core::bitcoin_transaction::{self, ScopedTo, TransactionTemplate};
 use frostsnap_core::message::EncodedSignature;
 use tracing::{event, Level};
 
@@ -189,15 +189,11 @@ pub struct Transaction {
     /// Present only when this came from a signing session, already normalised to the key it
     /// belongs to. Signatures are ordered by that key's owned inputs.
     #[frb(ignore)]
-    pub template: Option<TransactionTemplate>,
+    pub template: Option<TransactionTemplate<ScopedTo>>,
 }
 
 impl Transaction {
-    pub(crate) fn from_template(
-        tx_temp: &TransactionTemplate,
-        master_appkey: MasterAppkey,
-    ) -> Self {
-        let tx_temp = &tx_temp.as_seen_by(master_appkey);
+    pub(crate) fn from_template(tx_temp: &TransactionTemplate<ScopedTo>) -> Self {
         let raw_tx = tx_temp.to_rust_bitcoin_tx();
         let txid = tx_temp.txid();
         let is_mine = tx_temp
@@ -223,7 +219,7 @@ impl Transaction {
 
     pub(crate) fn fill_signatures(
         &mut self,
-        template: &TransactionTemplate,
+        template: &TransactionTemplate<ScopedTo>,
         signatures: &[EncodedSignature],
     ) -> Result<(), bitcoin_transaction::SignatureCountMismatch> {
         for (i, signature) in template.signatures_by_input_index(signatures)? {
@@ -640,7 +636,7 @@ mod test {
     #[test]
     fn with_signatures_agrees_with_the_template_it_delegates_to() {
         let template = template_with_a_foreign_input_first();
-        let tx = Transaction::from_template(&template, key());
+        let tx = Transaction::from_template(&template.as_seen_by(key()));
 
         for signatures in [vec![], vec![signature(7)], vec![signature(1), signature(2)]] {
             assert_eq!(
@@ -658,7 +654,8 @@ mod test {
     /// input a signature belongs to. Refusing beats guessing.
     #[test]
     fn with_signatures_refuses_a_transaction_that_did_not_come_from_signing() {
-        let mut tx = Transaction::from_template(&template_with_a_foreign_input_first(), key());
+        let mut tx =
+            Transaction::from_template(&template_with_a_foreign_input_first().as_seen_by(key()));
         tx.template = None;
 
         assert!(tx.with_signatures(vec![signature(7)]).is_err());
@@ -688,7 +685,7 @@ mod test {
             )
             .unwrap();
 
-        let tx = Transaction::from_template(&template, key);
+        let tx = Transaction::from_template(&template.as_seen_by(key));
         let recipients = tx.recipients();
 
         let ours = recipients.last().unwrap();
@@ -702,7 +699,8 @@ mod test {
     /// feerate disappeared from the review screen for exactly those transactions.
     #[test]
     fn fee_survives_an_input_the_wallet_has_never_seen() {
-        let tx = Transaction::from_template(&template_with_a_foreign_input_first(), key());
+        let tx =
+            Transaction::from_template(&template_with_a_foreign_input_first().as_seen_by(key()));
 
         assert_eq!(tx.prevouts.len(), 2, "both inputs, foreign one included");
         assert_eq!(tx.fee(), Some(50_000));

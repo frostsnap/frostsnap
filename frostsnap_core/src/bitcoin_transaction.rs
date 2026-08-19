@@ -15,8 +15,47 @@ use crate::{
 };
 
 /// Invalid state free representation of a transaction
+/// The scope a [`TransactionTemplate`] is in.
+///
+/// An ownership question — which inputs are ours, which recipients are foreign — has no
+/// answer until the template names a key, so those readers exist only on
+/// `TransactionTemplate<ScopedTo>`. [`TransactionTemplate::as_seen_by`] is the only way
+/// across, and it is what firmware's `WireSignTask::check` calls.
+///
+/// ```compile_fail,E0599
+/// # use frostsnap_core::bitcoin_transaction::TransactionTemplate;
+/// let template = TransactionTemplate::new();
+/// // Whose inputs? The unscoped template cannot say, so this does not compile.
+/// template.iter_locally_owned_inputs();
+/// ```
+///
+/// ```compile_fail,E0277
+/// # use frostsnap_core::{bitcoin_transaction::TransactionTemplate, MasterAppkey};
+/// # fn key() -> MasterAppkey { unimplemented!() }
+/// let scoped = TransactionTemplate::new().as_seen_by(key());
+/// // A scoped template is a local conclusion and must not go over the wire.
+/// bincode::encode_to_vec(scoped, bincode::config::standard()).unwrap();
+/// ```
+///
+/// There is deliberately no way back either: scoping erases another key's ownership, so a
+/// widened template would carry less than the one it came from. Anything that must send
+/// holds the unscoped form and narrows to read.
+/// Marks a template that has not been narrowed to any one key: the form that travels.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Hash, bincode::Encode, bincode::Decode)]
+pub struct Unscoped;
+
+/// Marks a template narrowed to one key by [`TransactionTemplate::as_seen_by`], where
+/// `Local` can only mean that key.
+///
+/// Deliberately not `bincode::Encode`/`Decode`: a scoped template is a local conclusion, and
+/// making it unserializable means the form that goes over the wire is the general one by
+/// construction rather than by discipline.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+pub struct ScopedTo(pub MasterAppkey);
+
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode, Eq, PartialEq, Hash)]
-pub struct TransactionTemplate {
+pub struct TransactionTemplate<S = Unscoped> {
+    scope: S,
     #[bincode(with_serde)]
     version: bitcoin::blockdata::transaction::Version,
     #[bincode(with_serde)]
@@ -88,9 +127,82 @@ impl Default for TransactionTemplate {
     }
 }
 
-impl TransactionTemplate {
+/// Facts that do not depend on whose transaction it is.
+impl<S> TransactionTemplate<S> {
+    pub fn txid(&self) -> Txid {
+        self.to_rust_bitcoin_tx().compute_txid()
+    }
+
+    pub fn to_rust_bitcoin_tx(&self) -> bitcoin::Transaction {
+        bitcoin::Transaction {
+            version: self.version,
+            lock_time: self.lock_time,
+            input: self
+                .inputs
+                .iter()
+                .map(|input| bitcoin::TxIn {
+                    previous_output: input.outpoint,
+                    sequence: input.sequence,
+                    ..Default::default()
+                })
+                .collect(),
+            output: self.outputs.iter().map(|output| output.txout()).collect(),
+        }
+    }
+
+    pub fn inputs(&self) -> &[Input] {
+        &self.inputs
+    }
+
+    pub fn outputs(&self) -> &[Output] {
+        &self.outputs
+    }
+
+    pub fn iter_sighash(&self) -> impl Iterator<Item = TapSighash> {
+        let tx = self.to_rust_bitcoin_tx();
+        let mut sighash_cache = SighashCache::new(tx);
+        let schnorr_sighashty = bitcoin::sighash::TapSighashType::Default;
+        let prevouts = self.inputs.iter().map(Input::txout).collect::<Vec<_>>();
+        (0..self.inputs.len()).map(move |i| {
+            sighash_cache
+                .taproot_key_spend_signature_hash(
+                    i,
+                    &bitcoin::sighash::Prevouts::All(&prevouts),
+                    schnorr_sighashty,
+                )
+                .expect("inputs are right length")
+        })
+    }
+
+    pub fn fee(&self) -> Option<u64> {
+        self.inputs
+            .iter()
+            .map(|input| input.value)
+            .sum::<u64>()
+            .checked_sub(self.outputs.iter().map(|output| output.value).sum())
+    }
+
+    pub fn net_value(&self) -> BTreeMap<RootOwner, i64> {
+        let mut spk_to_value: BTreeMap<RootOwner, i64> = Default::default();
+
+        for input in &self.inputs {
+            let value = spk_to_value.entry(input.owner.root_owner()).or_default();
+            *value -= i64::try_from(input.value).expect("input ridiciously large");
+        }
+
+        for output in &self.outputs {
+            let value = spk_to_value.entry(output.owner.root_owner()).or_default();
+            *value += i64::try_from(output.value).expect("input ridiciously large");
+        }
+
+        spk_to_value
+    }
+}
+
+impl TransactionTemplate<Unscoped> {
     pub fn new() -> Self {
         Self {
+            scope: Unscoped,
             version: bitcoin::blockdata::transaction::Version::TWO,
             lock_time: bitcoin::absolute::LockTime::ZERO,
             inputs: Default::default(),
@@ -104,10 +216,6 @@ impl TransactionTemplate {
 
     pub fn set_lock_time(&mut self, lock_time: bitcoin::absolute::LockTime) {
         self.lock_time = lock_time;
-    }
-
-    pub fn txid(&self) -> Txid {
-        self.to_rust_bitcoin_tx().compute_txid()
     }
 
     pub fn push_foreign_input(&mut self, input: PushInput) {
@@ -202,54 +310,45 @@ impl TransactionTemplate {
         self.push_owned_output(txout.value, owner);
         Ok(())
     }
+}
 
-    pub fn to_rust_bitcoin_tx(&self) -> bitcoin::Transaction {
-        bitcoin::Transaction {
+impl TransactionTemplate<Unscoped> {
+    pub fn as_seen_by(&self, master_appkey: MasterAppkey) -> TransactionTemplate<ScopedTo> {
+        let foreign_to_us = |owner: &SpkOwner| match owner {
+            SpkOwner::Local(local) if local.master_appkey != master_appkey => {
+                SpkOwner::Foreign(local.spk())
+            }
+            owner => owner.clone(),
+        };
+
+        TransactionTemplate {
+            scope: ScopedTo(master_appkey),
             version: self.version,
             lock_time: self.lock_time,
-            input: self
+            inputs: self
                 .inputs
                 .iter()
-                .map(|input| bitcoin::TxIn {
-                    previous_output: input.outpoint,
-                    sequence: input.sequence,
-                    ..Default::default()
+                .map(|input| Input {
+                    owner: foreign_to_us(&input.owner),
+                    ..input.clone()
                 })
                 .collect(),
-            output: self.outputs.iter().map(|output| output.txout()).collect(),
+            outputs: self
+                .outputs
+                .iter()
+                .map(|output| Output {
+                    owner: foreign_to_us(&output.owner),
+                    value: output.value,
+                })
+                .collect(),
         }
     }
+}
 
-    pub fn inputs(&self) -> &[Input] {
-        &self.inputs
-    }
-
-    pub fn outputs(&self) -> &[Output] {
-        &self.outputs
-    }
-
-    pub fn iter_sighash(&self) -> impl Iterator<Item = TapSighash> {
-        let tx = self.to_rust_bitcoin_tx();
-        let mut sighash_cache = SighashCache::new(tx);
-        let schnorr_sighashty = bitcoin::sighash::TapSighashType::Default;
-        let prevouts = self.inputs.iter().map(Input::txout).collect::<Vec<_>>();
-        (0..self.inputs.len()).map(move |i| {
-            sighash_cache
-                .taproot_key_spend_signature_hash(
-                    i,
-                    &bitcoin::sighash::Prevouts::All(&prevouts),
-                    schnorr_sighashty,
-                )
-                .expect("inputs are right length")
-        })
-    }
-
-    pub fn fee(&self) -> Option<u64> {
-        self.inputs
-            .iter()
-            .map(|input| input.value)
-            .sum::<u64>()
-            .checked_sub(self.outputs.iter().map(|output| output.value).sum())
+/// Answers that only make sense once the template has been narrowed to one key.
+impl TransactionTemplate<ScopedTo> {
+    pub fn master_appkey(&self) -> MasterAppkey {
+        self.scope.0
     }
 
     pub fn feerate(&self) -> Option<f64> {
@@ -265,22 +364,6 @@ impl TransactionTemplate {
 
         let vbytes = tx.weight().to_vbytes_ceil() as f64;
         Some(self.fee()? as f64 / vbytes)
-    }
-
-    pub fn net_value(&self) -> BTreeMap<RootOwner, i64> {
-        let mut spk_to_value: BTreeMap<RootOwner, i64> = Default::default();
-
-        for input in &self.inputs {
-            let value = spk_to_value.entry(input.owner.root_owner()).or_default();
-            *value -= i64::try_from(input.value).expect("input ridiciously large");
-        }
-
-        for output in &self.outputs {
-            let value = spk_to_value.entry(output.owner.root_owner()).or_default();
-            *value += i64::try_from(output.value).expect("input ridiciously large");
-        }
-
-        spk_to_value
     }
 
     pub fn iter_sighashes_of_locally_owned_inputs(
@@ -430,42 +513,6 @@ impl TransactionTemplate {
             recipients,
             fee,
             fee_rate_sats_per_vbyte,
-        }
-    }
-    /// This transaction as `master_appkey` sees it: anything owned by another key becomes a
-    /// foreign script.
-    ///
-    /// Ownership is relative to a key, and every reader below says "local" without naming one.
-    /// Normalising once here means they cannot be wrong: a sibling key's output is money
-    /// leaving, and a sibling key's input is one we cannot sign, which is exactly what
-    /// `Foreign` already means to them.
-    pub fn as_seen_by(&self, master_appkey: MasterAppkey) -> Self {
-        let foreign_to_us = |owner: &SpkOwner| match owner {
-            SpkOwner::Local(local) if local.master_appkey != master_appkey => {
-                SpkOwner::Foreign(local.spk())
-            }
-            owner => owner.clone(),
-        };
-
-        Self {
-            version: self.version,
-            lock_time: self.lock_time,
-            inputs: self
-                .inputs
-                .iter()
-                .map(|input| Input {
-                    owner: foreign_to_us(&input.owner),
-                    ..input.clone()
-                })
-                .collect(),
-            outputs: self
-                .outputs
-                .iter()
-                .map(|output| Output {
-                    owner: foreign_to_us(&output.owner),
-                    value: output.value,
-                })
-                .collect(),
         }
     }
 }
