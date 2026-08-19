@@ -34,21 +34,58 @@ const RISKY_GAP: u32 = 20;
 /// A finished coin selection that has reserved nothing.
 ///
 /// Each selected input is pinned as the keychain outpoint it came from — derivation path and
-/// outpoint, its immutable identity; only its spendability can change. Every input is a taproot
-/// keyspend of weight [`TR_KEYSPEND_TXIN_WEIGHT`], and the change output is a value without an
-/// address. The plan carries the outputs it was selected FOR and the fee the selection fixed,
-/// so the fee it reports is the fee the committed transaction pays. Only
-/// [`CoordSuperWallet::commit_send`] turns it into something the wallet is committed to.
+/// outpoint, its immutable identity, plus the value it carried when selected; only its
+/// spendability can change. Every input is a taproot keyspend of weight
+/// [`TR_KEYSPEND_TXIN_WEIGHT`], and the change output is a value without an address. The plan
+/// carries the outputs it was selected FOR and the fee the selection fixed, so the fee it reports
+/// is the fee the committed transaction pays. Only [`CoordSuperWallet::commit_send`] turns it into
+/// something the wallet is committed to.
 #[derive(Debug)]
 pub struct SendPlan {
     master_appkey: MasterAppkey,
-    selected: Vec<(BitcoinBip32Path, OutPoint)>,
+    selected: Vec<(BitcoinBip32Path, OutPoint, u64)>,
     recipients: Vec<TxOut>,
     change_value: Option<u64>,
     fee: u64,
 }
 
 impl SendPlan {
+    /// The only way to make a plan, so what a plan means is checked once here instead of trusted
+    /// at each site that reads one: the inputs it pins pay for the outputs it carries and the fee
+    /// it reports, exactly.
+    ///
+    /// The check has teeth because the two sides come from different places. A planner derives the
+    /// fee from its coin selector's own running total, while `selected` is the input set the plan
+    /// will actually be committed with — so this is where the two are made to agree, and a
+    /// selection that drifted from the set it priced cannot become a plan.
+    fn new(
+        master_appkey: MasterAppkey,
+        selected: Vec<(BitcoinBip32Path, OutPoint, u64)>,
+        recipients: Vec<TxOut>,
+        change_value: Option<u64>,
+        fee: u64,
+    ) -> Result<Self> {
+        let inputs: u64 = selected.iter().map(|&(_, _, value)| value).sum();
+        let outputs: u64 = recipients.iter().map(|txo| txo.value.to_sat()).sum::<u64>()
+            + change_value.unwrap_or(0);
+        let spent = outputs
+            .checked_add(fee)
+            .ok_or_else(|| anyhow!("plan outputs plus fee overflow"))?;
+        if inputs != spent {
+            return Err(anyhow!(
+                "plan does not balance: {inputs} sats of inputs against {outputs} of outputs \
+                 and a {fee} sat fee"
+            ));
+        }
+        Ok(Self {
+            master_appkey,
+            selected,
+            recipients,
+            change_value,
+            fee,
+        })
+    }
+
     pub fn master_appkey(&self) -> MasterAppkey {
         self.master_appkey
     }
@@ -65,17 +102,16 @@ impl SendPlan {
         self.selected.len()
     }
 
-    /// The total value the plan spends. The plan pins outpoints, not values, so this is the
-    /// accounting identity fee + outputs rather than a wallet lookup — it is what the committed
-    /// transaction consumes even if the wallet's view moves after planning.
+    /// The total value the plan spends: the sum of the inputs it pins, as they stood when
+    /// selected. Not a wallet lookup, so it is what the committed transaction consumes even if the
+    /// wallet's view moves after planning.
     pub fn input_total(&self) -> u64 {
-        self.fee
-            + self.change_value.unwrap_or(0)
-            + self
-                .recipients
-                .iter()
-                .map(|txo| txo.value.to_sat())
-                .sum::<u64>()
+        self.selected.iter().map(|&(_, _, value)| value).sum()
+    }
+
+    /// The coins this plan spends, in selection order.
+    pub fn selected_outpoints(&self) -> impl Iterator<Item = OutPoint> + '_ {
+        self.selected.iter().map(|&(_, outpoint, _)| outpoint)
     }
 
     /// What this plan pays recipient `index`, the value the committed transaction carries.
@@ -234,22 +270,20 @@ impl CoordSuperWallet {
                             .expect("bdk indexed this utxo against a spk it derived"),
                     },
                     utxos[position].outpoint,
+                    utxos[position].txout.value.to_sat(),
                 )
             })
             .collect();
 
         let recipient_value: u64 = target_outputs.iter().map(|txo| txo.value.to_sat()).sum();
         let change_value = cs.drain_value(target, change_policy);
-        Ok(SendPlan {
-            master_appkey,
-            selected,
-            recipients: target_outputs,
-            change_value,
-            fee: cs
-                .selected_value()
-                .saturating_sub(recipient_value)
-                .saturating_sub(change_value.unwrap_or(0)),
-        })
+        // Not saturating: a selection that does not cover its own outputs is a bug in the
+        // selection, and clamping the fee to zero would hide it behind a plausible number.
+        let fee = cs
+            .selected_value()
+            .checked_sub(recipient_value + change_value.unwrap_or(0))
+            .ok_or_else(|| anyhow!("selection does not cover its outputs"))?;
+        SendPlan::new(master_appkey, selected, target_outputs, change_value, fee)
     }
 
     /// Positions in `coins` of ones a [`RISKY_GAP`]-window restore cannot discover, found by
@@ -398,16 +432,7 @@ impl CoordSuperWallet {
                 )
             })?;
 
-        Ok(SendPlan {
-            master_appkey,
-            selected: coins
-                .into_iter()
-                .map(|(bip32_path, outpoint, _)| (bip32_path, outpoint))
-                .collect(),
-            recipients: vec![],
-            change_value: Some(change_value),
-            fee,
-        })
+        SendPlan::new(master_appkey, coins, vec![], Some(change_value), fee)
     }
 
     /// Turn a [`SendPlan`] into a signable template. This is the wallet's single change-address
@@ -435,7 +460,9 @@ impl CoordSuperWallet {
                 self.chain.as_ref(),
                 self.chain.tip().block_id(),
                 CanonicalizationParams::default(),
-                plan.selected.iter().copied(),
+                plan.selected
+                    .iter()
+                    .map(|&(path, outpoint, _)| (path, outpoint)),
             )
             .count();
         if still_unspent != plan.selected.len() {
@@ -447,7 +474,7 @@ impl CoordSuperWallet {
 
         let mut template = TransactionTemplate::new();
 
-        for &(bip32_path, outpoint) in &plan.selected {
+        for &(bip32_path, outpoint, _) in &plan.selected {
             let prev_tx = self
                 .tx_graph
                 .graph()
@@ -779,6 +806,36 @@ mod test {
         );
     }
 
+    /// The guard the constructor exists for. A plan whose pinned inputs do not pay for what it
+    /// says it pays is not a plan, and before the values were carried this was unrepresentable:
+    /// `input_total` was derived from the outputs, so such a plan reported the amount it should
+    /// have been spending while pinning nothing that could pay it.
+    #[test]
+    fn a_plan_whose_inputs_do_not_cover_its_outputs_is_refused() {
+        let f = Fixture::new();
+        let input = (
+            BitcoinBip32Path {
+                account_keychain: BitcoinAccountKeychain::external(),
+                index: NormalIndex::new(0).unwrap(),
+            },
+            OutPoint::null(),
+            10_000,
+        );
+        let recipient = |value| {
+            vec![TxOut {
+                value: Amount::from_sat(value),
+                script_pubkey: f.recipient.script_pubkey(),
+            }]
+        };
+
+        SendPlan::new(f.master_appkey, vec![input], recipient(9_000), None, 1_000)
+            .expect("10,000 in, 9,000 out, 1,000 fee");
+
+        let err = SendPlan::new(f.master_appkey, vec![input], recipient(9_500), None, 1_000)
+            .expect_err("9,500 out and a 1,000 fee cannot come from 10,000");
+        assert!(err.to_string().contains("does not balance"), "got: {err}");
+    }
+
     #[test]
     fn planning_reserves_nothing() {
         let mut f = Fixture::new();
@@ -898,9 +955,7 @@ mod test {
 
         let plan = f.plan(10_000);
         assert!(
-            plan.selected
-                .iter()
-                .any(|&(_, outpoint)| outpoint == stranded),
+            plan.selected_outpoints().any(|op| op == stranded),
             "the coin past the risky gap must be force-spent"
         );
         f.wallet.commit_send(&plan, []).unwrap();
@@ -963,9 +1018,7 @@ mod test {
 
         let plan = f.plan(10_000);
         assert!(
-            plan.selected
-                .iter()
-                .any(|&(_, outpoint)| outpoint == stranded_change),
+            plan.selected_outpoints().any(|op| op == stranded_change),
             "change past the risky gap must be force-spent too"
         );
     }
@@ -997,11 +1050,7 @@ mod test {
 
         let plan = f.wallet.plan_consolidate(f.master_appkey, 10.0).unwrap();
 
-        let planned: BTreeSet<OutPoint> = plan
-            .selected
-            .iter()
-            .map(|&(_, outpoint)| outpoint)
-            .collect();
+        let planned: BTreeSet<OutPoint> = plan.selected_outpoints().collect();
         assert_eq!(planned, BTreeSet::from([stranded_ext, stranded_int]));
         assert!(plan.recipients.is_empty());
         let change = plan.change_value.expect("the one output is change");
@@ -1113,13 +1162,7 @@ mod test {
         assert_eq!(tx.output.len(), 1, "consolidation has exactly one output");
         assert_eq!(tx.output[0].value.to_sat(), plan.change_value.unwrap());
         let spent: BTreeSet<OutPoint> = tx.input.iter().map(|txin| txin.previous_output).collect();
-        assert_eq!(
-            spent,
-            plan.selected
-                .iter()
-                .map(|&(_, op)| op)
-                .collect::<BTreeSet<_>>()
-        );
+        assert_eq!(spent, plan.selected_outpoints().collect::<BTreeSet<_>>());
 
         f.wallet.broadcast_success(tx);
         assert_eq!(
@@ -1145,7 +1188,7 @@ mod test {
 
         let plan = f.wallet.plan_consolidate(f.master_appkey, 50.0).unwrap();
         assert!(
-            plan.selected.iter().any(|&(_, outpoint)| outpoint == marginal),
+            plan.selected_outpoints().any(|op| op == marginal),
             "the marginal coin must be rescued even though the rate makes it not worth its own weight"
         );
 
@@ -1178,7 +1221,7 @@ mod test {
             Err(e) => panic!("wallet advertises {available} spendable but send max fails: {e}"),
         };
         assert!(
-            !plan.selected.iter().any(|&(_, outpoint)| outpoint == dust),
+            !plan.selected_outpoints().any(|op| op == dust),
             "moving it costs more than it carries, so it stays where it is"
         );
     }
