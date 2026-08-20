@@ -25,28 +25,47 @@ const nudgeFeerate = 10.0;
 /// gap limit, so a coin past such a stretch would be missed. Any outgoing transaction
 /// consolidates those coins automatically (`plan_send` force-selects them); this banner exists
 /// so the user knows one is worth making.
-class StrandedCoinsBanner extends StatelessWidget {
+class StrandedCoinsBanner extends StatefulWidget {
   const StrandedCoinsBanner({super.key});
+
+  @override
+  State<StrandedCoinsBanner> createState() => _StrandedCoinsBannerState();
+}
+
+class _StrandedCoinsBannerState extends State<StrandedCoinsBanner> {
+  Stream<TxState>? _source;
+  Stream<(int, int)>? _stranded;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final walletCtx = WalletContext.of(context)!;
+    // Derived here rather than in build, where asyncMap would open a fresh subscription on every
+    // rebuild. Keyed on the source's identity so selecting another wallet re-derives: the streams
+    // are cached per key, so a different wallet is a different stream.
+    if (_source != walletCtx.txStream) {
+      _source = walletCtx.txStream;
+      _stranded = _source!.asyncMap(
+        (_) => walletCtx.superWallet.gapStrandedValue(
+          masterAppkey: walletCtx.masterAppkey,
+          feerate: nudgeFeerate,
+        ),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final walletCtx = WalletContext.of(context)!;
 
-    return StreamBuilder<TxState>(
-      stream: walletCtx.txStream,
+    return StreamBuilder<(int, int)>(
+      stream: _stranded,
       builder: (context, snapshot) {
-        var count = 0;
-        var sats = 0;
-        if (snapshot.hasData) {
-          final (strandedCount, strandedSats) = walletCtx.superWallet
-              .gapStrandedValue(
-                masterAppkey: walletCtx.masterAppkey,
-                feerate: nudgeFeerate,
-              );
-          count = strandedCount;
-          sats = strandedSats;
-        }
+        // The last figures stay up while the next scan runs — StreamBuilder holds the previous
+        // event, so recomputing never blinks the banner out and back. Not-yet-known reads as
+        // nothing to say, which is a state this banner already has and animates into.
+        final (count, sats) = snapshot.data ?? (0, 0);
 
         final card = count == 0
             ? SizedBox(width: double.infinity)
