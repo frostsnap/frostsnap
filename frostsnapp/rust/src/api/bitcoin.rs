@@ -217,13 +217,22 @@ impl Transaction {
         }
     }
 
-    pub(crate) fn fill_signatures(
-        &mut self,
-        template: &TransactionTemplate<ScopedTo>,
-        signatures: &[EncodedSignature],
-    ) -> Result<(), bitcoin_transaction::SignatureCountMismatch> {
-        for (i, signature) in template.signatures_by_input_index(signatures)? {
-            self.inner.input[i].witness = bitcoin_transaction::signature_witness(signature);
+    /// Takes the template from `self`: passing one in would let a caller pair signatures
+    /// with a transaction they did not come from.
+    pub(crate) fn fill_signatures(&mut self, signatures: &[EncodedSignature]) -> Result<()> {
+        let placements = {
+            let template = self
+                .template
+                .as_ref()
+                .ok_or_else(|| anyhow!("this transaction did not come from a signing session"))?;
+            template
+                .signatures_by_input_index(signatures)?
+                .into_iter()
+                .map(|(i, signature)| (i, bitcoin_transaction::signature_witness(signature)))
+                .collect::<Vec<_>>()
+        };
+        for (i, witness) in placements {
+            self.inner.input[i].witness = witness;
         }
         Ok(())
     }

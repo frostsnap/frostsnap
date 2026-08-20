@@ -14,8 +14,22 @@ use crate::{
     MasterAppkey,
 };
 
-/// Invalid state free representation of a transaction
-/// The scope a [`TransactionTemplate`] is in.
+/// Marks a template that has not been narrowed to any one key: the form that travels.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Hash, bincode::Encode, bincode::Decode)]
+pub struct Unscoped;
+
+/// Marks a template narrowed to one key by [`TransactionTemplate::as_seen_by`], where
+/// `Local` can only mean that key.
+///
+/// Deliberately not `bincode::Encode`/`Decode`: a scoped template is a local conclusion, and
+/// making it unserializable means the form that goes over the wire is the general one by
+/// construction rather than by discipline.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+pub struct ScopedTo(pub MasterAppkey);
+
+/// Invalid state free representation of a transaction.
+///
+/// The type parameter is the scope: which key's transaction this is.
 ///
 /// An ownership question — which inputs are ours, which recipients are foreign — has no
 /// answer until the template names a key, so those readers exist only on
@@ -40,19 +54,6 @@ use crate::{
 /// There is deliberately no way back either: scoping erases another key's ownership, so a
 /// widened template would carry less than the one it came from. Anything that must send
 /// holds the unscoped form and narrows to read.
-/// Marks a template that has not been narrowed to any one key: the form that travels.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Hash, bincode::Encode, bincode::Decode)]
-pub struct Unscoped;
-
-/// Marks a template narrowed to one key by [`TransactionTemplate::as_seen_by`], where
-/// `Local` can only mean that key.
-///
-/// Deliberately not `bincode::Encode`/`Decode`: a scoped template is a local conclusion, and
-/// making it unserializable means the form that goes over the wire is the general one by
-/// construction rather than by discipline.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
-pub struct ScopedTo(pub MasterAppkey);
-
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode, Eq, PartialEq, Hash)]
 pub struct TransactionTemplate<S = Unscoped> {
     scope: S,
