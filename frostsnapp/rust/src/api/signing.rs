@@ -104,8 +104,9 @@ impl UnsignedTx {
     ///
     /// Every reader below answers *for* that key without re-checking, so a template with
     /// nothing of its own would report a balance and a recipient list for a transaction the
-    /// key has no part in. `psbt_to_tx_template` rejects a PSBT owned by none of the keys it
-    /// was given, which is a weaker statement as soon as it is given more than one.
+    /// key has no part in. `TransactionTemplate::from_psbt` rejects a PSBT owned by none of
+    /// the keys it was given, which is a weaker statement as soon as it is given more
+    /// than one.
     #[frb(ignore)]
     pub(crate) fn new(
         template_tx: TransactionTemplate,
