@@ -35,8 +35,9 @@ pub struct UntrustedCertificate {
 /// Custom error type that includes certificate data for TOFU prompts
 #[derive(Debug)]
 pub enum TofuError {
-    /// Certificate not trusted - needs user approval
-    NotTrusted(UntrustedCertificate),
+    /// Certificate not trusted - needs user approval. Boxed because the certificate carries a DER
+    /// blob, and an `Err` this large is paid for on every `Ok` return of every function in the chain.
+    NotTrusted(Box<UntrustedCertificate>),
     /// Other connection error
     Other(anyhow::Error),
 }
@@ -163,7 +164,7 @@ impl ServerCertVerifier for TofuCertVerifier {
                     valid_for_names: None,
                 };
 
-                let tofu_error = TofuError::NotTrusted(untrusted_cert);
+                let tofu_error = TofuError::NotTrusted(Box::new(untrusted_cert));
                 self.tofu_errors
                     .lock()
                     .unwrap()
@@ -236,7 +237,7 @@ impl ServerCertVerifier for TofuCertVerifier {
                         valid_for_names,
                     };
 
-                    let tofu_error = TofuError::NotTrusted(untrusted_cert);
+                    let tofu_error = TofuError::NotTrusted(Box::new(untrusted_cert));
                     self.tofu_errors
                         .lock()
                         .unwrap()

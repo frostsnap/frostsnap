@@ -122,7 +122,7 @@ impl FramebufferColor for Rgb565 {
         let value = raw.into_inner();
         let byte0 = (value & 0xFF) as u8;
         let byte1 = ((value >> 8) & 0xFF) as u8;
-        for chunk in data.chunks_exact_mut(2) {
+        for chunk in data.as_chunks_mut::<2>().0 {
             chunk[0] = byte0;
             chunk[1] = byte1;
         }
