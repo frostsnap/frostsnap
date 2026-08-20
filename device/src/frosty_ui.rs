@@ -62,7 +62,10 @@ impl<'a> FrostyUi<'a> {
         use embedded_graphics::geometry::Size;
         use frostsnap_widgets::debug::EnabledDebug;
 
-        let root_widget = RootWidget::new(WidgetTree::Standby(Box::new(Standby::new())), 200);
+        let root_widget = RootWidget::new(
+            WidgetTree::Standby(Box::new(Standby::new(crate::FIRMWARE_VERSION))),
+            200,
+        );
         let debug_config = EnabledDebug {
             logs: cfg!(feature = "debug_log"),
             memory: cfg!(feature = "debug_mem"),
@@ -182,9 +185,11 @@ impl<'a> UserInteraction for FrostyUi<'a> {
 
         // Convert workflow to widget tree
         let new_page = match workflow {
-            Workflow::Startup => WidgetTree::Standby(Box::new(Standby::new())),
+            Workflow::Startup => {
+                WidgetTree::Standby(Box::new(Standby::new(crate::FIRMWARE_VERSION)))
+            }
             Workflow::None => {
-                let mut standby = Standby::new();
+                let mut standby = Standby::new(crate::FIRMWARE_VERSION);
                 standby.set_welcome();
                 WidgetTree::Standby(Box::new(standby))
             }
@@ -192,7 +197,7 @@ impl<'a> UserInteraction for FrostyUi<'a> {
                 device_name,
                 held_share,
             } => {
-                let mut standby = Standby::new();
+                let mut standby = Standby::new(crate::FIRMWARE_VERSION);
                 standby.set_key(device_name.to_string(), held_share);
                 WidgetTree::Standby(Box::new(standby))
             }
