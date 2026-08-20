@@ -238,7 +238,7 @@ impl HandlerState {
                             request.url,
                             cert.fingerprint
                         );
-                        let _ = response.send(Ok(ConnectionResult::CertificatePromptNeeded(cert)));
+                        let _ = response.send(Ok(ConnectionResult::CertificatePromptNeeded(*cert)));
                     }
                     Err(TofuError::Other(e)) => {
                         tracing::error!("Failed to connect to {}: {}", request.url, e);
