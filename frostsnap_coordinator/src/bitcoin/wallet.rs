@@ -150,10 +150,6 @@ impl CoordSuperWallet {
             .collect()
     }
 
-    pub fn is_spk_mine(&self, master_appkey: MasterAppkey, spk: ScriptBuf) -> bool {
-        self.spk_path(master_appkey, spk).is_some()
-    }
-
     /// The derivation this wallet reaches `spk` by, or `None` if it does not reach it.
     /// The keychain is half the answer: receive #5 and change #5 are different scripts,
     /// and an index alone cannot say which one was found.
