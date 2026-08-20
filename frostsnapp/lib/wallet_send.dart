@@ -611,7 +611,10 @@ class _WalletSendPageState extends State<WalletSendPage> {
 
     final UnsignedTx unsignedTx;
     try {
-      unsignedTx = widget.superWallet.commitSend(coord: coord, plan: currentPlan);
+      unsignedTx = widget.superWallet.commitSend(
+        coord: coord,
+        plan: currentPlan,
+      );
     } catch (e) {
       // The one real failure: a planned input was spent while this page was open. The plan is
       // dead; send the user back to re-confirm the amount, which builds a fresh one.

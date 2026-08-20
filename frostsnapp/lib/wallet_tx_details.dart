@@ -616,7 +616,9 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
   Widget buildSignaturesNeededColumn(BuildContext context) {
     final theme = Theme.of(context);
     final params = widget.signingParams;
-    final asRef = params is TxNeedsSignatures ? params.accessStructureRef : null;
+    final asRef = params is TxNeedsSignatures
+        ? params.accessStructureRef
+        : null;
     final accessStruct = asRef != null
         ? coord.getAccessStructure(asRef: asRef)
         : null;
