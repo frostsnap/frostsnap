@@ -678,6 +678,27 @@ mod test {
         }
     }
 
+    /// Broadcasting later was dead: the screen for a finished session read its signatures off
+    /// the live signing stream, which that screen never subscribes to, so it always asked for
+    /// a transaction witnessed with none — and the strict count check refused, every time.
+    ///
+    /// The empty list is the failure, and this pins that it is a failure rather than a no-op:
+    /// master's positional `zip` silently returned the unwitnessed transaction instead.
+    #[test]
+    fn signing_with_no_signatures_is_refused_rather_than_silently_empty() {
+        let scoped = single_owned_input_template().as_seen_by(key());
+
+        assert!(
+            Transaction::signed_from_template(&scoped, &[]).is_err(),
+            "no signatures cannot mean a broadcastable transaction"
+        );
+        assert!(
+            Transaction::signed_from_template(&scoped, &[signature(1)]).is_ok(),
+            "and the same call with what the session produced succeeds — the signatures were \
+             never far away, the screen was asking the wrong object for them"
+        );
+    }
+
     /// A PSBT can leave us inputs we do not own. Signing ours still leaves those witnessless,
     /// because the template has nowhere to put anyone else's signature, so the result is a
     /// transaction the network rejects. Offering to broadcast it is the failure this guards.

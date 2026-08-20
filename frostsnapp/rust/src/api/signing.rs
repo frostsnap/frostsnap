@@ -243,6 +243,16 @@ impl SignedTx {
     }
 }
 
+/// A signing session that is over, and what came out of it.
+///
+/// One value from one lookup: a transaction and the signatures that completed it cannot be
+/// fetched separately and then disagree about which session they came from.
+#[derive(Debug, Clone)]
+pub struct FinishedSigning {
+    pub unsigned_tx: UnsignedTx,
+    pub signatures: Vec<EncodedSignature>,
+}
+
 impl Coordinator {
     pub fn start_signing(
         &self,
@@ -301,6 +311,39 @@ impl Coordinator {
             .active_signing_sessions_by_ssid()
             .get(&session_id)
             .cloned()
+    }
+
+    /// What a finished session produced, as `master_appkey` sees it.
+    ///
+    /// The signatures are durable state here, not something a screen can only learn by
+    /// watching a stream — which is why a session reopened after signing had none: it
+    /// subscribes to nothing, correctly, and was reading stream state for a stored fact.
+    ///
+    /// `None` when there is no finished session with that id, or it was not signing a bitcoin
+    /// transaction.
+    #[frb(sync)]
+    pub fn finished_signing_for_session(
+        &self,
+        session_id: SignSessionId,
+        master_appkey: MasterAppkey,
+    ) -> Option<FinishedSigning> {
+        let coord = self.0.inner();
+        let session = coord.finished_signing_sessions().get(&session_id)?;
+        match &session.init.group_request.sign_task {
+            WireSignTask::BitcoinTransaction(tx_temp) => {
+                // A session with no signatures has not finished anything. Returning it would
+                // hand a screen an empty list that reads as "ready to broadcast" and fails at
+                // the count check, which is the failure this whole plan is about.
+                if session.signatures.is_empty() {
+                    return None;
+                }
+                Some(FinishedSigning {
+                    unsigned_tx: UnsignedTx::new(tx_temp.clone(), master_appkey)?,
+                    signatures: session.signatures.clone(),
+                })
+            }
+            _ => None,
+        }
     }
 
     /// The transaction an in-flight session is signing, as `master_appkey` sees it.

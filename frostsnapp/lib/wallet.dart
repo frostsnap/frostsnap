@@ -430,7 +430,7 @@ class _TxListState extends State<TxList> {
                           // Null only if the session was forgotten between listing this
                           // tile and tapping it; then there is nothing to broadcast and
                           // the plain view is the honest screen.
-                          final params = NeedsBroadcast.of(
+                          final params = SigningFinished.of(
                             sessionId: unbroadcastedTx.sessionId,
                             masterAppkey: walletCtx.masterAppkey,
                           );
@@ -884,7 +884,7 @@ class WalletBottomBar extends StatelessWidget {
         context,
         title: Text('Transaction Details'),
         builder: (context, scrollController) {
-          final params = NeedsBroadcast.of(
+          final params = SigningFinished.of(
             sessionId: unbroadcastedTx.sessionId,
             masterAppkey: walletCtx.masterAppkey,
           );

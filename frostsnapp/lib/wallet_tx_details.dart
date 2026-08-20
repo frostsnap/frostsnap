@@ -39,8 +39,8 @@ sealed class TxSigningParams {
   const TxSigningParams({required this.unsignedTx});
 }
 
-/// The two states with a signing session to run. `NeedsBroadcast` has neither, which is why
-/// `accessStructureRef` and `devices` live here and not on the base.
+/// The two states with a signing session still to run. `SigningFinished` has none, which is
+/// why `accessStructureRef` and `devices` live here and not on the base.
 sealed class TxNeedsSignatures extends TxSigningParams {
   final AccessStructureRef accessStructureRef;
   final List<DeviceId> devices;
@@ -110,26 +110,45 @@ class RestoreSigning extends TxNeedsSignatures {
       coord.tryRestoreSigningSession(sessionId: sessionId);
 }
 
-/// Signed, and waiting to go to the network.
+/// Signing is over and these are the signatures it produced.
 ///
-/// The only state that can broadcast, and before this it was the only one with no
-/// representation — it arrived as a null and lost the transaction it needed on the way.
-class NeedsBroadcast extends TxSigningParams {
+/// Named for what happened, not for what may follow: a PSBT we signed only part of is in this
+/// same state, holding signatures and not ours to broadcast. Whether it can go to the network
+/// is `unsignedTx.canBroadcast()`, a property of the transaction rather than of how the screen
+/// was opened.
+///
+/// The signatures are a constructor argument because a screen that offers to broadcast must
+/// have something to broadcast. Reading them off the live signing stream is what made
+/// broadcasting later fail: a reopened session subscribes to nothing, correctly, so that
+/// stream is empty forever while the signatures sit in the coordinator.
+class SigningFinished extends TxSigningParams {
   final SignSessionId sessionId;
+  final List<EncodedSignature> signatures;
 
-  const NeedsBroadcast({required super.unsignedTx, required this.sessionId});
+  /// Private so [`of`] is the only way to get one: requiring a *list* is not the same as
+  /// requiring signatures, and an empty one reads as ready-to-broadcast right up until the
+  /// count check refuses it.
+  const SigningFinished._({
+    required super.unsignedTx,
+    required this.sessionId,
+    required this.signatures,
+  });
 
   /// `null` when the session has been forgotten, or was not signing a bitcoin transaction.
-  static NeedsBroadcast? of({
+  static SigningFinished? of({
     required SignSessionId sessionId,
     required MasterAppkey masterAppkey,
   }) {
-    final unsignedTx = coord.unsignedTxForSession(
+    final finished = coord.finishedSigningForSession(
       sessionId: sessionId,
       masterAppkey: masterAppkey,
     );
-    if (unsignedTx == null) return null;
-    return NeedsBroadcast(unsignedTx: unsignedTx, sessionId: sessionId);
+    if (finished == null || finished.signatures.isEmpty) return null;
+    return SigningFinished._(
+      unsignedTx: finished.unsignedTx,
+      sessionId: sessionId,
+      signatures: finished.signatures,
+    );
   }
 }
 
@@ -332,7 +351,7 @@ class TxDetailsPage extends StatefulWidget {
     required this.txStates,
     required this.txDetails,
     required this.psbtMan,
-    required NeedsBroadcast this.signingParams,
+    required SigningFinished this.signingParams,
   }) : finishedSigningSessionId = signingParams.sessionId,
        psbt = null;
 
@@ -516,7 +535,7 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
             onSigningSessionData(state).whenComplete(sub.resume);
           });
           signingSub = sub;
-        case NeedsBroadcast():
+        case SigningFinished():
           // Signing is over; there is no stream to follow, only a transaction to send.
           broadcastDone = false;
         case null:
@@ -692,12 +711,22 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
 
   Widget buildBroadcastNeededColumn(BuildContext context) {
     final psbt = this.psbt;
-    // Two ways there is nothing to send, and both must hide the button rather than disable
-    // it: no signing state at all — a screen on wallet history has no transaction of its own
-    // — or a PSBT holding inputs that are not ours, whose signatures the template cannot
-    // carry, so ours alone leave a transaction the network rejects.
+    // Two ways there is nothing to send, and both hide the button rather than disable it: no
+    // signing state at all — a screen on wallet history has no transaction of its own — or a
+    // PSBT holding inputs that are not ours, whose signatures the template cannot carry, so
+    // ours alone leave a transaction the network rejects.
     final params = widget.signingParams;
     final canBroadcast = params != null && params.unsignedTx.canBroadcast();
+    // And one way there is nothing *yet*: signing still running. `signingDone` says only that
+    // no stream is reporting progress, which is also true of a screen that never subscribed —
+    // so ask whether the signatures exist rather than whether a stream is quiet.
+    final haveSignatures = switch (params) {
+      // True by construction: `SigningFinished.of` is the only way to build one and refuses
+      // an empty list, so this does not have to re-check what the type already promises.
+      SigningFinished() => true,
+      TxNeedsSignatures() => signingState?.finishedSignatures != null,
+      null => false,
+    };
 
     final buttonGroup = Row(
       mainAxisSize: MainAxisSize.min,
@@ -713,7 +742,7 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
         if (canBroadcast)
           Flexible(
             child: FilledButton(
-              onPressed: (signingDone && !isBroadcasting)
+              onPressed: (haveSignatures && !isBroadcasting)
                   ? () => broadcast(context)
                   : null,
               child: Text('Broadcast'),
@@ -848,8 +877,18 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
     // The button is hidden in both these cases, so neither should be reachable — but a hidden
     // button is a fact about one screen, and this is the call that would put a transaction
     // the network rejects onto the network.
+    // Where the signatures are depends on how this screen was opened, and there is no
+    // sensible default for not having them — an empty list is not "sign with nothing", it is
+    // "we cannot send this".
     final signingParams = widget.signingParams;
-    if (signingParams == null || !signingParams.unsignedTx.canBroadcast()) {
+    final signatures = switch (signingParams) {
+      SigningFinished(:final signatures) => signatures,
+      TxNeedsSignatures() => signingState?.finishedSignatures,
+      null => null,
+    };
+    if (signingParams == null ||
+        signatures == null ||
+        !signingParams.unsignedTx.canBroadcast()) {
       if (mounted) {
         setState(() => isBroadcasting = false);
         showErrorSnackbar(context, 'Nothing here can be broadcast');
@@ -859,7 +898,7 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
     final RTransaction tx;
     try {
       tx = await signingParams.unsignedTx.withSignatures(
-        signatures: signingState?.finishedSignatures ?? [],
+        signatures: signatures,
       );
     } catch (e) {
       // Nothing broadcastable was produced, so there is nothing safe to send.
