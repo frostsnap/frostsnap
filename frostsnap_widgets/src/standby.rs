@@ -16,6 +16,16 @@ const WARNING_ICON_DATA: &[u8] = include_bytes!("../assets/warning-icon-24x24.bm
 
 type Image = crate::Image<GrayToAlpha<Bmp<'static, Gray8>, Rgb565>>;
 
+fn version_text(firmware_version: impl core::fmt::Display) -> Padding<Text> {
+    let text = Text::new(
+        format!("v{}", firmware_version),
+        DefaultTextStyle::new(crate::FONT_SMALL, PALETTE.text_secondary),
+    );
+    // The panel's corners are round (r=42, per hold_to_confirm_border): a corner inset (d, d)
+    // from the screen corner clears the arc only for d >= r * (1 - 1/sqrt(2)) ~= 12.3.
+    Padding::only(text).top(13).right(13).build()
+}
+
 /// Blank standby content - shows welcome message
 #[derive(frostsnap_macros::Widget)]
 pub struct StandbyBlank {
@@ -113,23 +123,20 @@ impl StandbyHasKey {
 #[derive(frostsnap_macros::Widget)]
 pub struct Standby {
     #[widget_delegate]
-    content: Center<
-        Column<(
-            Padding<Image>,
-            Delay<FadeSwitcher<Option<AnyOf<(StandbyBlank, StandbyHasKey)>>>>,
-        )>,
-    >,
-}
-
-impl Default for Standby {
-    fn default() -> Self {
-        Self::new()
-    }
+    content: Stack<(
+        Center<
+            Column<(
+                Padding<Image>,
+                Delay<FadeSwitcher<Option<AnyOf<(StandbyBlank, StandbyHasKey)>>>>,
+            )>,
+        >,
+        Padding<Text>,
+    )>,
 }
 
 impl Standby {
     /// Create a new Standby widget in startup mode (just logo, empty body)
-    pub fn new() -> Self {
+    pub fn new(firmware_version: impl core::fmt::Display) -> Self {
         let logo_bmp = Bmp::<Gray8>::from_slice(LOGO_DATA).expect("Failed to load BMP");
         let logo = Image::new(GrayToAlpha::new(logo_bmp, PALETTE.logo));
         let padded_logo = Padding::only(logo).top(30).bottom(20).build();
@@ -143,35 +150,32 @@ impl Standby {
             .push(delayed_fade)
             .with_cross_axis_alignment(crate::CrossAxisAlignment::Center);
 
-        let content = Center::new(column);
+        let content = Stack::builder().push(Center::new(column)).push_aligned(
+            version_text(firmware_version),
+            crate::layout::Alignment::TopRight,
+        );
 
         Self { content }
     }
 
     /// Clear content (back to startup mode - just logo)
     pub fn clear_content(&mut self) {
-        self.content.child.children.1.child.switch_to(None);
+        self.body().switch_to(None);
     }
 
     /// Set to welcome mode (blank with welcome message)
     pub fn set_welcome(&mut self) {
         let blank_content = StandbyBlank::new();
-        self.content
-            .child
-            .children
-            .1
-            .child
-            .switch_to(Some(AnyOf::new(blank_content)));
+        self.body().switch_to(Some(AnyOf::new(blank_content)));
     }
 
     /// Set to has-key mode with key information
     pub fn set_key(&mut self, device_name: impl Into<String>, held_share: HeldShare2) {
         let has_key_content = StandbyHasKey::new(device_name, held_share);
-        self.content
-            .child
-            .children
-            .1
-            .child
-            .switch_to(Some(AnyOf::new(has_key_content)));
+        self.body().switch_to(Some(AnyOf::new(has_key_content)));
+    }
+
+    fn body(&mut self) -> &mut FadeSwitcher<Option<AnyOf<(StandbyBlank, StandbyHasKey)>>> {
+        &mut self.content.children.0.child.children.1.child
     }
 }

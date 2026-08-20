@@ -152,7 +152,7 @@ impl WidgetTree {
                 }
             }
             SignTask::Nostr { .. } => {
-                let mut standby = Standby::new();
+                let mut standby = Standby::new(crate::FIRMWARE_VERSION);
                 standby.set_welcome();
                 Self::Standby(Box::new(standby))
             }
@@ -219,6 +219,6 @@ impl WidgetTree {
 
 impl Default for WidgetTree {
     fn default() -> Self {
-        WidgetTree::Standby(Box::new(Standby::new()))
+        WidgetTree::Standby(Box::new(Standby::new(crate::FIRMWARE_VERSION)))
     }
 }
