@@ -32,7 +32,7 @@ fn core_self_send_recognises_both_the_payment_and_the_change() {
     let key = wallet_key();
     let psbt = Psbt::deserialize(include_bytes!("fixtures/core_selfsend.psbt")).unwrap();
 
-    let template = TransactionTemplate::from_psbt(&psbt, key).unwrap();
+    let template = TransactionTemplate::from_psbt(&psbt, &[key]).unwrap();
 
     assert_eq!(template.inputs().len(), 1);
     assert!(template.inputs()[0].owner().local_owner().is_some());
@@ -61,7 +61,7 @@ fn core_payment_to_a_stranger_leaves_their_output_foreign() {
     let key = wallet_key();
     let psbt = Psbt::deserialize(include_bytes!("fixtures/core_stranger.psbt")).unwrap();
 
-    let template = TransactionTemplate::from_psbt(&psbt, key).unwrap();
+    let template = TransactionTemplate::from_psbt(&psbt, &[key]).unwrap();
 
     let recipient_spk = psbt.unsigned_tx.output[0].script_pubkey.clone();
     assert_eq!(
@@ -84,7 +84,7 @@ fn core_payment_to_our_own_change_address_owns_both_outputs() {
     let key = wallet_key();
     let psbt = Psbt::deserialize(include_bytes!("fixtures/core_to_internal.psbt")).unwrap();
 
-    let template = TransactionTemplate::from_psbt(&psbt, key).unwrap();
+    let template = TransactionTemplate::from_psbt(&psbt, &[key]).unwrap();
 
     assert_eq!(
         template.outputs()[0].owner().local_owner().cloned(),
@@ -114,7 +114,7 @@ fn our_derivation_agrees_with_bitcoin_core() {
         include_bytes!("fixtures/core_to_internal.psbt").as_slice(),
     ] {
         let psbt = Psbt::deserialize(bytes).unwrap();
-        let template = TransactionTemplate::from_psbt(&psbt, key).unwrap();
+        let template = TransactionTemplate::from_psbt(&psbt, &[key]).unwrap();
 
         assert_eq!(
             template.to_rust_bitcoin_tx().output,
@@ -138,7 +138,7 @@ fn a_template_from_a_real_psbt_carries_every_prevout() {
         include_bytes!("fixtures/core_to_internal.psbt").as_slice(),
     ] {
         let psbt = Psbt::deserialize(bytes).unwrap();
-        let template = TransactionTemplate::from_psbt(&psbt, key).unwrap();
+        let template = TransactionTemplate::from_psbt(&psbt, &[key]).unwrap();
 
         assert_eq!(
             template.inputs().len(),
