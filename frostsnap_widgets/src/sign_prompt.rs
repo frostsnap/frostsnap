@@ -14,7 +14,10 @@ use embedded_graphics::{
     geometry::Size,
     pixelcolor::{Gray8, Rgb565},
 };
-use frostsnap_core::{bitcoin_transaction::PromptSignBitcoinTx, tweak::BitcoinBip32Path};
+use frostsnap_core::{
+    bitcoin_transaction::{PromptDestination, PromptSignBitcoinTx},
+    tweak::BitcoinBip32Path,
+};
 use frostsnap_fonts::{
     Gray4Font, NOTO_SANS_17_REGULAR, NOTO_SANS_18_LIGHT, NOTO_SANS_18_MEDIUM, NOTO_SANS_24_BOLD,
 };
@@ -141,6 +144,40 @@ impl AddressPage {
 
         Self {
             center: Center::new(padded),
+        }
+    }
+}
+
+/// Shown for an output whose script has no address rendering.
+///
+/// It says only that, deliberately: such a script may well be spendable, and the one screen a
+/// user is meant to trust must not claim otherwise. The bytes are not drawn either —
+/// `AddressDisplay` earns trust by being checkable against another source, and arbitrary script
+/// hex cannot be, so showing it would borrow credibility it has not earned. The amount page
+/// beside this one carries the fact that matters.
+#[derive(Clone, frostsnap_macros::Widget)]
+pub struct UnrecognizedScriptPage {
+    #[widget_delegate]
+    center: Center<Column<(Text<Gray4TextStyle>, Text<Gray4TextStyle>)>>,
+}
+
+impl UnrecognizedScriptPage {
+    #[inline(never)]
+    pub fn new(index: usize) -> Self {
+        let title = Text::new(
+            format!("To Address #{}", index + 1),
+            Gray4TextStyle::new(FONT_PAGE_HEADER, PALETTE.text_secondary),
+        );
+        let body = Text::new(
+            "Unrecognized script".to_string(),
+            Gray4TextStyle::new(FONT_PAGE_HEADER, PALETTE.on_background),
+        );
+        let mut column = Column::new((title, body))
+            .with_main_axis_alignment(MainAxisAlignment::Center)
+            .with_cross_axis_alignment(CrossAxisAlignment::Center);
+        column.set_uniform_gap(10);
+        Self {
+            center: Center::new(column),
         }
     }
 }
@@ -329,6 +366,7 @@ impl ConfirmationPage {
 type SignPromptPage = AnyOf<(
     AmountPage,
     AddressPage,
+    UnrecognizedScriptPage,
     FeePage,
     WarningPage,
     ConfirmationPage,
@@ -398,15 +436,21 @@ impl WidgetList for SignPromptPageList {
                     false,
                 )
             } else {
-                (
-                    SignPromptPage::new(AddressPage::new_with_seed(
-                        recipient_idx,
-                        &recipient.address,
-                        self.rand_seed,
-                        recipient.owned.as_ref(),
-                    )),
-                    true,
-                )
+                match &recipient.destination {
+                    PromptDestination::Address(address) => (
+                        SignPromptPage::new(AddressPage::new_with_seed(
+                            recipient_idx,
+                            address,
+                            self.rand_seed,
+                            recipient.owned.as_ref(),
+                        )),
+                        true,
+                    ),
+                    PromptDestination::UnrecognizedScript(_) => (
+                        SignPromptPage::new(UnrecognizedScriptPage::new(recipient_idx)),
+                        true,
+                    ),
+                }
             }
         } else if Some(index) == warning_page {
             (
@@ -491,5 +535,63 @@ impl SignTxPrompt {
             }
         }
         false
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::WidgetList;
+    use core::str::FromStr;
+    use frostsnap_core::bitcoin_transaction::PromptRecipient;
+
+    fn address() -> bitcoin::Address {
+        bitcoin::Address::from_str("bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4")
+            .unwrap()
+            .assume_checked()
+    }
+
+    fn prompt_of(destinations: alloc::vec::Vec<PromptDestination>) -> PromptSignBitcoinTx {
+        PromptSignBitcoinTx {
+            recipients: destinations
+                .into_iter()
+                .map(|destination| PromptRecipient {
+                    destination,
+                    amount: bitcoin::Amount::from_sat(10_000),
+                    owned: None,
+                })
+                .collect(),
+            fee: bitcoin::Amount::from_sat(100),
+            fee_rate_sats_per_vbyte: Some(1.0),
+        }
+    }
+
+    /// An output the signer never sees is the one outcome worse than an awkwardly rendered
+    /// one, so a script we cannot show must still take its place in the sequence.
+    #[test]
+    fn an_unrenderable_output_takes_up_the_same_pages_as_a_renderable_one() {
+        let data_carrier =
+            bitcoin::ScriptBuf::from_bytes(alloc::vec![0x6a, 0x04, 0xde, 0xad, 0xbe, 0xef]);
+
+        let all_addressable = SignPromptPageList::new_with_seed(
+            prompt_of(alloc::vec![
+                PromptDestination::Address(address()),
+                PromptDestination::Address(address()),
+            ]),
+            0,
+        );
+        let one_unrenderable = SignPromptPageList::new_with_seed(
+            prompt_of(alloc::vec![
+                PromptDestination::Address(address()),
+                PromptDestination::UnrecognizedScript(data_carrier),
+            ]),
+            0,
+        );
+
+        assert_eq!(all_addressable.len(), one_unrenderable.len());
+        assert!(
+            one_unrenderable.get(3).is_some(),
+            "the second output still has its destination page"
+        );
     }
 }

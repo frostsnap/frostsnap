@@ -465,31 +465,6 @@ impl TransactionTemplate<ScopedTo> {
                 .sum::<i64>()
     }
 
-    /// Net value flowing to each script that is not ours, negative where a foreign party
-    /// spends into this transaction.
-    ///
-    /// Distinct from [`Self::foreign_recipients`], which reports what an output pays
-    /// regardless of what its owner also spends.
-    pub fn foreign_net_values(&self) -> BTreeMap<ScriptBuf, i64> {
-        let mut net: BTreeMap<ScriptBuf, i64> = Default::default();
-
-        for input in &self.inputs {
-            if let SpkOwner::Foreign(spk) = &input.owner {
-                *net.entry(spk.clone()).or_default() -=
-                    i64::try_from(input.value).expect("value ridiculously large");
-            }
-        }
-
-        for output in &self.outputs {
-            if let SpkOwner::Foreign(spk) = &output.owner {
-                *net.entry(spk.clone()).or_default() +=
-                    i64::try_from(output.value).expect("value ridiculously large");
-            }
-        }
-
-        net
-    }
-
     pub fn foreign_recipients(&self) -> impl Iterator<Item = (&Script, u64)> {
         self.outputs
             .iter()
@@ -539,8 +514,7 @@ impl TransactionTemplate<ScopedTo> {
                     }
                 };
                 Some(PromptRecipient {
-                    address: bitcoin::Address::from_script(&output.owner.spk(), network)
-                        .expect("has address representation"),
+                    destination: PromptDestination::of(&output.owner.spk(), network),
                     amount: bitcoin::Amount::from_sat(output.value),
                     owned,
                 })
@@ -555,12 +529,31 @@ impl TransactionTemplate<ScopedTo> {
     }
 }
 
+/// Where an output pays, as far as the signer can be shown it.
+#[derive(Clone, Debug, PartialEq)]
+pub enum PromptDestination {
+    Address(bitcoin::Address),
+    /// A script with no address rendering: an OP_RETURN data carrier, a bare multisig, a
+    /// future segwit version. Says nothing about whether it can be spent — only that we
+    /// cannot show it as an address, and a signing screen must not claim more than it knows.
+    UnrecognizedScript(ScriptBuf),
+}
+
+impl PromptDestination {
+    fn of(spk: &Script, network: bitcoin::Network) -> Self {
+        match bitcoin::Address::from_script(spk, network) {
+            Ok(address) => PromptDestination::Address(address),
+            Err(_) => PromptDestination::UnrecognizedScript(spk.into()),
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct PromptRecipient {
-    pub address: bitcoin::Address,
+    pub destination: PromptDestination,
     pub amount: bitcoin::Amount,
-    /// `Some` iff the signing wallet itself derives [`address`](Self::address) at this
-    /// path — the prompt renders such a recipient as our own.
+    /// `Some` iff the signing wallet itself derives this output's script at that path — the
+    /// prompt renders such a recipient as our own.
     pub owned: Option<BitcoinBip32Path>,
 }
 

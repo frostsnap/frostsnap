@@ -389,19 +389,23 @@ class _AnimatedQrState extends State<AnimatedQr> {
 
 class EffectTable extends StatelessWidget {
   final EffectOfTx effect;
-  const EffectTable({super.key, required this.effect});
+  final BitcoinNetwork network;
+  const EffectTable({super.key, required this.effect, required this.network});
 
   @override
   Widget build(BuildContext context) {
-    List<TableRow> transactionRows = effect.foreignReceivingAddresses.map((
-      entry,
-    ) {
-      final (address, value) = entry;
+    List<TableRow> transactionRows = effect.foreignOutputs.map((output) {
+      final address = output.address(network: network)?.toString();
+      final value = output.amount;
       return TableRow(
         children: [
           Padding(
             padding: const EdgeInsets.all(8.0),
-            child: Text('Send to $address'),
+            child: Text(
+              address == null
+                  ? 'Send to an unrecognized script'
+                  : 'Send to $address',
+            ),
           ),
           Padding(
             padding: const EdgeInsets.all(8.0),
@@ -447,31 +451,40 @@ class EffectTable extends StatelessWidget {
     );
 
     final effectWidget = Column(
-      children: [describeEffect(context, effect), Divider(), effectTable],
+      children: [
+        describeEffect(context, effect, network),
+        Divider(),
+        effectTable,
+      ],
     );
 
     return effectWidget;
   }
 }
 
-Widget describeEffect(BuildContext context, EffectOfTx effect) {
+Widget describeEffect(
+  BuildContext context,
+  EffectOfTx effect,
+  BitcoinNetwork network,
+) {
   final style = DefaultTextStyle.of(
     context,
   ).style.copyWith(fontWeight: FontWeight.w600);
   final Widget description;
 
-  if (effect.foreignReceivingAddresses.length == 1) {
-    final (dest, amount) = effect.foreignReceivingAddresses[0];
+  if (effect.foreignOutputs.length == 1) {
+    final output = effect.foreignOutputs[0];
+    final dest = output.address(network: network)?.toString();
     description = Wrap(
       direction: Axis.horizontal,
       children: <Widget>[
         Text('Sending '),
-        SatoshiText(value: amount, style: style),
+        SatoshiText(value: output.amount, style: style),
         Text(' to '),
-        Text(dest, style: style),
+        Text(dest ?? 'an unrecognized script', style: style),
       ],
     );
-  } else if (effect.foreignReceivingAddresses.isEmpty) {
+  } else if (effect.foreignOutputs.isEmpty) {
     description = Text("Internal transfer");
   } else {
     description = Text("cannot describe this yet");
@@ -490,8 +503,11 @@ Future<bool> showBroadcastConfirmDialog(
     context: context,
     barrierDismissible: false,
     builder: (dialogContext) {
-      final effect = tx.effect(network: superWallet.network);
-      final effectWidget = EffectTable(effect: effect);
+      final effect = tx.effect();
+      final effectWidget = EffectTable(
+        effect: effect,
+        network: superWallet.network,
+      );
       return AlertDialog(
         title: Text("Broadcast?"),
         content: SizedBox(

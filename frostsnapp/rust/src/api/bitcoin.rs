@@ -567,6 +567,7 @@ pub fn txid_hex_string(txid: &Txid) -> String {
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::api::signing::UnsignedTx;
     use bitcoin::{hashes::Hash, Amount, OutPoint, ScriptBuf, TxOut, Txid};
     use frostsnap_core::{
         bitcoin_transaction::{LocalSpk, PushInput},
@@ -595,7 +596,80 @@ mod test {
         }
     }
 
-    /// Input 0 is foreign, input 1 is ours.
+    /// Ours in, two payments to the SAME foreign address, then an OP_RETURN — three things
+    /// the old `Vec<(String, u64)>` could not represent: a key it shared, a script with no
+    /// address form, and a value it had to pre-render.
+    fn template_with_a_duplicate_payee_and_a_data_output() -> TransactionTemplate {
+        let key = key();
+        let path = BitcoinBip32Path::external(idx(0));
+        let owner = LocalSpk {
+            master_appkey: key,
+            bip32_path: path,
+        };
+        let mut template = TransactionTemplate::new();
+        let ours = TxOut {
+            value: Amount::from_sat(300_000),
+            script_pubkey: owner.spk(),
+        };
+        template
+            .push_owned_input(PushInput::spend_outpoint(&ours, outpoint(0)), owner)
+            .unwrap();
+
+        let payee = ScriptBuf::from_bytes([&[0x51u8, 0x20][..], &[0xdd; 32][..]].concat());
+        template.push_foreign_output(TxOut {
+            value: Amount::from_sat(100_000),
+            script_pubkey: payee.clone(),
+        });
+        template.push_foreign_output(TxOut {
+            value: Amount::from_sat(50_000),
+            script_pubkey: payee,
+        });
+        template.push_foreign_output(TxOut {
+            value: Amount::from_sat(0),
+            script_pubkey: ScriptBuf::from_bytes(vec![0x6a, 0x04, 0xde, 0xad, 0xbe, 0xef]),
+        });
+        template
+    }
+
+    /// The app half of the panic: `effect` unwrapped an address for every foreign output, so a
+    /// data output crashed the review screen.
+    #[test]
+    fn effect_reports_a_data_output_instead_of_panicking_on_it() {
+        let unsigned = UnsignedTx::new(template_with_a_duplicate_payee_and_a_data_output(), key())
+            .expect("the template spends an input of ours");
+        let effect = unsigned.effect().unwrap();
+        let data_output = effect.foreign_outputs.last().unwrap();
+
+        assert!(
+            data_output.address(BitcoinNetwork::Bitcoin).is_none(),
+            "no address form, reported as absent rather than unwrapped"
+        );
+        assert_eq!(data_output.amount, 0);
+    }
+
+    /// Keyed by script, two payments to one address became one row and the review screen
+    /// understated what was leaving.
+    #[test]
+    fn two_payments_to_one_address_stay_two_rows() {
+        let unsigned = UnsignedTx::new(template_with_a_duplicate_payee_and_a_data_output(), key())
+            .expect("the template spends an input of ours");
+        let effect = unsigned.effect().unwrap();
+
+        assert_eq!(effect.foreign_outputs.len(), 3);
+        assert_eq!(
+            effect.foreign_outputs[0].script_pubkey, effect.foreign_outputs[1].script_pubkey,
+            "same payee"
+        );
+        assert_eq!(
+            (
+                effect.foreign_outputs[0].amount,
+                effect.foreign_outputs[1].amount
+            ),
+            (100_000, 50_000),
+            "both amounts survive, where merging showed one row of 150_000"
+        );
+    }
+
     /// One input, ours — so the signed size is fully knowable and the rate is `Some`.
     fn single_owned_input_template() -> TransactionTemplate {
         let key = key();

@@ -257,8 +257,8 @@ impl std::error::Error for SignTaskError {}
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::bitcoin_transaction::PromptRecipient;
     use crate::bitcoin_transaction::{LocalSpk, TransactionTemplate};
+    use crate::bitcoin_transaction::{PromptDestination, PromptRecipient};
     use crate::tweak::{BitcoinBip32Path, NormalIndex};
     use bitcoin::{Amount, Network, ScriptBuf, TxOut};
     use schnorr_fun::fun::prelude::*;
@@ -326,13 +326,116 @@ mod test {
         assert_eq!(
             prompt.recipients,
             vec![PromptRecipient {
-                address: their_address,
+                destination: PromptDestination::Address(their_address),
                 amount: Amount::from_sat(90_000),
                 owned: None,
             }],
             "their output is disclosed at their address, and not as ours"
         );
         assert_eq!(prompt.fee, Amount::from_sat(10_000));
+    }
+
+    /// An OP_RETURN output is legal and a PSBT can carry one. `Address::from_script` has no
+    /// rendering for it, so building the prompt used to panic — on the device.
+    #[test]
+    fn an_output_with_no_address_form_is_shown_rather_than_fatal() {
+        let signing = signing_key();
+
+        let mut tx_template = TransactionTemplate::new();
+        tx_template.push_imaginary_owned_input(
+            LocalSpk {
+                master_appkey: signing,
+                bip32_path: BitcoinBip32Path::external(NormalIndex::ZERO),
+            },
+            Amount::from_sat(100_000),
+        );
+        let op_return = ScriptBuf::from_bytes(vec![0x6a, 0x04, 0xde, 0xad, 0xbe, 0xef]);
+        tx_template.push_foreign_output(TxOut {
+            value: Amount::from_sat(0),
+            script_pubkey: op_return.clone(),
+        });
+        tx_template.push_foreign_output(TxOut {
+            value: Amount::from_sat(90_000),
+            script_pubkey: ScriptBuf::from_bytes([&[0x51u8, 0x20][..], &[0xcc; 32][..]].concat()),
+        });
+
+        let checked = WireSignTask::BitcoinTransaction(tx_template)
+            .check(signing, KeyPurpose::Bitcoin(Network::Bitcoin))
+            .expect("an unaddressable output is not grounds for refusing to sign");
+
+        let SignTask::BitcoinTransaction { tx_template, .. } = &checked.inner else {
+            panic!("expected a bitcoin task")
+        };
+
+        let prompt = tx_template.user_prompt(Network::Bitcoin);
+
+        assert_eq!(
+            prompt.recipients.len(),
+            2,
+            "both outputs are disclosed: one the signer cannot see is worse than an awkward one"
+        );
+        assert!(
+            matches!(
+                &prompt.recipients[0].destination,
+                PromptDestination::UnrecognizedScript(spk) if *spk == op_return
+            ),
+            "the script we cannot render is carried, not dropped"
+        );
+        assert!(
+            matches!(
+                &prompt.recipients[1].destination,
+                PromptDestination::Address(_)
+            ),
+            "the payment still renders as an address"
+        );
+    }
+
+    /// The case that keeps the variant honest. A bare multisig has no address form either, but
+    /// it is perfectly spendable — so `UnrecognizedScript` must mean "we cannot render this",
+    /// never "nobody can spend this".
+    #[test]
+    fn a_spendable_script_with_no_address_form_is_also_unrecognized() {
+        let signing = signing_key();
+
+        let mut bare = alloc::vec![0x51u8, 0x21];
+        bare.extend_from_slice(&[0x02; 33]);
+        bare.extend_from_slice(&[0x51, 0xae]);
+        let bare_multisig = ScriptBuf::from_bytes(bare);
+        assert!(
+            !bare_multisig.is_op_return(),
+            "this output is spendable, which is the whole point of the case"
+        );
+
+        let mut tx_template = TransactionTemplate::new();
+        tx_template.push_imaginary_owned_input(
+            LocalSpk {
+                master_appkey: signing,
+                bip32_path: BitcoinBip32Path::external(NormalIndex::ZERO),
+            },
+            Amount::from_sat(100_000),
+        );
+        tx_template.push_foreign_output(TxOut {
+            value: Amount::from_sat(90_000),
+            script_pubkey: bare_multisig.clone(),
+        });
+
+        let checked = WireSignTask::BitcoinTransaction(tx_template)
+            .check(signing, KeyPurpose::Bitcoin(Network::Bitcoin))
+            .expect("a script we cannot render is not grounds for refusing to sign");
+
+        let SignTask::BitcoinTransaction { tx_template, .. } = &checked.inner else {
+            panic!("expected a bitcoin task")
+        };
+
+        assert_eq!(
+            tx_template.user_prompt(Network::Bitcoin).recipients,
+            alloc::vec![PromptRecipient {
+                destination: PromptDestination::UnrecognizedScript(bare_multisig),
+                amount: Amount::from_sat(90_000),
+                owned: None,
+            }],
+            "carried as a script we cannot show, with its real amount"
+        );
     }
 
     /// An input under another key is one we cannot sign, so it must not be counted as ours —
