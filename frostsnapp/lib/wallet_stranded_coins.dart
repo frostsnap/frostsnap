@@ -251,7 +251,7 @@ class _ConsolidatePageState extends State<ConsolidatePage> {
           txStates: walletCtx.txStream,
           txDetails: txDetails,
           psbtMan: fsCtx.psbtManager,
-          signingParams: TxSigningParams.start(
+          signingParams: StartSigning(
             accessStructureRef: access.accessStructureRef(),
             unsignedTx: unsignedTx,
             devices: state!.selectedSigners().toList(),

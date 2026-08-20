@@ -95,7 +95,7 @@ class LoadPsbtPageState extends State<LoadPsbtPage> {
             txDetails: txDetails,
             psbtMan: psbtMan,
             psbt: psbt,
-            signingParams: TxSigningParams.start(
+            signingParams: StartSigning(
               accessStructureRef: wallet
                   .frostKey()!
                   .accessStructures()[0]

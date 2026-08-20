@@ -1,6 +1,6 @@
 use super::super_wallet::SuperWallet;
 use super::{
-    bitcoin::{BitcoinNetwork, RTransaction, Transaction},
+    bitcoin::{BitcoinNetwork, Psbt, RTransaction, Transaction},
     coordinator::Coordinator,
 };
 use crate::{frb_generated::StreamSink, sink_wrap::SinkWrap};
@@ -127,6 +127,16 @@ impl UnsignedTx {
         self.template_tx.as_seen_by(self.master_appkey)
     }
 
+    /// Whether we alone can produce something broadcastable.
+    ///
+    /// `false` for a PSBT holding inputs that are not ours: our signatures go back into the
+    /// PSBT for whoever else must sign, and offering to broadcast would produce a transaction
+    /// the network rejects.
+    #[frb(sync)]
+    pub fn can_broadcast(&self) -> bool {
+        self.scoped().owns_every_input()
+    }
+
     #[frb(sync)]
     pub fn txid(&self) -> String {
         self.template_tx.txid().to_string()
@@ -145,6 +155,32 @@ impl UnsignedTx {
     #[frb(sync)]
     pub fn details(&self) -> Transaction {
         Transaction::from_template(&self.scoped())
+    }
+
+    /// The transaction with these signatures witnessed onto the inputs they were produced for.
+    ///
+    /// Lives here rather than on `Transaction` because it needs the template, and only a
+    /// transaction that came from a signing session has one. `signatures_by_input_index` on
+    /// the scoped template stays the only thing deciding which signature belongs where.
+    pub fn with_signatures(&self, signatures: Vec<EncodedSignature>) -> Result<RTransaction> {
+        Ok(self.scoped().to_signed_rust_bitcoin_tx(&signatures)?)
+    }
+
+    /// `None` when the signatures cannot be placed — the list does not match the inputs this
+    /// key owns, or the PSBT has fewer inputs than the template it was signed against.
+    #[frb(sync)]
+    pub fn attach_signatures_to_psbt(
+        &self,
+        signatures: Vec<EncodedSignature>,
+        psbt: &Psbt,
+    ) -> Option<Psbt> {
+        match self.scoped().attach_signatures_to_psbt(&signatures, psbt) {
+            Ok(psbt) => Some(psbt),
+            Err(e) => {
+                event!(Level::ERROR, error = e.to_string(), "couldn't sign PSBT");
+                None
+            }
+        }
     }
 
     #[frb(sync)]
@@ -262,6 +298,42 @@ impl Coordinator {
             .cloned()
     }
 
+    /// The transaction an in-flight session is signing, as `master_appkey` sees it.
+    ///
+    /// A session reopened from its id recovers this the same way it recovers its devices and
+    /// access structure: from the session. The alternative is the transaction on screen
+    /// carrying the template, which is what made `Transaction` two types at once.
+    ///
+    /// Looks in finished sessions as well as active ones: a transaction waiting to be
+    /// broadcast has a session that is over, and that screen needs the transaction most of
+    /// all — it is the only state that can broadcast.
+    ///
+    /// `None` means there is no such session either way, or it is not signing a bitcoin
+    /// transaction. Missing data, not a mode — a session can end or be forgotten between a
+    /// caller's check and this call.
+    #[frb(sync)]
+    pub fn unsigned_tx_for_session(
+        &self,
+        session_id: SignSessionId,
+        master_appkey: MasterAppkey,
+    ) -> Option<UnsignedTx> {
+        let coord = self.0.inner();
+        let sign_task = coord
+            .active_signing_sessions_by_ssid()
+            .get(&session_id)
+            .map(|session| session.init.group_request.sign_task.clone())
+            .or_else(|| {
+                coord
+                    .finished_signing_sessions()
+                    .get(&session_id)
+                    .map(|session| session.init.group_request.sign_task.clone())
+            })?;
+        match sign_task {
+            WireSignTask::BitcoinTransaction(tx_temp) => UnsignedTx::new(tx_temp, master_appkey),
+            _ => None,
+        }
+    }
+
     #[frb(sync)]
     pub fn active_signing_sessions(&self, key_id: KeyId) -> Vec<ActiveSignSession> {
         self.0
@@ -313,18 +385,23 @@ impl Coordinator {
             .filter_map(
                 |(&session_id, session)| match &session.init.group_request.sign_task {
                     WireSignTask::BitcoinTransaction(tx_temp) => {
-                        let mut tx = Transaction::from_template(&tx_temp.as_seen_by(master_appkey));
                         // Showing an unbroadcastable transaction is worse than omitting it:
                         // its witnesses would be on inputs that did not produce them.
-                        if let Err(e) = tx.fill_signatures(&session.signatures) {
-                            event!(
-                                Level::ERROR,
-                                session = session_id.to_string(),
-                                error = e.to_string(),
-                                "signatures don't match the transaction they signed"
-                            );
-                            return None;
-                        }
+                        let tx = match Transaction::signed_from_template(
+                            &tx_temp.as_seen_by(master_appkey),
+                            &session.signatures,
+                        ) {
+                            Ok(tx) => tx,
+                            Err(e) => {
+                                event!(
+                                    Level::ERROR,
+                                    session = session_id.to_string(),
+                                    error = e.to_string(),
+                                    "signatures don't match the transaction they signed"
+                                );
+                                return None;
+                            }
+                        };
                         Some(UnbroadcastedTx {
                             tx,
                             session_id,
