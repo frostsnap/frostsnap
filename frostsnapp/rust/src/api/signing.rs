@@ -5,7 +5,6 @@ use super::{
 };
 use crate::{frb_generated::StreamSink, sink_wrap::SinkWrap};
 use anyhow::{anyhow, Result};
-use bitcoin::hex::DisplayHex;
 use flutter_rust_bridge::frb;
 pub use frostsnap_coordinator::signing::SigningState;
 pub use frostsnap_core::bitcoin_transaction::{ScopedTo, TransactionTemplate};
@@ -38,22 +37,6 @@ impl UnbroadcastedTx {
     }
 }
 
-#[derive(Debug, Clone)]
-#[frb(non_opaque)]
-pub enum SigningDetails {
-    Message {
-        message: String,
-    },
-    Transaction {
-        transaction: crate::api::bitcoin::Transaction,
-    },
-    Nostr {
-        id: String,
-        content: String,
-        hash_bytes: String,
-    },
-}
-
 #[frb(mirror(SigningState), unignore)]
 pub struct _SigningState {
     pub session_id: SignSessionId,
@@ -76,8 +59,6 @@ pub trait ActiveSignSessionExt {
     #[frb(sync)]
     fn state(&self) -> SigningState;
     #[frb(sync)]
-    fn details(&self, master_appkey: MasterAppkey) -> SigningDetails;
-    #[frb(sync)]
     fn access_structure_ref(&self) -> AccessStructureRef;
 }
 
@@ -97,24 +78,6 @@ impl ActiveSignSessionExt for ActiveSignSession {
         };
 
         state
-    }
-
-    #[frb(sync)]
-    fn details(&self, master_appkey: MasterAppkey) -> SigningDetails {
-        let session_init = &self.init;
-
-        let res = match session_init.group_request.sign_task.clone() {
-            WireSignTask::Test { message } => SigningDetails::Message { message },
-            WireSignTask::Nostr { event } => SigningDetails::Nostr {
-                id: event.id,
-                content: event.content,
-                hash_bytes: event.hash_bytes.to_lower_hex_string(),
-            },
-            WireSignTask::BitcoinTransaction(tx_temp) => SigningDetails::Transaction {
-                transaction: Transaction::from_template(&tx_temp.as_seen_by(master_appkey)),
-            },
-        };
-        res
     }
 
     #[frb(sync)]
@@ -344,10 +307,7 @@ impl Coordinator {
                         let mut tx = Transaction::from_template(&tx_temp.as_seen_by(master_appkey));
                         // Showing an unbroadcastable transaction is worse than omitting it:
                         // its witnesses would be on inputs that did not produce them.
-                        if let Err(e) = tx.fill_signatures(
-                            &tx_temp.as_seen_by(master_appkey),
-                            &session.signatures,
-                        ) {
+                        if let Err(e) = tx.fill_signatures(&session.signatures) {
                             event!(
                                 Level::ERROR,
                                 session = session_id.to_string(),
