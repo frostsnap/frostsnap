@@ -7,7 +7,7 @@ use bdk_chain::{
     indexer::keychain_txout::{self, KeychainTxOutIndex},
     local_chain,
     miniscript::{Descriptor, DescriptorPublicKey},
-    CanonicalizationParams, ChainPosition, CheckPoint, ConfirmationBlockTime, Indexer, Merge,
+    CanonicalizationParams, ChainPosition, CheckPoint, ConfirmationBlockTime, Merge,
 };
 use frostsnap_core::{
     bitcoin_transaction::{self, LocalSpk},
@@ -26,6 +26,23 @@ use std::{
 };
 use tracing::{event, Level};
 
+/// Scripts derived past each keychain's reveal frontier and indexed against.
+///
+/// Wide because 0.3 revealed a change address on every `fee()` call, so a transaction it built
+/// could pay change well past the frontier its database kept. Those transactions are already
+/// stored — we own one of their spent prevouts — so attributing the change is purely a matter of
+/// having derived far enough to recognise the script, and `KeychainTxOutIndex` reveals to any index
+/// it matches. A wallet whose change is stranded that way heals itself the next time its key is
+/// touched.
+///
+/// This is a parameter, not a limit anything depends on. Nothing records that a database has been
+/// searched, so raising this repairs every affected wallet on its next launch. Cost is linear:
+/// roughly this many secp derivations per keychain, once per session.
+///
+/// Deliberately NOT the chain source's subscription window — see `SUBSCRIPTION_LOOKAHEAD`.
+/// Deriving a script is local work against our own keys; subscribing to one hands it to a server.
+pub const LOOKAHEAD: u32 = 1000;
+
 pub type KeychainId = (MasterAppkey, BitcoinAccountKeychain);
 pub type WalletIndexer = KeychainTxOutIndex<KeychainId>;
 pub type WalletIndexedTxGraph =
@@ -37,7 +54,7 @@ pub type WalletIndexedTxGraphChangeSet =
 pub struct CoordSuperWallet {
     pub(super) tx_graph: Persisted<WalletIndexedTxGraph>,
     pub(super) chain: Persisted<local_chain::LocalChain>,
-    chain_client: ChainClient,
+    pub(super) chain_client: ChainClient,
     pub network: bitcoin::Network,
     pub(super) db: Arc<Mutex<rusqlite::Connection>>,
 }
@@ -48,20 +65,34 @@ impl CoordSuperWallet {
         network: bitcoin::Network,
         chain_client: ChainClient,
     ) -> anyhow::Result<Self> {
+        Self::load_or_init_with_lookahead(db, network, chain_client, LOOKAHEAD)
+    }
+
+    /// [`Self::load_or_init`] with the derived window named rather than assumed.
+    ///
+    /// How far a database is searched is a parameter, not something the database remembers, and the
+    /// persistence layer is the wrong place to decide it. Keeping it an argument is also what makes
+    /// the promise checkable: raising [`LOOKAHEAD`] in a later release finds what the smaller one
+    /// passed over.
+    pub fn load_or_init_with_lookahead(
+        db: Arc<Mutex<rusqlite::Connection>>,
+        network: bitcoin::Network,
+        chain_client: ChainClient,
+        lookahead: u32,
+    ) -> anyhow::Result<Self> {
         event!(
             Level::INFO,
             network = network.to_string(),
             "initializing super wallet"
         );
         let mut db_ = db.lock().unwrap();
-        let tx_graph =
-            Persisted::new(&mut *db_, ()).context("loading transaction from the database")?;
+        let tx_graph = Persisted::new(&mut *db_, lookahead)
+            .context("loading transaction from the database")?;
         let chain = Persisted::new(
             &mut *db_,
             bitcoin::constants::genesis_block(network).block_hash(),
         )
         .context("loading chain from database")?;
-
         drop(db_);
 
         Ok(Self {
@@ -100,6 +131,8 @@ impl CoordSuperWallet {
             })
     }
 
+    /// How far past a frontier the indexer derives. Not what the chain source subscribes to — see
+    /// `SUBSCRIPTION_LOOKAHEAD`.
     pub fn lookahead(&self) -> u32 {
         self.tx_graph.index.lookahead()
     }
@@ -167,35 +200,56 @@ impl CoordSuperWallet {
             .get_descriptor((master_appkey, BitcoinAccountKeychain::external()))
             .is_none()
         {
-            for (account_keychain, descriptor) in
-                Self::descriptors_for_key(master_appkey, self.network.into())
-            {
-                let keychain_id = (master_appkey, account_keychain);
-                self.tx_graph
-                    .MUTATE_NO_PERSIST()
-                    .index
-                    .insert_descriptor(keychain_id, descriptor)
-                    .expect("two keychains must not have the same spks");
-                // the spk tracker already applies lookahead on top of this
-                let next_index = self
-                    .tx_graph
-                    .index
-                    .last_revealed_index(keychain_id)
-                    .map_or(0, |lr| lr + 1);
-                self.chain_client.monitor_keychain(keychain_id, next_index);
-            }
-            let all_txs = self
+            // bdk does not persist the txout index and is not going to, so attribution has to be
+            // rebuilt from the stored transactions. That part is permanent; doing it on whichever
+            // call happens to touch a key first is not.
+            //
+            // FIXME: replace this with a formal initialisation step, so a key's descriptors and
+            // index are built at a defined point rather than as a side effect of the first reader.
+            let mut db = self.db.lock().unwrap();
+            self.tx_graph
+                .mutate(&mut db, |tx_graph| {
+                    for (account_keychain, descriptor) in
+                        Self::descriptors_for_key(master_appkey, self.network.into())
+                    {
+                        tx_graph
+                            .index
+                            .insert_descriptor((master_appkey, account_keychain), descriptor)
+                            .expect("two keychains must not have the same spks");
+                    }
+                    // insert_descriptor doesn't trigger a re-index of all the
+                    // transactions so we trigger it manually. You might think
+                    // that this is always a NOOP but because we've changed the
+                    // lookahead in versions, the first time it's loaded in a
+                    // new wallet it can find things.
+                    let changeset = tx_graph.reindex();
+                    Ok(((), changeset))
+                })
+                .expect("rebuilding the index cannot fail");
+            drop(db);
+
+            // again in case it found something tell electrum that it's got to start looking further.
+            self.resync_monitoring();
+        }
+    }
+
+    /// Tell the chain source where every keychain we know about now ends.
+    ///
+    /// We actually have a larger lookahead locally than we give to the electrum
+    /// client. This saves server bandwidth but if we find something further out
+    /// than electrum is looking we have to tell it about it.
+    ///
+    /// Free to over-call, at the message level and not merely the state level: a tracked window only
+    /// ever widens, and only scripts it does not already hold become subscribe requests. A wallet
+    /// with nothing far out generates no traffic.
+    fn resync_monitoring(&self) {
+        for (keychain_id, _) in self.tx_graph.index.keychains() {
+            let next_index = self
                 .tx_graph
-                .graph()
-                .full_txs()
-                .map(|tx| tx.tx.clone())
-                .collect::<Vec<_>>();
-            // FIXME: This should be done by BDK automatically in a version soon.
-            // FIXME: We want a high enough last-derived-index before doing indexing otherwise we
-            // may misindex some txs.
-            for tx in &all_txs {
-                let _ = self.tx_graph.MUTATE_NO_PERSIST().index.index_tx(tx);
-            }
+                .index
+                .last_revealed_index(keychain_id)
+                .map_or(0, |lr| lr + 1);
+            self.chain_client.monitor_keychain(keychain_id, next_index);
         }
     }
 
@@ -278,14 +332,16 @@ impl CoordSuperWallet {
         self.lazily_initialize_key(master_appkey);
         let keychain = BitcoinAccountKeychain::external();
         let mut db = self.db.lock().unwrap();
-        self.tx_graph.mutate(&mut db, |tx_graph| {
+        let already_shared = self.tx_graph.mutate(&mut db, |tx_graph| {
             let (_, changeset) = tx_graph
                 .index
                 .reveal_to_target((master_appkey, keychain), derivation_index)
                 .ok_or(anyhow!("keychain doesn't exist"))?;
 
             Ok((changeset.is_empty(), changeset))
-        })
+        })?;
+        drop(db);
+        Ok(already_shared)
     }
 
     pub fn search_for_address(
@@ -418,6 +474,12 @@ impl CoordSuperWallet {
                 let changed = !(chain_changeset.is_empty() && changeset.is_empty());
                 Ok((changed, (changeset, chain_changeset)))
             })?;
+        drop(db);
+        // A frontier can only move by revealing, which lands in the changeset, so `changed` covers
+        // every case worth signalling.
+        if changed {
+            self.resync_monitoring();
+        }
         Ok(changed)
     }
 

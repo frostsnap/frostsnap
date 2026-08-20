@@ -68,6 +68,20 @@ impl<I: Send, O: Send> ReqAndResponse<I, O> {
     }
 }
 
+/// Scripts past a keychain's frontier that we subscribe to on the server.
+///
+/// Slop for activity the frontier doesn't know about yet: another device on the key, a restored
+/// wallet, an externally built PSBT paying one of our addresses. The tracker also extends this past
+/// any index it sees activity on, so it crawls.
+///
+/// Kept small on purpose, and deliberately NOT the indexer's [`LOOKAHEAD`]: every script here is
+/// one we hand to the server, which costs a subscription, per-block work for every client on it,
+/// and a larger fingerprint of our wallet. Finding stranded change is the indexer's job precisely
+/// because it can look far without telling anyone.
+///
+/// [`LOOKAHEAD`]: super::wallet::LOOKAHEAD
+const SUBSCRIPTION_LOOKAHEAD: u32 = 50;
+
 pub const SUPPORTED_NETWORKS: [bitcoin::Network; 4] = {
     use bitcoin::Network::*;
     [Bitcoin, Signet, Testnet, Regtest]
@@ -182,6 +196,9 @@ impl ChainClient {
         block_on(response)?
     }
 
+    /// Track `keychain` through `next_index` plus lookahead. Re-calling with a larger
+    /// `next_index` widens the live subscription window in place (bdk_electrum_streaming
+    /// >= 0.5.3); equal or smaller is a no-op, so the window never narrows.
     pub fn monitor_keychain(&self, keychain: KeychainId, next_index: u32) {
         self.start_client();
         let descriptor = descriptor_for_account_keychain(
@@ -333,18 +350,29 @@ pub struct ConnectionHandler {
 }
 
 impl ConnectionHandler {
+    /// The tracking messages the client has queued and nothing has consumed. Tests never run the
+    /// handler, so this queue is where `monitor_keychain` ends up, and reading it needs no server.
+    #[cfg(test)]
+    pub(super) fn drain_tracked(
+        &mut self,
+    ) -> Vec<bdk_electrum_streaming::AsyncClientAction<KeychainId>> {
+        let mut drained = vec![];
+        while let Ok(action) = self.client_recv.try_recv() {
+            drained.push(action);
+        }
+        drained
+    }
+
     pub fn run<SW, F>(mut self, super_wallet: SW, update_action: F)
     where
         SW: Deref<Target = sync::Mutex<CoordSuperWallet>> + Clone + Send + 'static,
         F: FnMut(MasterAppkey, Vec<crate::bitcoin::wallet::Transaction>) + Send + 'static,
     {
-        let lookahead: u32;
         let chain_tip: CheckPoint;
         let network: bitcoin::Network;
         {
             let super_wallet = super_wallet.lock().expect("must lock");
             network = super_wallet.network;
-            lookahead = super_wallet.lookahead();
             chain_tip = super_wallet.chain_tip();
             self.cache.txs.extend(super_wallet.tx_cache());
             self.cache.anchors.extend(super_wallet.anchor_cache());
@@ -374,7 +402,7 @@ impl ConnectionHandler {
         let electrum_state = AsyncState::<KeychainId>::new(
             ReqCoord::new(rand::random::<u32>()),
             self.cache,
-            DerivedSpkTracker::new(lookahead),
+            DerivedSpkTracker::new(SUBSCRIPTION_LOOKAHEAD),
             chain_tip,
         );
 
@@ -714,4 +742,72 @@ pub enum ChainStatusState {
     Connecting,
     Connected,
     Disconnected,
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use bdk_electrum_streaming::electrum_streaming_client::ElectrumScriptHash;
+    use frostsnap_core::schnorr_fun::fun::Point;
+    use frostsnap_core::tweak::{BitcoinAccountKeychain, BitcoinBip32Path, NormalIndex};
+
+    fn spk_hash_at(keychain: KeychainId, index: u32) -> ElectrumScriptHash {
+        let spk = crate::bitcoin::peek_spk(
+            keychain.0,
+            BitcoinBip32Path {
+                account_keychain: keychain.1,
+                index: NormalIndex::new(index).unwrap(),
+            },
+        );
+        ElectrumScriptHash::new(&spk)
+    }
+
+    /// Pins the upstream contract `monitor_keychain` rides on (bdk_electrum_streaming >= 0.5.3):
+    /// re-inserting the SAME descriptor with a larger `next_index` widens the tracked window in
+    /// place, and equal or smaller never narrows it. Before 0.5.3 an unchanged descriptor was an
+    /// early return, so the window could not grow.
+    #[test]
+    fn re_tracking_a_descriptor_widens_and_never_narrows() {
+        let master_appkey =
+            MasterAppkey::derive_from_rootkey(Point::random(&mut rand::thread_rng()));
+        let keychain = (master_appkey, BitcoinAccountKeychain::internal());
+        let lookahead = 50;
+        let descriptor = descriptor_for_account_keychain(keychain, bitcoin::NetworkKind::Main);
+
+        let mut tracker = DerivedSpkTracker::new(lookahead);
+        tracker.insert_descriptor(keychain, descriptor.clone(), 5);
+        assert_eq!(tracker.index_of_spk_hash(spk_hash_at(keychain, 900)), None);
+
+        let widened = tracker.insert_descriptor(keychain, descriptor.clone(), 901);
+        assert!(
+            !widened.is_empty(),
+            "widening must hand back new hashes to subscribe"
+        );
+        assert_eq!(
+            tracker.index_of_spk_hash(spk_hash_at(keychain, 900)),
+            Some((keychain, 900)),
+            "the matched index must be watched"
+        );
+        assert_eq!(
+            tracker.index_of_spk_hash(spk_hash_at(keychain, 901 + lookahead + 1)),
+            Some((keychain, 901 + lookahead + 1)),
+            "lookahead extends past next_index"
+        );
+        assert_eq!(
+            tracker.index_of_spk_hash(spk_hash_at(keychain, 901 + lookahead + 2)),
+            None
+        );
+
+        assert!(
+            tracker
+                .insert_descriptor(keychain, descriptor, 5)
+                .is_empty(),
+            "a smaller next_index must be a no-op"
+        );
+        assert_eq!(
+            tracker.index_of_spk_hash(spk_hash_at(keychain, 900)),
+            Some((keychain, 900)),
+            "the window must never narrow"
+        );
+    }
 }

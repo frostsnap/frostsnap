@@ -3,6 +3,7 @@
 //! numbers, and signing passes it back through [`SuperWallet::commit_send`]. The plan is a pure
 //! value — holding, dropping, or rebuilding one costs the wallet nothing.
 
+use bitcoin::OutPoint;
 use flutter_rust_bridge::frb;
 use frostsnap_coordinator::bitcoin::send as coord_send;
 use frostsnap_coordinator::frostsnap_core::tweak::BitcoinAccount;
@@ -34,9 +35,50 @@ impl SendPlan {
     pub fn recipient_value(&self, index: u32) -> Option<u64> {
         self.0.recipient_value(index as usize)
     }
+
+    #[frb(sync)]
+    pub fn input_count(&self) -> u32 {
+        self.0.input_count() as u32
+    }
+
+    #[frb(sync, type_64bit_int)]
+    pub fn input_total(&self) -> u64 {
+        self.0.input_total()
+    }
 }
 
 impl SuperWallet {
+    /// Plan a consolidation of exactly `outpoints`: they all go in, one change output back, no
+    /// recipient. Which coins is the caller's question — see [`Self::gap_stranded_outpoints`].
+    /// Local and cheap; commit through [`Self::commit_send`] like any send plan.
+    #[frb(sync)]
+    pub fn plan_consolidate(
+        &self,
+        master_appkey: frostsnap_core::MasterAppkey,
+        outpoints: Vec<OutPoint>,
+        feerate: f32,
+    ) -> anyhow::Result<SendPlan> {
+        Ok(SendPlan(self.inner.lock().unwrap().plan_consolidate(
+            master_appkey,
+            outpoints,
+            feerate,
+        )?))
+    }
+
+    /// The coins a future restore could miss and that are worth moving at `feerate` — the input
+    /// set the nudge's remedy consolidates.
+    #[frb(sync)]
+    pub fn gap_stranded_outpoints(
+        &self,
+        master_appkey: frostsnap_core::MasterAppkey,
+        feerate: f32,
+    ) -> Vec<OutPoint> {
+        self.inner
+            .lock()
+            .unwrap()
+            .gap_stranded_outpoints(master_appkey, feerate)
+    }
+
     /// Turn a plan into a signable transaction — the single point that allocates the change
     /// address. The change index skips every index reserved by an in-flight signing session
     /// (active AND finished-but-unbroadcast, queried live from the coordinator — the wallet
