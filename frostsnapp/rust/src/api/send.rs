@@ -98,9 +98,8 @@ impl SuperWallet {
             .inner()
             .reserved_change_indices(plan.0.master_appkey(), BitcoinAccount::default());
         let mut inner = self.inner.lock().unwrap();
-        Ok(UnsignedTx {
-            master_appkey: plan.0.master_appkey(),
-            template_tx: inner.commit_send(&plan.0, reserved)?,
-        })
+        let template_tx = inner.commit_send(&plan.0, reserved)?;
+        UnsignedTx::new(template_tx, plan.0.master_appkey())
+            .ok_or_else(|| anyhow::anyhow!("the committed transaction spends none of our coins"))
     }
 }
