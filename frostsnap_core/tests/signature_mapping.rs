@@ -10,6 +10,7 @@ use frostsnap_core::{
     tweak::{BitcoinBip32Path, NormalIndex},
     MasterAppkey,
 };
+use std::collections::BTreeMap;
 
 fn idx(n: u32) -> NormalIndex {
     NormalIndex::new(n).expect("test index is in range")
@@ -404,6 +405,16 @@ fn another_keys_scripts_become_foreign() {
         mine.feerate().is_none(),
         "we cannot witness their input, so the weight is unknown"
     );
+    assert_eq!(
+        mine.our_net_value(),
+        -100_000,
+        "our balance moves by our own input alone; their side is not ours to count"
+    );
+    assert_eq!(
+        mine.foreign_net_values(),
+        BTreeMap::from([(their_spk.spk(), 50_000)]),
+        "netted against what they spend, where foreign_recipients reports the gross 150_000"
+    );
 
     // The other direction is the same story with the keys swapped.
     let theirs = template.as_seen_by(sibling);
@@ -415,6 +426,12 @@ fn another_keys_scripts_become_foreign() {
         vec![1]
     );
     assert_eq!(theirs.foreign_recipients().count(), 0);
+    assert_eq!(theirs.our_net_value(), 50_000);
+    assert_eq!(
+        theirs.foreign_net_values(),
+        BTreeMap::from([(our_spk.spk(), -100_000)]),
+        "we are the foreign party from their side, and we only spend"
+    );
 
     // Nothing was mutated: the original still knows who owns what. It cannot be *asked*
     // whose they are without naming a key, which is the point, so read the owners directly.

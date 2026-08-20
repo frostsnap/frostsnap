@@ -51,7 +51,7 @@ fn core_self_send_recognises_both_the_payment_and_the_change() {
         Amount::from_btc(1.5).unwrap().to_sat()
     );
     assert!(
-        template.net_value().values().all(|delta| *delta > -10_000),
+        template.as_seen_by(key).our_net_value() > -10_000,
         "a self-send moves nothing out beyond the fee"
     );
 }
