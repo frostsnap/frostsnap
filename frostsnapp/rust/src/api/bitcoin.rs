@@ -580,6 +580,12 @@ impl Psbt {
     pub fn deserialize(bytes: &[u8]) -> Result<Psbt, PsbtError> {}
 }
 
+#[frb(external)]
+impl PsbtError {
+    #[frb(sync)]
+    pub fn to_string(&self) -> String {}
+}
+
 #[frb(sync)]
 pub fn compute_txid_of_psbt(psbt: &Psbt) -> Txid {
     psbt.unsigned_tx.compute_txid()
