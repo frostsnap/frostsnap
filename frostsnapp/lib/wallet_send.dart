@@ -606,14 +606,18 @@ class _WalletSendPageState extends State<WalletSendPage> {
   }
 
   signersDone(BuildContext context) async {
-    UnsignedTx? unsignedTx;
+    final currentPlan = plan;
+    if (currentPlan == null) return;
+
+    final UnsignedTx unsignedTx;
     try {
-      unsignedTx = widget.superWallet.commitSend(coord: coord, plan: plan!);
+      unsignedTx = widget.superWallet.commitSend(coord: coord, plan: currentPlan);
     } catch (e) {
       // The one real failure: a planned input was spent while this page was open. The plan is
       // dead; send the user back to re-confirm the amount, which builds a fresh one.
       showErrorSnackbar(context, 'Wallet changed while building: $e');
       setState(() => pageIndex = SendPageIndex.amount);
+      return;
     }
 
     final fsCtx = FrostsnapContext.of(context)!;
@@ -622,10 +626,8 @@ class _WalletSendPageState extends State<WalletSendPage> {
     final chainTipHeight = walletCtx.wallet.superWallet.height();
     final now = DateTime.now();
 
-    final tx = unsignedTx?.details();
-    if (tx == null) return;
     final txDetails = TxDetailsModel(
-      tx: tx,
+      tx: unsignedTx.details(),
       chainTipHeight: chainTipHeight,
       now: now,
     );
@@ -638,9 +640,9 @@ class _WalletSendPageState extends State<WalletSendPage> {
           txStates: walletCtx.txStream,
           txDetails: txDetails,
           psbtMan: fsCtx.psbtManager,
-          signingParams: TxSigningParams.start(
+          signingParams: StartSigning(
             accessStructureRef: access.accessStructureRef(),
-            unsignedTx: unsignedTx!,
+            unsignedTx: unsignedTx,
             devices: state.selectedSigners().toList(),
           ),
         ),

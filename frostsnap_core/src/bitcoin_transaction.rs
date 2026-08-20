@@ -428,6 +428,19 @@ impl TransactionTemplate<ScopedTo> {
     }
 
     /// Returns true if this transaction has any inputs that need signing by this wallet.
+    /// Whether signing this ourselves produces a transaction anyone can broadcast.
+    ///
+    /// Distinct from [`Self::has_any_inputs_to_sign`], which asks whether we can *contribute*.
+    /// A PSBT can leave us inputs we do not own, and this template has nowhere to put the
+    /// signatures for those — `to_rust_bitcoin_tx` builds every input witnessless — so
+    /// witnessing ours still leaves a transaction a node will reject. Whoever else must sign
+    /// finishes it, from the PSBT.
+    pub fn owns_every_input(&self) -> bool {
+        self.inputs
+            .iter()
+            .all(|input| input.owner().local_owner().is_some())
+    }
+
     pub fn has_any_inputs_to_sign(&self) -> bool {
         self.inputs
             .iter()

@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 pub use bitcoin::Transaction as RTransaction;
 pub use bitcoin::{
     psbt::Error as PsbtError, Address, Network as BitcoinNetwork, OutPoint, Psbt, ScriptBuf, TxOut,
@@ -10,7 +10,7 @@ use frostsnap_coordinator::bitcoin::chain_sync::{
 };
 pub use frostsnap_coordinator::bitcoin::wallet::ConfirmationTime;
 pub use frostsnap_coordinator::frostsnap_core::{self, MasterAppkey};
-use frostsnap_core::bitcoin_transaction::{self, ScopedTo, TransactionTemplate};
+use frostsnap_core::bitcoin_transaction::{ScopedTo, TransactionTemplate};
 use frostsnap_core::message::EncodedSignature;
 use tracing::{event, Level};
 
@@ -186,10 +186,14 @@ pub struct Transaction {
     pub last_seen: Option<u64>,
     pub prevouts: HashMap<bitcoin::OutPoint, bitcoin::TxOut>,
     pub is_mine: HashMap<bitcoin::ScriptBuf, u32>,
-    /// Present only when this came from a signing session, already normalised to the key it
-    /// belongs to. Signatures are ordered by that key's owned inputs.
-    #[frb(ignore)]
-    pub template: Option<TransactionTemplate<ScopedTo>>,
+    /// Fee over the size this transaction has *signed*, in sats/vB.
+    ///
+    /// Supplied by whichever constructor knows it rather than derived here, because the two
+    /// provenances know it differently and neither can be recovered from these fields alone.
+    /// `None` means it could not be determined: an observed transaction may be missing a
+    /// prevout, so the fee is unknown; one built from a template may hold an input we cannot
+    /// witness, so the signed size is.
+    pub feerate: Option<f64>,
 }
 
 impl Transaction {
@@ -213,51 +217,52 @@ impl Transaction {
             last_seen: None,
             prevouts,
             is_mine,
-            template: Some(tx_temp.clone()),
-        }
-    }
-
-    /// Takes the template from `self`: passing one in would let a caller pair signatures
-    /// with a transaction they did not come from.
-    pub(crate) fn fill_signatures(&mut self, signatures: &[EncodedSignature]) -> Result<()> {
-        let placements = {
-            let template = self
-                .template
-                .as_ref()
-                .ok_or_else(|| anyhow!("this transaction did not come from a signing session"))?;
-            template
-                .signatures_by_input_index(signatures)?
-                .into_iter()
-                .map(|(i, signature)| (i, bitcoin_transaction::signature_witness(signature)))
-                .collect::<Vec<_>>()
-        };
-        for (i, witness) in placements {
-            self.inner.input[i].witness = witness;
-        }
-        Ok(())
-    }
-
-    /// `None` when the signatures cannot be placed — the transaction did not come from a
-    /// signing session, or the list does not match the inputs this wallet owns.
-    #[frb(sync)]
-    pub fn attach_signatures_to_psbt(
-        &self,
-        signatures: Vec<EncodedSignature>,
-        psbt: &Psbt,
-    ) -> Option<Psbt> {
-        let template = self.template.as_ref()?;
-        match template.attach_signatures_to_psbt(&signatures, psbt) {
-            Ok(psbt) => Some(psbt),
-            Err(e) => {
-                event!(Level::ERROR, error = e.to_string(), "couldn't sign PSBT");
-                None
-            }
+            // `raw_tx` has no witnesses yet, so its own size is not the size this will be
+            // broadcast at. The template knows: every input it can sign is a taproot keyspend
+            // witnessed by exactly 64 bytes.
+            feerate: tx_temp.feerate(),
         }
     }
 
     #[frb(sync)]
     pub fn raw_txid(&self) -> Txid {
         self.inner.compute_txid()
+    }
+
+    /// The same view, witnessed with the signatures that signed it.
+    ///
+    /// Witnessing happens here, where the template is, rather than on a built `Transaction`:
+    /// `signatures_by_input_index` decides which signature belongs to which input, and a
+    /// `Transaction` no longer carries a template that could answer that.
+    pub(crate) fn signed_from_template(
+        tx_temp: &TransactionTemplate<ScopedTo>,
+        signatures: &[EncodedSignature],
+    ) -> Result<Self> {
+        let inner = tx_temp.to_signed_rust_bitcoin_tx(signatures)?;
+        Ok(Self {
+            inner,
+            ..Self::from_template(tx_temp)
+        })
+    }
+
+    /// The fee, from prevouts and a transaction that need not be built yet.
+    ///
+    /// Free-standing so a constructor can compute the feerate before there is a `Self` to ask.
+    /// `None` when any input's prevout is absent, which is what makes the fee unknowable.
+    fn fee_from(
+        prevouts: &HashMap<bitcoin::OutPoint, bitcoin::TxOut>,
+        tx: &RTransaction,
+    ) -> Option<u64> {
+        let inputs: u64 = tx
+            .input
+            .iter()
+            .map(|txin| {
+                prevouts
+                    .get(&txin.previous_output)
+                    .map(|o| o.value.to_sat())
+            })
+            .sum::<Option<u64>>()?;
+        Some(inputs.saturating_sub(tx.output.iter().map(|o| o.value.to_sat()).sum()))
     }
 
     /// Computes the sum of all inputs, or only those whose previous output script pubkey is in
@@ -378,10 +383,6 @@ impl Transaction {
 
     /// Feerate in sats/vbyte.
     #[frb(sync)]
-    pub fn feerate(&self) -> Option<f64> {
-        Some(((self.fee()?) as f64) / (self.inner.vsize() as f64))
-    }
-
     #[frb(sync)]
     pub fn recipients(&self) -> Vec<TxOutInfo> {
         self.inner
@@ -399,19 +400,6 @@ impl Transaction {
                 }
             })
             .collect()
-    }
-
-    /// Return a transaction with the following signatures added.
-    ///
-    /// Errors when the signatures cannot be placed: this came from wallet history rather
-    /// than a signing session, or the list does not match the inputs this wallet owns.
-    /// Broadcasting nothing beats broadcasting a transaction witnessed on the wrong input.
-    pub fn with_signatures(&self, signatures: Vec<EncodedSignature>) -> Result<RTransaction> {
-        let template = self
-            .template
-            .as_ref()
-            .ok_or_else(|| anyhow!("this transaction did not come from a signing session"))?;
-        Ok(template.to_signed_rust_bitcoin_tx(&signatures)?)
     }
 }
 
@@ -492,14 +480,19 @@ impl From<Vec<frostsnap_coordinator::bitcoin::wallet::Transaction>> for TxState 
 
 impl From<frostsnap_coordinator::bitcoin::wallet::Transaction> for Transaction {
     fn from(value: frostsnap_coordinator::bitcoin::wallet::Transaction) -> Self {
+        let inner: RTransaction = (value.inner).deref().clone();
+        // In the canonical graph means broadcast or seen on chain, so `inner` carries real
+        // witnesses and its own size is the signed size.
+        let feerate =
+            Self::fee_from(&value.prevouts, &inner).map(|fee| fee as f64 / inner.vsize() as f64);
         Self {
-            template: None,
-            inner: (value.inner).deref().clone(),
+            inner,
             txid: value.txid.to_string(),
             confirmation_time: value.confirmation_time,
             last_seen: value.last_seen,
             prevouts: value.prevouts,
             is_mine: value.is_mine,
+            feerate,
         }
     }
 }
@@ -603,6 +596,31 @@ mod test {
     }
 
     /// Input 0 is foreign, input 1 is ours.
+    /// One input, ours — so the signed size is fully knowable and the rate is `Some`.
+    fn single_owned_input_template() -> TransactionTemplate {
+        let key = key();
+        let path = BitcoinBip32Path::external(idx(0));
+        let owner = LocalSpk {
+            master_appkey: key,
+            bip32_path: path,
+        };
+        let mut template = TransactionTemplate::new();
+        let ours = TxOut {
+            value: Amount::from_sat(100_000),
+            script_pubkey: owner.spk(),
+        };
+        template
+            .push_owned_input(PushInput::spend_outpoint(&ours, outpoint(0)), owner)
+            .unwrap();
+        template.push_foreign_output(TxOut {
+            value: Amount::from_sat(90_000),
+            script_pubkey: ScriptBuf::from_bytes([&[0x51u8, 0x20][..], &[0xcc; 32][..]].concat()),
+        });
+        template
+    }
+
+    /// Input 0 is foreign, input 1 is ours — so we cannot weigh a witness for every input and
+    /// the rate is `None`.
     fn template_with_a_foreign_input_first() -> TransactionTemplate {
         let key = key();
         let path = BitcoinBip32Path::external(idx(0));
@@ -638,36 +656,110 @@ mod test {
         template
     }
 
-    /// What a signed transaction should *look* like is pinned in `frostsnap_core`; restating
-    /// it here would duplicate it more weakly. What only this layer can get wrong is placing
-    /// signatures itself instead of asking the template — which is how four copies of that
-    /// loop drifted apart — so this asserts agreement rather than behaviour.
+    /// Witnessing at construction must place signatures the same way the template does —
+    /// placing them here instead is how four copies of that loop drifted apart.
+    ///
+    /// There is no longer a test that a wallet-read transaction refuses to be signed: it has
+    /// no `with_signatures` to call, so the compiler states it and a runtime assertion would
+    /// only be able to restate it more weakly.
     #[test]
-    fn with_signatures_agrees_with_the_template_it_delegates_to() {
+    fn signing_at_construction_agrees_with_the_template_it_delegates_to() {
         let template = template_with_a_foreign_input_first();
-        let tx = Transaction::from_template(&template.as_seen_by(key()));
+        let scoped = template.as_seen_by(key());
 
         for signatures in [vec![], vec![signature(7)], vec![signature(1), signature(2)]] {
             assert_eq!(
-                tx.with_signatures(signatures.clone()).ok(),
-                template
-                    .as_seen_by(key())
-                    .to_signed_rust_bitcoin_tx(&signatures)
-                    .ok(),
-                "with_signatures must not have its own idea of where a signature goes"
+                Transaction::signed_from_template(&scoped, &signatures)
+                    .ok()
+                    .map(|tx| tx.inner),
+                scoped.to_signed_rust_bitcoin_tx(&signatures).ok(),
+                "construction must not have its own idea of where a signature goes"
             );
         }
     }
 
-    /// A transaction read back from the wallet has no template, so nothing can say which
-    /// input a signature belongs to. Refusing beats guessing.
+    /// A PSBT can leave us inputs we do not own. Signing ours still leaves those witnessless,
+    /// because the template has nowhere to put anyone else's signature, so the result is a
+    /// transaction the network rejects. Offering to broadcast it is the failure this guards.
     #[test]
-    fn with_signatures_refuses_a_transaction_that_did_not_come_from_signing() {
-        let mut tx =
-            Transaction::from_template(&template_with_a_foreign_input_first().as_seen_by(key()));
-        tx.template = None;
+    fn a_transaction_with_an_input_that_is_not_ours_cannot_be_broadcast_by_us() {
+        let ours_only = single_owned_input_template().as_seen_by(key());
+        let partly_theirs = template_with_a_foreign_input_first().as_seen_by(key());
 
-        assert!(tx.with_signatures(vec![signature(7)]).is_err());
+        assert!(ours_only.owns_every_input());
+        assert!(!partly_theirs.owns_every_input());
+
+        assert!(
+            partly_theirs.has_any_inputs_to_sign(),
+            "we can still contribute — which is why `has_any_inputs_to_sign` cannot be the \
+             guard: it answers a different question"
+        );
+
+        let signed = Transaction::signed_from_template(&partly_theirs, &[signature(7)]).unwrap();
+        assert!(
+            signed.inner.input[0].witness.is_empty(),
+            "and this is what would be broadcast: an input nobody has signed"
+        );
+    }
+
+    /// The bug this whole line of work started from: `with_signatures` used to `zip` the
+    /// signature list against every input, so a foreign input at position 0 took the signature
+    /// produced for our input at position 1 — and the result was broadcastable-looking and
+    /// invalid. Signatures come back per *owned* input, in owned order, so only the template
+    /// can say where each belongs.
+    #[test]
+    fn a_signature_lands_on_our_input_and_not_the_foreign_one() {
+        let scoped = template_with_a_foreign_input_first().as_seen_by(key());
+        assert!(
+            scoped.inputs()[0].owner().local_owner().is_none(),
+            "input 0 is the foreign one: the ordering that made zip wrong"
+        );
+
+        let tx = Transaction::signed_from_template(&scoped, &[signature(7)]).unwrap();
+
+        assert!(
+            tx.inner.input[0].witness.is_empty(),
+            "the foreign input keeps no witness of ours"
+        );
+        assert!(
+            !tx.inner.input[1].witness.is_empty(),
+            "our input is the one that gets signed"
+        );
+    }
+
+    /// A template-built transaction has no witnesses yet, so its own size is not the size it
+    /// will be broadcast at. Deriving the rate from it inflated the number on precisely the
+    /// screen a user reads while deciding whether to sign.
+    #[test]
+    fn feerate_is_over_the_signed_size_not_the_unsigned_one() {
+        let scoped = single_owned_input_template().as_seen_by(key());
+        let tx = Transaction::from_template(&scoped);
+
+        let unsigned_rate = tx.fee().unwrap() as f64 / tx.inner.vsize() as f64;
+
+        assert_eq!(tx.feerate, scoped.feerate());
+        assert!(
+            tx.feerate.unwrap() < unsigned_rate,
+            "witnessing can only make it bigger, so the honest rate is below the empty-witness \
+             one ({:?} vs {unsigned_rate})",
+            tx.feerate
+        );
+    }
+
+    /// The two constructors are one rule, not two answers: a Schnorr signature is exactly the
+    /// 64 bytes the template weighs with, so witnessing cannot move the rate.
+    #[test]
+    fn witnessing_does_not_change_the_feerate() {
+        let scoped = single_owned_input_template().as_seen_by(key());
+        let unsigned = Transaction::from_template(&scoped);
+        let signed = Transaction::signed_from_template(&scoped, &[signature(1)]).unwrap();
+
+        assert_eq!(signed.feerate, unsigned.feerate);
+        assert_eq!(
+            signed.feerate.unwrap(),
+            signed.fee().unwrap() as f64 / signed.inner.vsize() as f64,
+            "now that it is witnessed, its own size agrees with the template's"
+        );
     }
 
     /// The old `details()` built this from the wallet index, which only knows scripts it has
@@ -713,6 +805,10 @@ mod test {
 
         assert_eq!(tx.prevouts.len(), 2, "both inputs, foreign one included");
         assert_eq!(tx.fee(), Some(50_000));
-        assert!(tx.feerate().is_some());
+        assert_eq!(
+            tx.feerate, None,
+            "the fee is knowable but the signed size is not: we cannot weigh a witness for an \
+             input that is not ours. `is_some()` here is what let an inflated rate stand."
+        );
     }
 }
