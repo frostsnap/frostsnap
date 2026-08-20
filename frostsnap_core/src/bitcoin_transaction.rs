@@ -40,7 +40,7 @@ pub struct ScopedTo(pub MasterAppkey);
 /// # use frostsnap_core::bitcoin_transaction::TransactionTemplate;
 /// let template = TransactionTemplate::new();
 /// // Whose inputs? The unscoped template cannot say, so this does not compile.
-/// template.iter_locally_owned_inputs();
+/// template.iter_our_inputs();
 /// ```
 ///
 /// ```compile_fail,E0277
@@ -367,9 +367,7 @@ impl TransactionTemplate<ScopedTo> {
         Some(self.fee()? as f64 / vbytes)
     }
 
-    pub fn iter_sighashes_of_locally_owned_inputs(
-        &self,
-    ) -> impl Iterator<Item = (LocalSpk, TapSighash)> + '_ {
+    pub fn iter_our_input_sighashes(&self) -> impl Iterator<Item = (LocalSpk, TapSighash)> + '_ {
         self.inputs
             .iter()
             .zip(self.iter_sighash())
@@ -379,25 +377,23 @@ impl TransactionTemplate<ScopedTo> {
             })
     }
 
-    pub fn iter_locally_owned_inputs(&self) -> impl Iterator<Item = (usize, &Input, &LocalSpk)> {
+    pub fn iter_our_inputs(&self) -> impl Iterator<Item = (usize, &Input, &LocalSpk)> {
         self.inputs
             .iter()
             .enumerate()
             .filter_map(|(i, input)| Some((i, input, input.owner.local_owner()?)))
     }
 
-    /// Every script this transaction owns, on either side, with the path that derives it.
+    /// Every script this key owns in this transaction, on either side, with the path that
+    /// derives it.
     ///
-    /// A bare path is safe to return because a template reaching a reader has been normalised
-    /// by [`Self::as_seen_by`], so "owned" can only mean one key.
-    ///
-    /// The template is the authority on what is ours; asking a wallet index instead answers a
-    /// different question, and one bounded by whatever it has derived so far.
-    pub fn owned_spks(&self) -> BTreeMap<ScriptBuf, BitcoinBip32Path> {
-        self.iter_locally_owned_inputs()
+    /// The template is the authority on what is ours; asking a wallet index instead answers
+    /// a different question and is bounded by whatever it has derived so far.
+    pub fn our_spks(&self) -> BTreeMap<ScriptBuf, BitcoinBip32Path> {
+        self.iter_our_inputs()
             .map(|(_, _, owner)| (owner.spk(), owner.bip32_path))
             .chain(
-                self.iter_locally_owned_outputs()
+                self.iter_our_outputs()
                     .map(|(_, _, owner)| (owner.spk(), owner.bip32_path)),
             )
             .collect()
@@ -405,14 +401,14 @@ impl TransactionTemplate<ScopedTo> {
 
     /// Pairs each signature with the index of the input it was produced for.
     ///
-    /// Signatures arrive in the order [`Self::iter_sighashes_of_locally_owned_inputs`] produced
-    /// their sighashes, which skips foreign inputs. Their positions are therefore *not* input
+    /// Signatures arrive in the order [`Self::iter_our_input_sighashes`] produced their
+    /// sighashes, which skips foreign inputs. Their positions are therefore *not* input
     /// indices, and pairing them positionally against every input silently signs the wrong one.
     pub fn signatures_by_input_index<'a>(
         &self,
         signatures: &'a [EncodedSignature],
     ) -> Result<Vec<(usize, &'a EncodedSignature)>, SignatureCountMismatch> {
-        let expected = self.iter_locally_owned_inputs().count();
+        let expected = self.iter_our_inputs().count();
         if signatures.len() != expected {
             return Err(SignatureCountMismatch {
                 expected,
@@ -421,7 +417,7 @@ impl TransactionTemplate<ScopedTo> {
         }
 
         Ok(self
-            .iter_locally_owned_inputs()
+            .iter_our_inputs()
             .map(|(i, _, _)| i)
             .zip(signatures)
             .collect())
@@ -439,7 +435,7 @@ impl TransactionTemplate<ScopedTo> {
         Ok(tx)
     }
 
-    pub fn iter_locally_owned_outputs(&self) -> impl Iterator<Item = (usize, &Output, &LocalSpk)> {
+    pub fn iter_our_outputs(&self) -> impl Iterator<Item = (usize, &Output, &LocalSpk)> {
         self.outputs
             .iter()
             .enumerate()
@@ -475,7 +471,7 @@ impl TransactionTemplate<ScopedTo> {
             .iter()
             .any(|output| matches!(output.owner, SpkOwner::Foreign(_)));
         let internal_count = self
-            .iter_locally_owned_outputs()
+            .iter_our_outputs()
             .filter(|(_, _, local)| {
                 local.bip32_path.account_keychain.keychain == Keychain::Internal
             })
@@ -577,8 +573,8 @@ pub enum RootOwner {
     Foreign(ScriptBuf),
 }
 
-/// A signature was produced for every locally owned input; a different count means the list
-/// did not come from this template.
+/// A signature was produced for every input of ours; a different count means the list did
+/// not come from this template.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SignatureCountMismatch {
     pub expected: usize,
