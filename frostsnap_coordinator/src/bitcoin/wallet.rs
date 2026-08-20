@@ -293,7 +293,7 @@ impl CoordSuperWallet {
         let keychain = (master_appkey, path.account_keychain);
         let used = self.tx_graph.index.is_used(keychain, path.index.to_u32());
         let revealed =
-            self.tx_graph.index.last_revealed_index(keychain) <= Some(path.index.to_u32());
+            Some(path.index.to_u32()) <= self.tx_graph.index.last_revealed_index(keychain);
         let spk = super::peek_spk(master_appkey, path);
         AddressInfo {
             index: path.index.to_u32(),
