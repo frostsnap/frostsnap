@@ -65,6 +65,7 @@ pub struct TransactionTemplate<S = Unscoped> {
     outputs: Vec<Output>,
 }
 
+#[derive(Clone, Copy)]
 pub struct PushInput<'a> {
     pub prev_txout: PrevTxOut<'a>,
     pub sequence: bitcoin::Sequence,

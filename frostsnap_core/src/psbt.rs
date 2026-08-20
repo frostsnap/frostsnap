@@ -21,21 +21,34 @@ use bitcoin::{
 use tracing::{event, Level};
 
 impl TransactionTemplate {
-    /// Reads a PSBT as a transaction `master_appkey` is being asked to sign.
+    /// Reads a PSBT as a transaction `master_appkeys` are being asked to sign.
     ///
     /// Ownership is taken from the PSBT's own key origins on both sides, and every claimed
-    /// path is derived from `master_appkey` and matched against the actual script before it
+    /// path is derived from the key it names and matched against the actual script before it
     /// counts, so a PSBT cannot make us attribute a script to a key that does not produce it.
     ///
-    /// Anything this key does not own is recorded as foreign rather than rejected — a PSBT is
-    /// only refused outright when it is malformed, or when nothing in it is ours to sign.
+    /// The result is unscoped and stays that way honestly: with several keys given, `Local`
+    /// means one of them and records which, and [`TransactionTemplate::as_seen_by`] narrows it
+    /// to whichever is signing. Anything none of the keys owns is recorded as foreign rather
+    /// than rejected — a PSBT is only refused outright when it is malformed, or when nothing
+    /// in it is ours to sign.
     pub fn from_psbt(
         psbt: &Psbt,
-        master_appkey: MasterAppkey,
+        master_appkeys: &[MasterAppkey],
     ) -> Result<TransactionTemplate, PsbtValidationError> {
-        let our_fingerprint = master_appkey
-            .derive_appkey(AppTweakKind::Bitcoin)
-            .fingerprint();
+        // A fingerprint is four bytes, so two of our own keys can share one. Holding every
+        // candidate and letting the script decide means a collision cannot hide the real owner.
+        let mut ours_by_fingerprint: BTreeMap<Fingerprint, Vec<MasterAppkey>> = BTreeMap::new();
+        for &master_appkey in master_appkeys {
+            let fingerprint = master_appkey
+                .derive_appkey(AppTweakKind::Bitcoin)
+                .fingerprint();
+            ours_by_fingerprint
+                .entry(fingerprint)
+                .or_default()
+                .push(master_appkey);
+        }
+
         let mut template = TransactionTemplate::new();
         let unsigned_tx = &psbt.unsigned_tx;
         template.set_version(unsigned_tx.version);
@@ -86,12 +99,12 @@ impl TransactionTemplate {
                 );
             }
 
-            let bip32_path = match claimed_path(
+            let (bip32_path, candidates) = match claimed_path(
                 input.tap_internal_key.as_ref(),
                 &input.tap_key_origins,
-                our_fingerprint,
+                &ours_by_fingerprint,
             ) {
-                Ok(bip32_path) => bip32_path,
+                Ok(claim) => claim,
                 // Refusing outright rather than skipping: an input claiming our fingerprint at a
                 // path we cannot derive is a PSBT we do not understand, not someone else's coin.
                 Err(NotOurs::Hardened) => {
@@ -102,13 +115,9 @@ impl TransactionTemplate {
                 Err(reason) => bail!(foreign_count, reason.to_string()),
             };
 
-            template.push_owned_input(
-                input_push,
-                LocalSpk {
-                    master_appkey,
-                    bip32_path,
-                },
-            )?;
+            push_owned(candidates, bip32_path, |owner| {
+                template.push_owned_input(input_push, owner)
+            })?;
             owned_count += 1;
         }
 
@@ -117,19 +126,15 @@ impl TransactionTemplate {
                 Some(output) => claimed_path(
                     output.tap_internal_key.as_ref(),
                     &output.tap_key_origins,
-                    our_fingerprint,
+                    &ours_by_fingerprint,
                 ),
                 None => Err(NotOurs::NoOrigin),
             };
 
             match claim {
-                Ok(bip32_path) => template.push_owned_output_checked(
-                    txout,
-                    LocalSpk {
-                        master_appkey,
-                        bip32_path,
-                    },
-                )?,
+                Ok((bip32_path, candidates)) => push_owned(candidates, bip32_path, |owner| {
+                    template.push_owned_output_checked(txout, owner)
+                })?,
                 Err(reason) => {
                     event!(Level::INFO, "PSBT output {i} isn't ours because {reason}");
                     template.push_foreign_output(txout.clone());
@@ -232,24 +237,27 @@ impl core::fmt::Display for NotOurs {
     }
 }
 
-/// The path a PSBT claims derives `tap_internal_key`, if it claims one under our fingerprint.
+/// The path a PSBT claims for `tap_internal_key`, and every key of ours whose fingerprint it
+/// claimed.
 ///
 /// Shared by both loops so inputs and outputs cannot drift apart on what counts as ours.
-/// The claim is unproven here — the caller matches it against the actual script.
-fn claimed_path(
+///
+/// Which candidate it really is cannot be decided here: only deriving the path and comparing
+/// the result against the actual script settles it, and that is [`push_owned`]'s job.
+fn claimed_path<'a>(
     tap_internal_key: Option<&XOnlyPublicKey>,
     tap_key_origins: &BTreeMap<XOnlyPublicKey, (Vec<taproot::TapLeafHash>, bip32::KeySource)>,
-    our_fingerprint: Fingerprint,
-) -> Result<BitcoinBip32Path, NotOurs> {
+    ours_by_fingerprint: &'a BTreeMap<Fingerprint, Vec<MasterAppkey>>,
+) -> Result<(BitcoinBip32Path, &'a [MasterAppkey]), NotOurs> {
     let tap_internal_key = tap_internal_key.ok_or(NotOurs::NoInternalKey)?;
     let (fingerprint, derivation_path) = tap_key_origins
         .get(tap_internal_key)
         .map(|(_, key_source)| key_source)
         .ok_or(NotOurs::NoOrigin)?;
 
-    if *fingerprint != our_fingerprint {
-        return Err(NotOurs::ForeignFingerprint);
-    }
+    let candidates = ours_by_fingerprint
+        .get(fingerprint)
+        .ok_or(NotOurs::ForeignFingerprint)?;
 
     let path = derivation_path
         .into_iter()
@@ -259,14 +267,40 @@ fn claimed_path(
         })
         .collect::<Result<Vec<_>, _>>()?;
 
-    BitcoinBip32Path::from_u32_slice(&path).ok_or_else(|| {
+    let bip32_path = BitcoinBip32Path::from_u32_slice(&path).ok_or_else(|| {
         NotOurs::UnusualPath(
             path.iter()
                 .map(|n| n.to_string())
                 .collect::<Vec<String>>()
                 .join("/"),
         )
-    })
+    })?;
+
+    Ok((bip32_path, candidates))
+}
+
+/// Pushes the script under whichever candidate key actually derives it.
+///
+/// A fingerprint match with no script match is a PSBT claiming one of our keys over a script
+/// that key does not produce, so the last mismatch is returned rather than the script being
+/// recorded as foreign — silently demoting it would let a PSBT lie about us without saying so.
+fn push_owned(
+    candidates: &[MasterAppkey],
+    bip32_path: BitcoinBip32Path,
+    mut push: impl FnMut(LocalSpk) -> Result<(), Box<SpkDoesntMatchPathError>>,
+) -> Result<(), Box<SpkDoesntMatchPathError>> {
+    let mut last_mismatch = None;
+    for &master_appkey in candidates {
+        match push(LocalSpk {
+            master_appkey,
+            bip32_path,
+        }) {
+            Ok(()) => return Ok(()),
+            Err(mismatch) => last_mismatch = Some(mismatch),
+        }
+    }
+
+    Err(last_mismatch.expect("a fingerprint is only in the map because a key produced it"))
 }
 
 #[derive(Debug, Clone)]
@@ -474,7 +508,7 @@ mod test {
             vec![foreign_txout(90_000)],
         );
 
-        let template = TransactionTemplate::from_psbt(&psbt, key)
+        let template = TransactionTemplate::from_psbt(&psbt, &[key])
             .unwrap()
             .as_seen_by(key);
 
@@ -495,7 +529,7 @@ mod test {
         signed.final_script_witness = Some(Witness::from_slice(&[[3u8; 64].as_slice()]));
 
         let psbt = psbt_of(vec![signed], vec![foreign_txout(90_000)]);
-        let err = TransactionTemplate::from_psbt(&psbt, key).unwrap_err();
+        let err = TransactionTemplate::from_psbt(&psbt, &[key]).unwrap_err();
 
         match err {
             PsbtValidationError::NothingToSign {
@@ -520,7 +554,7 @@ mod test {
         input.tap_internal_key = None;
 
         let psbt = psbt_of(vec![input], vec![foreign_txout(90_000)]);
-        let err = TransactionTemplate::from_psbt(&psbt, key).unwrap_err();
+        let err = TransactionTemplate::from_psbt(&psbt, &[key]).unwrap_err();
 
         match err {
             PsbtValidationError::NothingToSign { foreign_count, .. } => {
@@ -538,7 +572,7 @@ mod test {
         input.tap_key_origins.clear();
 
         let psbt = psbt_of(vec![input], vec![foreign_txout(90_000)]);
-        let err = TransactionTemplate::from_psbt(&psbt, key).unwrap_err();
+        let err = TransactionTemplate::from_psbt(&psbt, &[key]).unwrap_err();
 
         match err {
             PsbtValidationError::NothingToSign { foreign_count, .. } => {
@@ -560,11 +594,106 @@ mod test {
         );
 
         let psbt = psbt_of(vec![input], vec![foreign_txout(90_000)]);
-        let err = TransactionTemplate::from_psbt(&psbt, key).unwrap_err();
+        let err = TransactionTemplate::from_psbt(&psbt, &[key]).unwrap_err();
 
         match err {
             PsbtValidationError::NothingToSign { foreign_count, .. } => {
                 assert_eq!(foreign_count, 1)
+            }
+            other => panic!("expected NothingToSign, got {other:?}"),
+        }
+    }
+
+    /// Why the result is unscoped rather than scoped to the key that was passed: given two of
+    /// our keys, `Local` records *which* one, and only `as_seen_by` collapses that to "ours".
+    #[test]
+    fn each_of_our_keys_owns_its_own_input() {
+        let ours = our_key();
+        let sibling = sibling_key();
+        let our_path = BitcoinBip32Path::external(idx(0));
+        let their_path = BitcoinBip32Path::external(idx(1));
+
+        let psbt = psbt_of(
+            vec![
+                owned_input(ours, our_path, 100_000),
+                owned_input(sibling, their_path, 100_000),
+            ],
+            vec![foreign_txout(150_000)],
+        );
+
+        let template = TransactionTemplate::from_psbt(&psbt, &[ours, sibling]).unwrap();
+
+        let owner_of = |i: usize| {
+            template.inputs()[i]
+                .owner()
+                .local_owner()
+                .map(|local| local.master_appkey)
+        };
+        assert_eq!(owner_of(0), Some(ours));
+        assert_eq!(owner_of(1), Some(sibling));
+
+        assert_eq!(
+            template
+                .as_seen_by(ours)
+                .iter_our_inputs()
+                .map(|(i, _, _)| i)
+                .collect::<Vec<_>>(),
+            vec![0]
+        );
+        assert_eq!(
+            template
+                .as_seen_by(sibling)
+                .iter_our_inputs()
+                .map(|(i, _, _)| i)
+                .collect::<Vec<_>>(),
+            vec![1]
+        );
+    }
+
+    /// The key list decides what is ours, not the PSBT's annotations: the same bytes read for
+    /// one key leave the other key's input foreign.
+    #[test]
+    fn a_key_left_out_of_the_list_is_foreign() {
+        let ours = our_key();
+        let sibling = sibling_key();
+        let our_path = BitcoinBip32Path::external(idx(0));
+        let their_path = BitcoinBip32Path::external(idx(1));
+
+        let psbt = psbt_of(
+            vec![
+                owned_input(ours, our_path, 100_000),
+                owned_input(sibling, their_path, 100_000),
+            ],
+            vec![foreign_txout(150_000)],
+        );
+
+        let template = TransactionTemplate::from_psbt(&psbt, &[ours]).unwrap();
+
+        assert!(template.inputs()[0].owner().local_owner().is_some());
+        assert!(matches!(template.inputs()[1].owner(), SpkOwner::Foreign(_)));
+    }
+
+    #[test]
+    fn nothing_to_sign_when_no_key_in_the_list_owns_an_input() {
+        let stranger = MasterAppkey::derive_from_rootkey(g!(5 * G).normalize());
+        let path = BitcoinBip32Path::external(idx(0));
+
+        let psbt = psbt_of(
+            vec![owned_input(stranger, path, 100_000)],
+            vec![foreign_txout(90_000)],
+        );
+        let err = TransactionTemplate::from_psbt(&psbt, &[our_key(), sibling_key()]).unwrap_err();
+
+        match err {
+            PsbtValidationError::NothingToSign {
+                total_inputs,
+                foreign_count,
+                already_signed_count,
+            } => {
+                assert_eq!(
+                    (total_inputs, foreign_count, already_signed_count),
+                    (1, 1, 0)
+                );
             }
             other => panic!("expected NothingToSign, got {other:?}"),
         }
@@ -580,7 +709,7 @@ mod test {
         input.witness_utxo = Some(txout_of(key, actual, 100_000));
 
         let psbt = psbt_of(vec![input], vec![foreign_txout(90_000)]);
-        let err = TransactionTemplate::from_psbt(&psbt, key).unwrap_err();
+        let err = TransactionTemplate::from_psbt(&psbt, &[key]).unwrap_err();
 
         assert!(
             err_string(err).contains("didn't match what we expected"),
@@ -613,7 +742,7 @@ mod test {
         );
 
         let psbt = psbt_of(vec![input], vec![foreign_txout(90_000)]);
-        let err = TransactionTemplate::from_psbt(&psbt, key).unwrap_err();
+        let err = TransactionTemplate::from_psbt(&psbt, &[key]).unwrap_err();
 
         assert!(
             err_string(err).contains("hardened"),
@@ -630,7 +759,7 @@ mod test {
         input.non_witness_utxo = None;
 
         let psbt = psbt_of(vec![input], vec![foreign_txout(90_000)]);
-        let err = TransactionTemplate::from_psbt(&psbt, key).unwrap_err();
+        let err = TransactionTemplate::from_psbt(&psbt, &[key]).unwrap_err();
 
         assert!(
             err_string(err).contains("missing witness and non-witness utxo"),
@@ -651,7 +780,7 @@ mod test {
             vec![owned_output(key, change_path), psbt::Output::default()],
         );
 
-        let template = TransactionTemplate::from_psbt(&psbt, key)
+        let template = TransactionTemplate::from_psbt(&psbt, &[key])
             .unwrap()
             .as_seen_by(key);
 
@@ -684,7 +813,7 @@ mod test {
             vec![owned_output(sibling, sibling_path)],
         );
 
-        let template = TransactionTemplate::from_psbt(&psbt, key)
+        let template = TransactionTemplate::from_psbt(&psbt, &[key])
             .unwrap()
             .as_seen_by(key);
 
@@ -727,7 +856,7 @@ mod test {
             vec![signed, no_internal_key, stranger],
             vec![foreign_txout(250_000)],
         );
-        let err = TransactionTemplate::from_psbt(&psbt, key).unwrap_err();
+        let err = TransactionTemplate::from_psbt(&psbt, &[key]).unwrap_err();
 
         match err {
             PsbtValidationError::NothingToSign {
@@ -772,7 +901,7 @@ mod test {
             vec![annotation],
         );
 
-        let template = TransactionTemplate::from_psbt(&psbt, key)
+        let template = TransactionTemplate::from_psbt(&psbt, &[key])
             .unwrap()
             .as_seen_by(key);
 
@@ -800,7 +929,7 @@ mod test {
             vec![annotation],
         );
 
-        let template = TransactionTemplate::from_psbt(&psbt, key)
+        let template = TransactionTemplate::from_psbt(&psbt, &[key])
             .unwrap()
             .as_seen_by(key);
 
@@ -826,7 +955,7 @@ mod test {
             vec![owned_output(key, claimed)],
         );
 
-        let err = TransactionTemplate::from_psbt(&psbt, key).unwrap_err();
+        let err = TransactionTemplate::from_psbt(&psbt, &[key]).unwrap_err();
 
         assert!(
             err_string(err).contains("didn't match what we expected"),
@@ -851,7 +980,7 @@ mod test {
             vec![owned_output(key, deep)],
         );
 
-        let template = TransactionTemplate::from_psbt(&psbt, key)
+        let template = TransactionTemplate::from_psbt(&psbt, &[key])
             .unwrap()
             .as_seen_by(key);
 
@@ -899,7 +1028,7 @@ mod test {
             vec![annotation],
         );
 
-        let template = TransactionTemplate::from_psbt(&psbt, key)
+        let template = TransactionTemplate::from_psbt(&psbt, &[key])
             .unwrap()
             .as_seen_by(key);
 
@@ -941,7 +1070,7 @@ mod test {
             ],
             vec![foreign_txout(150_000)],
         );
-        let template = TransactionTemplate::from_psbt(&psbt, key)
+        let template = TransactionTemplate::from_psbt(&psbt, &[key])
             .unwrap()
             .as_seen_by(key);
 
@@ -972,7 +1101,7 @@ mod test {
             ],
             vec![foreign_txout(350_000)],
         );
-        let template = TransactionTemplate::from_psbt(&psbt, key)
+        let template = TransactionTemplate::from_psbt(&psbt, &[key])
             .unwrap()
             .as_seen_by(key);
 
@@ -1002,7 +1131,7 @@ mod test {
             ],
             vec![foreign_txout(150_000)],
         );
-        let template = TransactionTemplate::from_psbt(&psbt, key)
+        let template = TransactionTemplate::from_psbt(&psbt, &[key])
             .unwrap()
             .as_seen_by(key);
 

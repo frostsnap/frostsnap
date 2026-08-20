@@ -91,14 +91,35 @@ pub struct UnsignedTx {
     /// The form that will be sent. Held unscoped because that is what goes on the wire, and
     /// there is deliberately no way back from a scoped one.
     ///
-    /// Crate-private so frb generates no accessor: it cannot name a second instantiation of
-    /// a generic, and Dart asks through the methods below anyway.
-    pub(crate) template_tx: TransactionTemplate,
+    /// Private so [`Self::new`] is the only way to get one, which is what makes its check an
+    /// invariant rather than a habit of the two callers. It also leaves frb no accessor to
+    /// generate, which it could not do for a second instantiation of a generic anyway.
+    template_tx: TransactionTemplate,
     /// Whose transaction this is. Every question about ownership needs it.
     pub master_appkey: MasterAppkey,
 }
 
 impl UnsignedTx {
+    /// Fails when no input belongs to `master_appkey`.
+    ///
+    /// Every reader below answers *for* that key without re-checking, so a template with
+    /// nothing of its own would report a balance and a recipient list for a transaction the
+    /// key has no part in. `psbt_to_tx_template` rejects a PSBT owned by none of the keys it
+    /// was given, which is a weaker statement as soon as it is given more than one.
+    #[frb(ignore)]
+    pub(crate) fn new(
+        template_tx: TransactionTemplate,
+        master_appkey: MasterAppkey,
+    ) -> Option<Self> {
+        template_tx
+            .as_seen_by(master_appkey)
+            .has_any_inputs_to_sign()
+            .then_some(Self {
+                template_tx,
+                master_appkey,
+            })
+    }
+
     /// This transaction as its own key sees it. Cheap enough for the handful of UI-rate
     /// reads below, and it keeps the sendable form the only one stored.
     #[frb(ignore)]
