@@ -197,7 +197,7 @@ impl Transaction {
         let raw_tx = tx_temp.to_rust_bitcoin_tx();
         let txid = tx_temp.txid();
         let is_mine = tx_temp
-            .owned_spks()
+            .our_spks()
             .into_iter()
             .map(|(spk, path)| (spk, path.index.to_u32()))
             .collect::<HashMap<_, _>>();

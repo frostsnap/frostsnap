@@ -245,7 +245,7 @@ fn a_foreign_input_at_one_of_our_own_output_scripts_is_still_foreign() {
 /// `is_mine` in the app is built from this. Sourcing it from a wallet index instead answers
 /// "has the wallet derived this spk yet", which is bounded by lookahead.
 #[test]
-fn owned_spks_covers_both_sides_at_any_depth() {
+fn our_spks_covers_both_sides_at_any_depth() {
     let key = key();
     let deep_input = BitcoinBip32Path::external(idx(500_000));
     let deep_output = BitcoinBip32Path::internal(idx(400_000));
@@ -297,7 +297,7 @@ fn owned_spks_covers_both_sides_at_any_depth() {
         script_pubkey: foreign_spk(0xbb),
     });
 
-    let owned = template.as_seen_by(key).owned_spks();
+    let owned = template.as_seen_by(key).our_spks();
 
     assert_eq!(
         owned.len(),
@@ -379,7 +379,7 @@ fn another_keys_scripts_become_foreign() {
     let mine = template.as_seen_by(ours);
 
     assert_eq!(
-        mine.iter_locally_owned_inputs()
+        mine.iter_our_inputs()
             .map(|(i, _, _)| i)
             .collect::<Vec<_>>(),
         vec![0],
@@ -394,7 +394,7 @@ fn another_keys_scripts_become_foreign() {
         vec![0],
         "our one signature belongs on our one input"
     );
-    assert!(!mine.owned_spks().contains_key(&their_spk.spk()));
+    assert!(!mine.our_spks().contains_key(&their_spk.spk()));
     assert_eq!(
         mine.foreign_recipients().collect::<Vec<_>>(),
         vec![(their_spk.spk().as_script(), 150_000)],
@@ -409,7 +409,7 @@ fn another_keys_scripts_become_foreign() {
     let theirs = template.as_seen_by(sibling);
     assert_eq!(
         theirs
-            .iter_locally_owned_inputs()
+            .iter_our_inputs()
             .map(|(i, _, _)| i)
             .collect::<Vec<_>>(),
         vec![1]

@@ -69,7 +69,7 @@ impl WireSignTask {
         template.into_iter().flat_map(move |template| {
             template
                 .as_seen_by(master_appkey)
-                .iter_locally_owned_outputs()
+                .iter_our_outputs()
                 .filter_map(move |(_, _, spk)| {
                     (spk.bip32_path.account_keychain == internal)
                         .then_some(spk.bip32_path.index.to_u32())
@@ -117,7 +117,7 @@ impl WireSignTask {
                 // allocated change or revealed an address past the ceiling would have its own task
                 // refused here. Reaching that is implausible today, and closing it properly means
                 // one shared issuance boundary in the wallet, which is the cleanup.
-                for (_, _, owner) in tx_template.iter_locally_owned_outputs() {
+                for (_, _, owner) in tx_template.iter_our_outputs() {
                     let path = owner.bip32_path;
 
                     if path.account_keychain.account != BitcoinAccount::default() {
@@ -178,7 +178,7 @@ impl CheckedSignTask {
                 app_tweak: AppTweak::Nostr,
             }],
             SignTask::BitcoinTransaction { tx_template, .. } => tx_template
-                .iter_sighashes_of_locally_owned_inputs()
+                .iter_our_input_sighashes()
                 .map(|(owner, sighash)| SignItem {
                     message: sighash.as_raw_hash().to_byte_array().to_vec(),
                     app_tweak: AppTweak::Bitcoin(owner.bip32_path),
@@ -308,7 +308,7 @@ mod test {
             "their output is a recipient, at their address"
         );
         assert_eq!(
-            tx_template.iter_locally_owned_outputs().count(),
+            tx_template.iter_our_outputs().count(),
             0,
             "and it is not ours"
         );
@@ -335,7 +335,6 @@ mod test {
         assert_eq!(prompt.fee, Amount::from_sat(10_000));
     }
 
-    /// A locally-owned input under a different key must be rejected.
     /// An input under another key is one we cannot sign, so it must not be counted as ours —
     /// leaving nothing here to sign at all.
     #[test]
@@ -367,8 +366,8 @@ mod test {
         );
     }
 
-    /// A send to an external (non-local) recipient is accepted: the owner check
-    /// only applies to locally-owned outputs.
+    /// A send to an external recipient is accepted: the owner check only applies to outputs
+    /// claiming to be ours.
     #[test]
     fn external_recipient_output_is_accepted() {
         let signing = signing_key();
