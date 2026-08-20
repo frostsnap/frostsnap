@@ -871,10 +871,12 @@ impl FrostCoordinator {
                     ref replenish_nonces,
                 },
             ) => {
-                let active_sign_session = self
-                    .active_signing_sessions
-                    .get(&session_id)
-                    .expect("inavariant");
+                let active_sign_session = self.active_signing_sessions.get(&session_id).ok_or(
+                    Error::coordinator_invalid_message(
+                        message_kind,
+                        "got signature shares for a signing session we don't have",
+                    ),
+                )?;
                 let sessions = &active_sign_session.progress;
                 let n_signatures = sessions.len();
                 let access_structure_ref = active_sign_session.access_structure_ref();
