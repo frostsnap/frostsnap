@@ -134,46 +134,34 @@ impl UnsignedTx {
         })
     }
 
+    /// Takes no key: which key this is about is a property of the transaction, not of the
+    /// question, and a parameter would let a caller ask about one it is not for.
     #[frb(sync)]
     pub fn effect(&self, network: BitcoinNetwork) -> Result<EffectOfTx> {
-        // Taking a key as an argument would let a caller ask about one this transaction is
-        // not for; it is a property of the transaction, not of the question.
-        let master_appkey = self.master_appkey;
-        use frostsnap_core::bitcoin_transaction::RootOwner;
+        let scoped = self.scoped();
         let fee = self
             .template_tx
             .fee()
             .ok_or(anyhow!("invalid transaction"))?;
-        let mut net_value = self.scoped().net_value();
-        let value_for_this_key = net_value
-            .remove(&RootOwner::Local(master_appkey))
-            .ok_or(anyhow!("this transaction has no effect on this key"))?;
 
-        let foreign_receiving_addresses = net_value
+        let foreign_receiving_addresses = scoped
+            .foreign_net_values()
             .into_iter()
-            .filter_map(|(owner, value)| match owner {
-                // Unreachable on a scoped template: another key's scripts are already foreign
-                // to it, and reported below as what they are — money leaving.
-                RootOwner::Local(_) => None,
-                RootOwner::Foreign(spk) => {
-                    if value > 0 {
-                        Some(Ok((
-                            bitcoin::Address::from_script(spk.as_script(), network)
-                                .expect("will have address form")
-                                .to_string(),
-                            value as u64,
-                        )))
-                    } else {
-                        None
-                    }
-                }
+            .filter(|(_, value)| *value > 0)
+            .map(|(spk, value)| {
+                (
+                    bitcoin::Address::from_script(spk.as_script(), network)
+                        .expect("will have address form")
+                        .to_string(),
+                    value as u64,
+                )
             })
-            .collect::<Result<Vec<_>>>()?;
+            .collect();
 
         Ok(EffectOfTx {
-            net_value: value_for_this_key,
+            net_value: scoped.our_net_value(),
             fee,
-            feerate: self.scoped().feerate(),
+            feerate: scoped.feerate(),
             foreign_receiving_addresses,
         })
     }

@@ -14,7 +14,13 @@ fn idx(n: u32) -> NormalIndex {
     NormalIndex::new(n).unwrap()
 }
 
-/// Both sides, both owner kinds, non-default version and locktime.
+/// Both sides, both owner kinds, and a non-default locktime.
+///
+/// The version is left at `new()`'s default deliberately. These bytes were captured from code
+/// that predates the scope type parameter, which is what makes them evidence the encoding did
+/// not move; regenerating them to exercise another field spends that for a field nothing here
+/// touches. Cover `version` — which `psbt_template` reads out of a third-party PSBT — under
+/// its own fixture instead.
 fn representative_template() -> TransactionTemplate {
     let key = MasterAppkey::derive_from_rootkey(g!(2 * G).normalize());
     let path = BitcoinBip32Path::external(idx(7));

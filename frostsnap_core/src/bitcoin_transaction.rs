@@ -182,22 +182,6 @@ impl<S> TransactionTemplate<S> {
             .sum::<u64>()
             .checked_sub(self.outputs.iter().map(|output| output.value).sum())
     }
-
-    pub fn net_value(&self) -> BTreeMap<RootOwner, i64> {
-        let mut spk_to_value: BTreeMap<RootOwner, i64> = Default::default();
-
-        for input in &self.inputs {
-            let value = spk_to_value.entry(input.owner.root_owner()).or_default();
-            *value -= i64::try_from(input.value).expect("input ridiciously large");
-        }
-
-        for output in &self.outputs {
-            let value = spk_to_value.entry(output.owner.root_owner()).or_default();
-            *value += i64::try_from(output.value).expect("input ridiciously large");
-        }
-
-        spk_to_value
-    }
 }
 
 impl TransactionTemplate<Unscoped> {
@@ -311,9 +295,9 @@ impl TransactionTemplate<Unscoped> {
         self.push_owned_output(txout.value, owner);
         Ok(())
     }
-}
 
-impl TransactionTemplate<Unscoped> {
+    /// This transaction as `master_appkey` sees it: another key's scripts become foreign,
+    /// because they are not ours to sign and its outputs are money leaving.
     pub fn as_seen_by(&self, master_appkey: MasterAppkey) -> TransactionTemplate<ScopedTo> {
         let foreign_to_us = |owner: &SpkOwner| match owner {
             SpkOwner::Local(local) if local.master_appkey != master_appkey => {
@@ -449,6 +433,49 @@ impl TransactionTemplate<ScopedTo> {
             .any(|input| input.owner.local_owner().is_some())
     }
 
+    /// What this transaction does to the balance of the key it is scoped to.
+    pub fn our_net_value(&self) -> i64 {
+        let ours = |owner: &SpkOwner, value: u64| match owner {
+            SpkOwner::Local(_) => i64::try_from(value).expect("value ridiculously large"),
+            SpkOwner::Foreign(_) => 0,
+        };
+
+        self.outputs
+            .iter()
+            .map(|output| ours(&output.owner, output.value))
+            .sum::<i64>()
+            - self
+                .inputs
+                .iter()
+                .map(|input| ours(&input.owner, input.value))
+                .sum::<i64>()
+    }
+
+    /// Net value flowing to each script that is not ours, negative where a foreign party
+    /// spends into this transaction.
+    ///
+    /// Distinct from [`Self::foreign_recipients`], which reports what an output pays
+    /// regardless of what its owner also spends.
+    pub fn foreign_net_values(&self) -> BTreeMap<ScriptBuf, i64> {
+        let mut net: BTreeMap<ScriptBuf, i64> = Default::default();
+
+        for input in &self.inputs {
+            if let SpkOwner::Foreign(spk) = &input.owner {
+                *net.entry(spk.clone()).or_default() -=
+                    i64::try_from(input.value).expect("value ridiculously large");
+            }
+        }
+
+        for output in &self.outputs {
+            if let SpkOwner::Foreign(spk) = &output.owner {
+                *net.entry(spk.clone()).or_default() +=
+                    i64::try_from(output.value).expect("value ridiculously large");
+            }
+        }
+
+        net
+    }
+
     pub fn foreign_recipients(&self) -> impl Iterator<Item = (&Script, u64)> {
         self.outputs
             .iter()
@@ -565,12 +592,6 @@ impl PromptSignBitcoinTx {
             .sum();
         (foreign > bitcoin::Amount::ZERO).then_some(foreign)
     }
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub enum RootOwner {
-    Local(MasterAppkey),
-    Foreign(ScriptBuf),
 }
 
 /// A signature was produced for every input of ours; a different count means the list did
@@ -698,12 +719,6 @@ pub enum SpkOwner {
 }
 
 impl SpkOwner {
-    pub fn root_owner(&self) -> RootOwner {
-        match self {
-            SpkOwner::Foreign(spk) => RootOwner::Foreign(spk.clone()),
-            SpkOwner::Local(local) => RootOwner::Local(local.master_appkey),
-        }
-    }
     pub fn spk(&self) -> ScriptBuf {
         match self {
             SpkOwner::Foreign(spk) => spk.clone(),
