@@ -260,10 +260,14 @@ impl Coordinator {
         Ok(())
     }
 
+    /// Borrows rather than takes: frb disposes the Dart handle for a value it moves, and the
+    /// caller still needs this one — the same transaction answers for the review screen and
+    /// receives the signatures when they arrive. Nothing here wants ownership; the template is
+    /// cloned onto the wire either way.
     pub fn start_signing_tx(
         &self,
         access_structure_ref: AccessStructureRef,
-        unsigned_tx: UnsignedTx,
+        unsigned_tx: &UnsignedTx,
         devices: Vec<DeviceId>,
         sink: StreamSink<SigningState>,
     ) -> Result<()> {
