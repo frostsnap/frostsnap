@@ -340,8 +340,6 @@ impl Transaction {
             .or(self.last_seen)
     }
 
-    /// Feerate in sats/vbyte.
-    #[frb(sync)]
     #[frb(sync)]
     pub fn recipients(&self) -> Vec<TxOutInfo> {
         self.inner
@@ -722,7 +720,7 @@ mod test {
     /// a transaction witnessed with none — and the strict count check refused, every time.
     ///
     /// The empty list is the failure, and this pins that it is a failure rather than a no-op:
-    /// master's positional `zip` silently returned the unwitnessed transaction instead.
+    /// master's positional `zip` silently returned the already-witnessed transaction instead.
     #[test]
     fn signing_with_no_signatures_is_refused_rather_than_silently_empty() {
         let scoped = single_owned_input_template().as_seen_by(key());
