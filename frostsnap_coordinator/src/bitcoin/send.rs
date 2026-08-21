@@ -325,7 +325,7 @@ impl CoordSuperWallet {
             .map(|(position, _)| position)
             .collect()
     }
-    /// The coins a [`RISKY_GAP`]-window restore could not discover and that are worth rescuing at
+    /// The coins a `RISKY_GAP`-window restore could not discover and that are worth rescuing at
     /// `feerate` — the input set the nudge's remedy consolidates.
     ///
     /// Filtered at the rate the user picked, not at whatever rate made the nudge appear: the
@@ -459,7 +459,7 @@ impl CoordSuperWallet {
             .collect()
     }
 
-    /// How many coins a [`RISKY_GAP`]-window restore could not discover and would be worth
+    /// How many coins a `RISKY_GAP`-window restore could not discover and would be worth
     /// rescuing at `feerate`, and their total value in sats — what the consolidation nudge shows,
     /// and whether it appears at all.
     ///
@@ -531,14 +531,17 @@ impl CoordSuperWallet {
     /// Turn a [`SendPlan`] into a signable template. This is the wallet's single change-address
     /// allocation point: the lowest revealed-unused index not in `reserved_change`, revealing
     /// fresh only when nothing passes. `reserved_change` is the caller's view of in-flight
-    /// reservations (see [`reserved_change_indices`]); the wallet stores nothing. A fresh reveal
-    /// cannot collide with it, since reservations come from committed templates whose indices are
-    /// at or below the frontier.
+    /// reservations (see [`FrostCoordinator::reserved_change_indices`]); the wallet stores
+    /// nothing. A fresh reveal cannot collide with it, since reservations come from committed
+    /// templates whose indices are at or below the frontier.
     ///
     /// The plan pinned its inputs' immutable identities, so committing re-canonicalizes only
     /// the plan's own outpoints to re-check the one mutable fact: each must still be unspent —
     /// a plan can outlive a sync that spends one of its coins. The plan is dead then; the
     /// caller builds a new one.
+    ///
+    /// [`FrostCoordinator::reserved_change_indices`]:
+    ///     frostsnap_core::coordinator::FrostCoordinator::reserved_change_indices
     pub fn commit_send(
         &mut self,
         plan: &SendPlan,
