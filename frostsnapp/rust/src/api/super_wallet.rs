@@ -302,7 +302,11 @@ impl SuperWallet {
     /// `feerate` is the bar for mentioning a coin at all, not a price: nothing is spent here, and
     /// the caller decides what counts as worth rescuing. What a rescue actually moves is decided
     /// later, at the rate the user picks.
-    #[frb(sync, type_64bit_int)]
+    /// Not `sync`: it walks every unspent coin of the key and simulates a restore's crawl per
+    /// keychain, which is sub-millisecond on an ordinary wallet and long enough on a large one to
+    /// drop a frame if the render thread waits for it — or to wait on the wallet mutex behind a
+    /// sync.
+    #[frb(type_64bit_int)]
     pub fn gap_stranded_value(&self, master_appkey: MasterAppkey, feerate: f32) -> (u64, u64) {
         self.inner
             .lock()
