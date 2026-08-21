@@ -16,7 +16,7 @@ runs:
           ./frostsnapp/binding-rerun.sha256
           ./frostsnapp/lib/src/rust
           ./frostsnapp/rust/src/frb_generated.rs
-        key: frb-files-${{ inputs.version }}-${{ hashFiles('frostsnapp/rust/src/api/**') }}
+        key: frb-files-${{ inputs.version }}-${{ hashFiles('frostsnapp/rust/src/api/**', 'frostsnapp/rust/Cargo.toml') }}
 
     - uses: dtolnay/rust-toolchain@stable
       if: steps.generate-frb.outputs.cache-hit != 'true'
