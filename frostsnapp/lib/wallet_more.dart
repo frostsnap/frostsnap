@@ -9,6 +9,7 @@ import 'package:frostsnap/psbt.dart';
 import 'package:frostsnap/settings.dart';
 import 'package:frostsnap/sign_message.dart';
 import 'package:frostsnap/theme.dart';
+import 'package:frostsnap/wallet_stranded_coins.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
 
 class WalletMore extends StatefulWidget {
@@ -171,6 +172,49 @@ class _WalletMoreState extends State<WalletMore> {
               await MaybeFullscreenDialog.show(
                 context: context,
                 child: walletCtx.wrap(CheckAddressPage()),
+              );
+            },
+          ),
+          StreamBuilder(
+            stream: walletCtx.txStream,
+            builder: (context, _) {
+              final utxos = walletCtx.superWallet.utxoCount(
+                masterAppkey: walletCtx.masterAppkey,
+              );
+              // One coin into one coin is a pure fee burn, so the action only exists past that.
+              if (utxos <= 1) return SizedBox.shrink();
+              return ListTile(
+                contentPadding: contentPadding,
+                tileColor: tileColor,
+                shape: tileShape,
+                title: Text('Consolidate ($utxos)'),
+                subtitle: Text(
+                  'Merge all coins into one — this links them together on-chain',
+                ),
+                leading: Icon(Icons.merge_rounded),
+                onTap: () => showBottomSheetOrDialog(
+                  context,
+                  title: Text('Consolidate'),
+                  builder: (context, scrollController) => walletCtx.wrap(
+                    ConsolidatePage(
+                      scrollController: scrollController,
+                      description:
+                          'Merges all of this wallet\'s coins into one. This '
+                          'links your coins together on-chain; everything '
+                          'returns to this wallet, minus the fee.',
+                      planner: (feerate) =>
+                          walletCtx.superWallet.planConsolidate(
+                            masterAppkey: walletCtx.masterAppkey,
+                            outpoints: walletCtx.superWallet
+                                .allUnspentOutpoints(
+                                  masterAppkey: walletCtx.masterAppkey,
+                                  feerate: feerate,
+                                ),
+                            feerate: feerate,
+                          ),
+                    ),
+                  ),
+                ),
               );
             },
           ),

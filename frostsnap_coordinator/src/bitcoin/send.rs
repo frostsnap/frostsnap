@@ -342,6 +342,47 @@ impl CoordSuperWallet {
             .collect()
     }
 
+    /// The coins a whole-wallet consolidation spends: every one the wallet holds that is worth more
+    /// than it costs to move at `feerate`.
+    ///
+    /// A coin below its own spend cost is left where it is, because moving it destroys value —
+    /// 300 sats carried against roughly 575 of input cost at 10 sat/vB — and forfeits spending it
+    /// later at a rate where it does pay. That is the same coin [`Self::plan_send`] declines to
+    /// force and [`Self::calculate_avaliable_value`] leaves out of the spendable figure, so
+    /// including it here would spend value the wallet does not count as spendable.
+    ///
+    /// Filtered at the rate the user picked rather than a nominal one: a manual consolidation runs
+    /// behind the ordinary feerate picker, so the caller holds the real rate when it composes the
+    /// set, and coins enter and leave it as that rate moves.
+    pub fn all_unspent_outpoints(
+        &mut self,
+        master_appkey: MasterAppkey,
+        feerate: f32,
+    ) -> Vec<OutPoint> {
+        let rate = FeeRate::from_sat_per_vb(feerate);
+        self.all_unspent(master_appkey)
+            .into_iter()
+            .filter(|&(_, _, value)| {
+                Candidate {
+                    input_count: 1,
+                    value,
+                    weight: TR_KEYSPEND_TXIN_WEIGHT,
+                    is_segwit: true,
+                }
+                .effective_value(rate)
+                    > 0.0
+            })
+            .map(|(_, outpoint, _)| outpoint)
+            .collect()
+    }
+
+    /// How many coins the wallet holds — what the "Consolidate (n)" menu action shows and gates on
+    /// (one coin into one coin is a pure fee burn). A plain count: which of them a consolidation
+    /// actually spends depends on the rate the user has not picked yet.
+    pub fn utxo_count(&mut self, master_appkey: MasterAppkey) -> usize {
+        self.all_unspent(master_appkey).len()
+    }
+
     /// Resolve outpoints the caller named into the identities a plan pins: derivation path and
     /// the value each carries right now. Every one must still be an unspent coin of this key —
     /// a caller planning against a coin the wallet does not hold is working from a stale list,
@@ -519,7 +560,7 @@ impl CoordSuperWallet {
             .filter(|value| *value >= TR_DUST_RELAY_MIN_VALUE)
             .ok_or_else(|| {
                 anyhow!(
-                    "the {} stranded coin(s) hold {sum} sats — not enough to pay the {fee} sat \
+                    "the {} coin(s) hold {sum} sats — not enough to pay the {fee} sat \
                      fee and leave a usable output",
                     coins.len()
                 )
@@ -816,6 +857,14 @@ mod test {
                 .tx_graph
                 .index
                 .last_revealed_index((self.master_appkey, BitcoinAccountKeychain::internal()))
+        }
+
+        fn plan_all(&mut self, feerate: f32) -> Result<SendPlan> {
+            let outpoints = self
+                .wallet
+                .all_unspent_outpoints(self.master_appkey, feerate);
+            self.wallet
+                .plan_consolidate(self.master_appkey, outpoints, feerate)
         }
 
         /// The input set the nudge's remedy consolidates, composed the way its call site does.
@@ -1334,6 +1383,79 @@ mod test {
             f.wallet.gap_stranded_value(f.master_appkey, NUDGE_BAR),
             (1, 1_500),
             "so the nudge survives its own remedy, still naming the coin left behind"
+        );
+    }
+
+    /// Whole-wallet consolidation: every coin worth moving at the chosen rate goes into one
+    /// output, and one that is not stays where it is. Cleaning up should not cost more than the
+    /// mess — a coin carrying less than its own input cost makes the user poorer by merging it, and
+    /// forfeits spending it later at a rate where it pays.
+    #[test]
+    fn all_scope_leaves_behind_what_costs_more_than_it_carries() {
+        let mut f = Fixture::new();
+        let reachable = f.fund(0, 1_000_000, 100);
+        let stranded = f.fund(30, 500_000, 101);
+        let dust = f.fund(1, 1_500, 102); // ~2,875 sats of input cost at the plan rate
+        assert_eq!(f.wallet.utxo_count(f.master_appkey), 3);
+        let revealed_before = f.last_revealed_internal();
+
+        let plan = f.plan_all(50.0).unwrap();
+        assert_eq!(
+            f.last_revealed_internal(),
+            revealed_before,
+            "planning must not reveal"
+        );
+        let planned: BTreeSet<OutPoint> = plan.selected_outpoints().collect();
+        assert_eq!(planned, BTreeSet::from([reachable, stranded]));
+        assert!(
+            !planned.contains(&dust),
+            "merging it would cost more than it carries"
+        );
+        assert!(plan.recipients.is_empty());
+        assert_eq!(
+            plan.fee + plan.change_value.unwrap(),
+            1_500_000,
+            "every input sat is accounted for"
+        );
+    }
+
+    /// The planner prices the set it is given and forms no opinion about it. Moving one coin into
+    /// one coin is a pure fee burn for a coin already within reach and the entire point for one a
+    /// restore would miss — a difference only the caller knows it is making, and both callers gate
+    /// on it themselves: the menu hides the action below two coins, and the banner appears only
+    /// when something is stranded.
+    #[test]
+    fn a_single_coin_is_planned_because_the_caller_asked_for_it() {
+        let mut f = Fixture::new();
+        f.fund(0, 500_000, 100); // reachable: pointless to move, and planned anyway
+        assert_eq!(f.wallet.utxo_count(f.master_appkey), 1);
+        let plan = f.plan_all(10.0).expect("the planner does what it is told");
+        assert_eq!(plan.input_count(), 1);
+
+        let mut f = Fixture::new();
+        f.fund(30, 500_000, 100); // past RISKY_GAP, so a restore would miss it
+        f.plan_all(10.0)
+            .expect("and the same for the coin where moving it is the point");
+        f.plan_stranded(10.0)
+            .expect("both paths plan the same lone coin");
+    }
+
+    /// The shortfall guard is scope-independent, and says so without calling reachable coins
+    /// stranded.
+    #[test]
+    fn all_scope_refuses_when_the_coins_cannot_pay_the_fee() {
+        let mut f = Fixture::new();
+        // 700 each: above the ~575 sat cost of its own input at this rate, so both survive into
+        // the set, and 1,400 together is still under the ~1,685 sat fee for two inputs.
+        f.fund(0, 700, 100);
+        f.fund(1, 700, 101);
+        let err = f
+            .plan_all(10.0)
+            .expect_err("1,400 sats cannot fund two inputs and an output");
+        assert!(err.to_string().contains("not enough"), "got: {err}");
+        assert!(
+            !err.to_string().contains("stranded"),
+            "reachable coins must not be described as stranded: {err}"
         );
     }
 
