@@ -1,4 +1,5 @@
 use anyhow::Result;
+use base64::prelude::*;
 pub use bitcoin::Transaction as RTransaction;
 pub use bitcoin::{
     psbt::Error as PsbtError, Address, Network as BitcoinNetwork, OutPoint, Psbt, ScriptBuf, TxOut,
@@ -481,10 +482,38 @@ impl AddressExt for bitcoin::Address {
 impl Psbt {
     #[frb(sync)]
     pub fn serialize(&self) -> Vec<u8> {}
+}
 
-    #[frb(sync)]
-    #[allow(unused)]
-    pub fn deserialize(bytes: &[u8]) -> Result<Psbt, PsbtError> {}
+/// Parses a file the user picked in the file picker: a binary PSBT, or the Base64 text
+/// form that Bitcoin Core and other wallets export.
+///
+/// The encoding is decided by its first bytes, not by trial-decoding the whole input: a
+/// file that is not a PSBT at all is rejected on a magic-byte compare, whatever its size.
+#[frb(sync)]
+pub fn parse_imported_psbt(bytes: &[u8]) -> std::result::Result<Psbt, PsbtError> {
+    if bytes.starts_with(b"psbt\xff") {
+        return Psbt::deserialize(bytes);
+    }
+
+    // A file saved by Notepad starts with a UTF-8 BOM, which `trim_ascii` does not remove;
+    // one saved by `base64` or `openssl base64` is wrapped at 64 or 76 columns, so the
+    // embedded newlines are stripped before decoding.
+    let text = bytes
+        .strip_prefix(b"\xEF\xBB\xBF")
+        .unwrap_or(bytes)
+        .trim_ascii_start();
+    if text.starts_with(b"cHNidP") {
+        let compact: Vec<u8> = text
+            .iter()
+            .copied()
+            .filter(|b| !b.is_ascii_whitespace())
+            .collect();
+        if let Ok(decoded) = BASE64_STANDARD.decode(&compact) {
+            return Psbt::deserialize(&decoded);
+        }
+    }
+
+    Psbt::deserialize(bytes)
 }
 
 #[frb(external)]
@@ -844,5 +873,67 @@ mod test {
             "the fee is knowable but the signed size is not: we cannot weigh a witness for an \
              input that is not ours. `is_some()` here is what let an inflated rate stand."
         );
+    }
+
+    /// A real PSBT produced by Bitcoin Core's `walletcreatefundedpsbt`.
+    const CORE_SELFSEND_PSBT: &[u8] =
+        include_bytes!("../../../../frostsnap_coordinator/tests/fixtures/core_selfsend.psbt");
+
+    fn wrap_at(column: usize, encoded: &str) -> String {
+        encoded
+            .as_bytes()
+            .chunks(column)
+            .map(|chunk| core::str::from_utf8(chunk).unwrap())
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    #[test]
+    fn parse_imported_psbt_accepts_binary_psbt() {
+        assert!(parse_imported_psbt(CORE_SELFSEND_PSBT).is_ok());
+    }
+
+    #[test]
+    fn parse_imported_psbt_accepts_base64_psbt() {
+        let encoded = BASE64_STANDARD.encode(CORE_SELFSEND_PSBT);
+        let parsed = parse_imported_psbt(encoded.as_bytes()).expect("base64 form parses");
+        let binary = parse_imported_psbt(CORE_SELFSEND_PSBT).unwrap();
+        assert_eq!(
+            parsed.unsigned_tx.compute_txid(),
+            binary.unsigned_tx.compute_txid(),
+            "the same PSBT, whichever encoding it arrived in"
+        );
+    }
+
+    /// `base64 tx.psbt` wraps at 76 columns and `openssl base64` at 64; the standard
+    /// decoder rejects the embedded newlines, so they must be stripped first.
+    #[test]
+    fn parse_imported_psbt_accepts_line_wrapped_base64() {
+        let encoded = BASE64_STANDARD.encode(CORE_SELFSEND_PSBT);
+        for column in [64, 76] {
+            let wrapped = wrap_at(column, &encoded);
+            assert!(
+                parse_imported_psbt(wrapped.as_bytes()).is_ok(),
+                "base64 wrapped at {column} columns parses"
+            );
+        }
+    }
+
+    /// A file saved by Notepad: a leading UTF-8 BOM and CRLF line endings.
+    #[test]
+    fn parse_imported_psbt_accepts_a_notepad_saved_file() {
+        let encoded = BASE64_STANDARD.encode(CORE_SELFSEND_PSBT);
+        let notepad = format!(
+            "\u{FEFF}{}\r\n",
+            wrap_at(76, &encoded).replace('\n', "\r\n")
+        );
+        assert!(parse_imported_psbt(notepad.as_bytes()).is_ok());
+    }
+
+    /// A wrong pick in the file picker must fail on a magic-byte compare, not decode.
+    #[test]
+    fn parse_imported_psbt_rejects_a_file_that_is_not_a_psbt() {
+        assert!(parse_imported_psbt(b"not a PSBT").is_err());
+        assert!(parse_imported_psbt(&[0xFFu8; 1024]).is_err());
     }
 }
