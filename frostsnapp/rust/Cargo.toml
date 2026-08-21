@@ -31,10 +31,17 @@ hex = "0.4"
 frostsnap_secure_boot.workspace = true
 
 [dependencies.flutter_rust_bridge]
-version = "=2.12.0"
+version = "=2.11.1"
 default-features = false
 # explicit features since we don't want the `log` feature
-features = ["anyhow", "dart-opaque", "portable-atomic", "rust-async", "thread-pool", "user-utils"]
+features = [
+    "anyhow",
+    "dart-opaque",
+    "portable-atomic",
+    "rust-async",
+    "thread-pool",
+    "user-utils",
+]
 
 [target.'cfg(target_os = "android")'.dependencies]
 tracing-logcat = "0.1"

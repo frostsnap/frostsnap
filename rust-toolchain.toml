@@ -1,4 +1,4 @@
 [toolchain]
 channel = "1.88.0"
-components = ["rust-src", "rustfmt", "clippy", "rust-analyzer"]
+components = ["rust-src", "rustfmt", "clippy"]
 targets = ["riscv32imc-unknown-none-elf"]
