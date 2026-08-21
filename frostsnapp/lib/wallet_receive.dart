@@ -188,14 +188,16 @@ class ReceivePage extends StatefulWidget {
   final ScrollController? scrollController;
   final Wallet wallet;
   final Stream<TxState> txStream;
-  final int? derivationIndex;
+
+  /// The address to open on, or the next receive address when null.
+  final AddressInfo? address;
 
   const ReceivePage({
     super.key,
     this.scrollController,
     required this.wallet,
     required this.txStream,
-    this.derivationIndex,
+    this.address,
   });
 
   @override
@@ -215,6 +217,8 @@ class _ReceiverPageState extends State<ReceivePage> {
   Timer? _copyRevertTimer;
   ReceivePageFocus get focus => _focus;
   set focus(ReceivePageFocus v) {
+    // The device only ever derives the receive keychain from the index we send.
+    if (v == ReceivePageFocus.verify && isChange) v = ReceivePageFocus.awaitTx;
     if (v == _focus || _address == null) return;
     if (v == ReceivePageFocus.verify) {
       _verifyStreamSub?.cancel();
@@ -287,6 +291,7 @@ class _ReceiverPageState extends State<ReceivePage> {
     );
   }
 
+  bool get isChange => _address?.external == false;
   bool get isRevealed => _address?.revealed ?? false;
   bool get isUsed => _address?.used ?? false;
 
@@ -317,13 +322,13 @@ class _ReceiverPageState extends State<ReceivePage> {
   void initState() {
     super.initState();
 
-    final startIndex = widget.derivationIndex ?? wallet.nextAddress().index;
-    updateToIndex(startIndex);
+    _address = widget.address ?? wallet.nextAddress();
 
     txStreamSub = widget.txStream.listen((txState) {
       if (context.mounted) {
         AddressInfo? addr;
-        final index = _address?.index;
+        // `getAddressInfo` is receive-only, so it would swap in the wrong address.
+        final index = isChange ? null : _address?.index;
         if (index != null) {
           addr = wallet.getAddressInfo(index);
         }
@@ -383,11 +388,11 @@ class _ReceiverPageState extends State<ReceivePage> {
       contentPadding: tilePadding.copyWith(right: 8),
       title: Text('Share Address'),
       trailing: TextButton.icon(
-        onPressed: _address == null
+        onPressed: _address == null || isChange
             ? null
             : () => openAddressPicker(context, _address!),
         label: Text(
-          'Address #${_address?.index}',
+          '${isChange ? 'Change' : 'Address'} #${_address?.index}',
           style: monospaceTextStyle.copyWith(
             decoration: isUsed ? TextDecoration.lineThrough : null,
             decorationThickness: isUsed ? 3.0 : null,
@@ -496,6 +501,7 @@ class _ReceiverPageState extends State<ReceivePage> {
   }
 
   Widget buildVerifyCard(BuildContext context) {
+    if (isChange) return const SizedBox.shrink();
     final isFocused = focus == ReceivePageFocus.verify;
 
     final theme = Theme.of(context);
@@ -667,6 +673,8 @@ class _ReceiverPageState extends State<ReceivePage> {
   }
 
   void markAddressShared(BuildContext context, AddressInfo address) async {
+    // Only receive addresses are handed out.
+    if (isChange) return;
     final walletCtx = WalletContext.of(context)!;
     await walletCtx.wallet.markAddressShared(address.index);
     updateToIndex(address.index);

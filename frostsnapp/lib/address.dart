@@ -60,22 +60,27 @@ class _CheckAddressPageState extends State<CheckAddressPage> {
       const SizedBox(height: 8),
     ];
 
-    if (result.address != null) {
-      children.addAll([
+    final found = result.address;
+    if (found != null) {
+      children.add(
         Text(
-          "This address belongs to us at ${result.address?.derivationPath ?? ""}",
+          "This is your "
+          "${found.external ? 'receive' : 'change'} address #${found.index}, "
+          "at ${found.derivationPath}",
         ),
+      );
+      children.addAll([
         const SizedBox(height: 16),
         FilledButton.tonal(
           onPressed: () => showBottomSheetOrDialog(
             context,
-            title: Text('Receive'),
+            title: Text(found.external ? 'Receive' : 'Change'),
             builder: (context, scrollController) => walletCtx.wrap(
               ReceivePage(
                 wallet: walletCtx.wallet,
                 txStream: walletCtx.txStream,
                 scrollController: scrollController,
-                derivationIndex: result.address?.index,
+                address: found,
               ),
             ),
           ),

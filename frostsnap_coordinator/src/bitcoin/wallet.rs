@@ -289,7 +289,7 @@ impl CoordSuperWallet {
         AddressInfo {
             index: path.index.to_u32(),
             address: bitcoin::Address::from_script(&spk, self.network).expect("has address form"),
-            external: true,
+            external: path.account_keychain == BitcoinAccountKeychain::external(),
             used,
             revealed,
             derivation_path: path.path_segments_from_bitcoin_appkey().collect(),
