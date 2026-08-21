@@ -265,9 +265,9 @@ impl Transaction {
         Some(inputs.saturating_sub(tx.output.iter().map(|o| o.value.to_sat()).sum()))
     }
 
-    /// Computes the sum of all inputs, or only those whose previous output script pubkey is in
-    /// `filter`, if provided. The result is `None` if any input is missing a previous output.
-    fn _sum_inputs(&self, filter: Option<&HashMap<bitcoin::ScriptBuf, u32>>) -> Option<u64> {
+    /// Computes the total value of inputs whose previous output script pubkey is in `filter`.
+    /// The result is `None` if any input is missing a previous output.
+    fn sum_inputs(&self, filter: &HashMap<bitcoin::ScriptBuf, u32>) -> Option<u64> {
         let prevouts = self
             .inner
             .input
@@ -277,59 +277,20 @@ impl Transaction {
         Some(
             prevouts
                 .into_iter()
-                .filter(|prevout| {
-                    match &filter {
-                        Some(filter) => filter.contains_key(prevout.script_pubkey.as_script()),
-                        // No filter.
-                        None => true,
-                    }
-                })
+                .filter(|prevout| filter.contains_key(prevout.script_pubkey.as_script()))
                 .map(|prevout| prevout.value.to_sat())
                 .sum(),
         )
     }
 
-    /// Computes the sum of all outputs, or only those whose script pubkey is in `filter`, if
-    /// provided.
-    fn _sum_outputs(&self, filter: Option<&HashMap<bitcoin::ScriptBuf, u32>>) -> u64 {
+    /// Computes the total value of outputs whose script pubkey is in `filter`.
+    fn sum_outputs(&self, filter: &HashMap<bitcoin::ScriptBuf, u32>) -> u64 {
         self.inner
             .output
             .iter()
-            .filter(|txout| {
-                match &filter {
-                    Some(filter) => filter.contains_key(txout.script_pubkey.as_script()),
-                    // No filter.
-                    None => true,
-                }
-            })
+            .filter(|txout| filter.contains_key(txout.script_pubkey.as_script()))
             .map(|txout| txout.value.to_sat())
             .sum()
-    }
-
-    /// Computes the total value of all inputs. Returns `None` if any input is missing a previous
-    /// output.
-    #[frb(sync, type_64bit_int)]
-    pub fn sum_inputs(&self) -> Option<u64> {
-        self._sum_inputs(None)
-    }
-
-    /// Computes the sum of all outputs.
-    #[frb(sync, type_64bit_int)]
-    pub fn sum_outputs(&self) -> u64 {
-        self._sum_outputs(None)
-    }
-
-    /// Computes the total value of inputs we own. Returns `None` if any owned input is missing a
-    /// previous output.
-    #[frb(sync, type_64bit_int)]
-    pub fn sum_owned_inputs(&self) -> Option<u64> {
-        self._sum_inputs(Some(&self.is_mine))
-    }
-
-    /// Computes the total value of outputs we own.
-    #[frb(sync, type_64bit_int)]
-    pub fn sum_owned_outputs(&self) -> u64 {
-        self._sum_outputs(Some(&self.is_mine))
     }
 
     /// Computes the total value of inputs that spend a previous output with the given `spk`.
@@ -338,14 +299,14 @@ impl Transaction {
     #[frb(sync, type_64bit_int)]
     pub fn sum_inputs_spending_spk(&self, spk: &bitcoin::ScriptBuf) -> Option<u64> {
         let filter = HashMap::from([(spk.as_script().to_owned(), 0)]);
-        self._sum_inputs(Some(&filter))
+        self.sum_inputs(&filter)
     }
 
     /// Computes the total value of outputs that send to the given script pubkey.
     #[frb(sync, type_64bit_int)]
     pub fn sum_outputs_to_spk(&self, spk: &bitcoin::ScriptBuf) -> u64 {
         let filter = HashMap::from([(spk.as_script().to_owned(), 0)]);
-        self._sum_outputs(Some(&filter))
+        self.sum_outputs(&filter)
     }
 
     /// Computes the net change in our owned balance: owned outputs minus owned inputs.
@@ -354,11 +315,11 @@ impl Transaction {
     #[frb(sync, type_64bit_int)]
     pub fn balance_delta(&self) -> Option<i64> {
         let owned_inputs_sum: i64 = self
-            ._sum_inputs(Some(&self.is_mine))?
+            .sum_inputs(&self.is_mine)?
             .try_into()
             .expect("net spent value must convert to i64");
         let owned_outputs_sum: i64 = self
-            ._sum_outputs(Some(&self.is_mine))
+            .sum_outputs(&self.is_mine)
             .try_into()
             .expect("net created value must convert to i64");
         Some(owned_outputs_sum.saturating_sub(owned_inputs_sum))
@@ -443,14 +404,14 @@ impl From<Vec<frostsnap_coordinator::bitcoin::wallet::Transaction>> for TxState 
         let mut untrusted_pending_balance = 0_i64;
 
         for tx in &txs {
-            let filter = Some(&tx.is_mine);
+            let filter = &tx.is_mine;
             let net_spent: i64 = tx
-                ._sum_inputs(filter)
+                .sum_inputs(filter)
                 .unwrap_or(0)
                 .try_into()
                 .expect("spent value must fit into i64");
             let net_created: i64 = tx
-                ._sum_outputs(filter)
+                .sum_outputs(filter)
                 .try_into()
                 .expect("created value must fit into i64");
             if net_spent == 0 && tx.confirmation_time.is_none() {
@@ -895,7 +856,7 @@ mod test {
     }
 
     /// The old `details()` looked prevouts up in the wallet's graph, which does not contain a
-    /// PSBT's foreign inputs. `_sum_inputs` returns `None` if any is missing, so fee and
+    /// PSBT's foreign inputs. `fee_from` returns `None` if any is missing, so fee and
     /// feerate disappeared from the review screen for exactly those transactions.
     #[test]
     fn fee_survives_an_input_the_wallet_has_never_seen() {
