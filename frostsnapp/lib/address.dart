@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:frostsnap/contexts.dart';
+import 'package:frostsnap/src/rust/api/bitcoin.dart';
 import 'package:frostsnap/src/rust/api/super_wallet.dart';
 import 'package:frostsnap/theme.dart';
 import 'package:frostsnap/wallet_receive.dart';
@@ -16,17 +17,33 @@ class _CheckAddressPageState extends State<CheckAddressPage> {
   Future<SearchResult>? searchFuture;
   int currentDepth = 0;
   int searchSize = 100;
+  bool _isValidAddress = false;
 
   @override
   void initState() {
     super.initState();
     textInputController = TextEditingController();
+    textInputController.addListener(_onTextChanged);
   }
 
   @override
   void dispose() {
     textInputController.dispose();
     super.dispose();
+  }
+
+  // Rebuilds on every change rather than on validity transitions: the error text
+  // reads both the field's emptiness and its validity, and `_isValidAddress` is
+  // false for both, so a validity-only trigger misses empty<->invalid entirely.
+  void _onTextChanged() {
+    final walletCtx = WalletContext.of(context);
+    final text = textInputController.text.trim();
+    setState(() {
+      _isValidAddress =
+          text.isNotEmpty &&
+          walletCtx != null &&
+          Address.fromString(s: text, network: walletCtx.network) != null;
+    });
   }
 
   Future<SearchResult> searchAddress() async {
@@ -48,8 +65,8 @@ class _CheckAddressPageState extends State<CheckAddressPage> {
   }
 
   Widget _buildSearchResults(SearchResult? result) {
-    final walletCtx = WalletContext.of(context)!;
     if (result == null) return const SizedBox.shrink();
+    final walletCtx = WalletContext.of(context)!;
 
     final children = <Widget>[
       Text(
@@ -132,18 +149,26 @@ class _CheckAddressPageState extends State<CheckAddressPage> {
               controller: textInputController,
               minLines: 2,
               maxLines: 6,
-              decoration: const InputDecoration(counterText: ''),
+              decoration: InputDecoration(
+                counterText: '',
+                errorText:
+                    textInputController.text.isNotEmpty && !_isValidAddress
+                    ? 'Invalid address for this network'
+                    : null,
+              ),
             ),
           ),
           const SizedBox(height: 32),
           FilledButton(
-            onPressed: () {
-              currentDepth = 0;
-              searchSize = 100;
-              setState(() {
-                searchFuture = searchAddress();
-              });
-            },
+            onPressed: _isValidAddress
+                ? () {
+                    currentDepth = 0;
+                    searchSize = 100;
+                    setState(() {
+                      searchFuture = searchAddress();
+                    });
+                  }
+                : null,
             child: const Text('Look for address'),
           ),
           const SizedBox(height: 16),
