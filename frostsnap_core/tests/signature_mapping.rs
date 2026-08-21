@@ -10,7 +10,6 @@ use frostsnap_core::{
     tweak::{BitcoinBip32Path, NormalIndex},
     MasterAppkey,
 };
-use std::collections::BTreeMap;
 
 fn idx(n: u32) -> NormalIndex {
     NormalIndex::new(n).expect("test index is in range")
@@ -410,10 +409,13 @@ fn another_keys_scripts_become_foreign() {
         -100_000,
         "our balance moves by our own input alone; their side is not ours to count"
     );
+    // Both surfaces read `foreign_recipients` now — the device through `user_prompt`, the app
+    // through `effect`. This used to record them disagreeing, 150_000 gross against 50_000
+    // net, which meant one address showed a different number on each screen.
     assert_eq!(
-        mine.foreign_net_values(),
-        BTreeMap::from([(their_spk.spk(), 50_000)]),
-        "netted against what they spend, where foreign_recipients reports the gross 150_000"
+        mine.foreign_recipients().collect::<Vec<_>>(),
+        vec![(their_spk.spk().as_script(), 150_000)],
+        "the output's own value, which is what both screens now show"
     );
 
     // The other direction is the same story with the keys swapped.
@@ -427,11 +429,6 @@ fn another_keys_scripts_become_foreign() {
     );
     assert_eq!(theirs.foreign_recipients().count(), 0);
     assert_eq!(theirs.our_net_value(), 50_000);
-    assert_eq!(
-        theirs.foreign_net_values(),
-        BTreeMap::from([(our_spk.spk(), -100_000)]),
-        "we are the foreign party from their side, and we only spend"
-    );
 
     // Nothing was mutated: the original still knows who owns what. It cannot be *asked*
     // whose they are without naming a key, which is the point, so read the owners directly.

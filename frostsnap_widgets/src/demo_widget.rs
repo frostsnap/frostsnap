@@ -465,8 +465,9 @@ macro_rules! demo_widget {
                     .unwrap()
                     .assume_checked();
 
+                use frostsnap_core::bitcoin_transaction::PromptDestination;
                 let recipient = |address: bitcoin::Address, sats: u64| PromptRecipient {
-                    address,
+                    destination: PromptDestination::Address(address),
                     amount: bitcoin::Amount::from_sat(sats),
                     owned: None,
                 };
@@ -480,7 +481,7 @@ macro_rules! demo_widget {
                         // Taproot: an output the wallet derives is always taproot, so a
                         // non-taproot "to self" is a state the device can never be shown.
                         PromptRecipient {
-                            address: p2tr_address,
+                            destination: PromptDestination::Address(p2tr_address),
                             amount: bitcoin::Amount::from_sat(150_000),
                             owned: Some(frostsnap_core::tweak::BitcoinBip32Path::internal(
                                 frostsnap_core::tweak::NormalIndex::new(3).unwrap(),

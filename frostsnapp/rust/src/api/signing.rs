@@ -1,6 +1,6 @@
 use super::super_wallet::SuperWallet;
 use super::{
-    bitcoin::{BitcoinNetwork, Psbt, RTransaction, Transaction},
+    bitcoin::{Psbt, RTransaction, Transaction, TxOutInfo},
     coordinator::Coordinator,
 };
 use crate::{frb_generated::StreamSink, sink_wrap::SinkWrap};
@@ -195,32 +195,26 @@ impl UnsignedTx {
     /// Takes no key: which key this is about is a property of the transaction, not of the
     /// question, and a parameter would let a caller ask about one it is not for.
     #[frb(sync)]
-    pub fn effect(&self, network: BitcoinNetwork) -> Result<EffectOfTx> {
+    /// Takes no network: an address is a rendering, and rendering belongs to whoever displays.
+    pub fn effect(&self) -> Result<EffectOfTx> {
         let scoped = self.scoped();
         let fee = self
             .template_tx
             .fee()
             .ok_or(anyhow!("invalid transaction"))?;
 
-        let foreign_receiving_addresses = scoped
-            .foreign_net_values()
+        let foreign_outputs = self
+            .details()
+            .recipients()
             .into_iter()
-            .filter(|(_, value)| *value > 0)
-            .map(|(spk, value)| {
-                (
-                    bitcoin::Address::from_script(spk.as_script(), network)
-                        .expect("will have address form")
-                        .to_string(),
-                    value as u64,
-                )
-            })
+            .filter(|output| !output.is_mine)
             .collect();
 
         Ok(EffectOfTx {
             net_value: scoped.our_net_value(),
             fee,
             feerate: scoped.feerate(),
-            foreign_receiving_addresses,
+            foreign_outputs,
         })
     }
 }
@@ -238,8 +232,8 @@ impl SignedTx {
     }
 
     #[frb(sync)]
-    pub fn effect(&self, network: BitcoinNetwork) -> Result<EffectOfTx> {
-        self.unsigned_tx.effect(network)
+    pub fn effect(&self) -> Result<EffectOfTx> {
+        self.unsigned_tx.effect()
     }
 }
 
@@ -499,5 +493,8 @@ pub struct EffectOfTx {
     pub net_value: i64,
     pub fee: u64,
     pub feerate: Option<f64>,
-    pub foreign_receiving_addresses: Vec<(String, u64)>,
+    /// One entry per output that is not ours, gross. `TxOutInfo::address` already answers
+    /// `Option`, so a script with no address form is a row the caller renders rather than a
+    /// panic — and one entry per output means two payments to one address stay two rows.
+    pub foreign_outputs: Vec<TxOutInfo>,
 }
