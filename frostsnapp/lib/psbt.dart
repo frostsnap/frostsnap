@@ -79,10 +79,7 @@ class LoadPsbtPageState extends State<LoadPsbtPage> {
     }
 
     final txDetails = TxDetailsModel(
-      tx: unsignedTx.details(
-        superWallet: wallet.superWallet,
-        masterAppkey: wallet.masterAppkey,
-      ),
+      tx: unsignedTx.details(),
       chainTipHeight: wallet.superWallet.height(),
       now: DateTime.now(),
     );
@@ -98,7 +95,7 @@ class LoadPsbtPageState extends State<LoadPsbtPage> {
             txDetails: txDetails,
             psbtMan: psbtMan,
             psbt: psbt,
-            signingParams: TxSigningParams.start(
+            signingParams: StartSigning(
               accessStructureRef: wallet
                   .frostKey()!
                   .accessStructures()[0]
@@ -493,10 +490,7 @@ Future<bool> showBroadcastConfirmDialog(
     context: context,
     barrierDismissible: false,
     builder: (dialogContext) {
-      final effect = tx.effect(
-        masterAppkey: masterAppkey,
-        network: superWallet.network,
-      );
+      final effect = tx.effect(network: superWallet.network);
       final effectWidget = EffectTable(effect: effect);
       return AlertDialog(
         title: Text("Broadcast?"),

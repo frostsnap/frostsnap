@@ -234,10 +234,7 @@ class _ConsolidatePageState extends State<ConsolidatePage> {
     }
 
     final access = walletCtx.wallet.frostKey()!.accessStructures()[0];
-    final tx = unsignedTx.details(
-      superWallet: walletCtx.superWallet,
-      masterAppkey: walletCtx.masterAppkey,
-    );
+    final tx = unsignedTx.details();
     final txDetails = TxDetailsModel(
       tx: tx,
       chainTipHeight: walletCtx.wallet.superWallet.height(),
@@ -254,7 +251,7 @@ class _ConsolidatePageState extends State<ConsolidatePage> {
           txStates: walletCtx.txStream,
           txDetails: txDetails,
           psbtMan: fsCtx.psbtManager,
-          signingParams: TxSigningParams.start(
+          signingParams: StartSigning(
             accessStructureRef: access.accessStructureRef(),
             unsignedTx: unsignedTx,
             devices: state!.selectedSigners().toList(),

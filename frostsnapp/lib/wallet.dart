@@ -411,8 +411,9 @@ class _TxListState extends State<TxList> {
                             txStates: walletCtx.txStream,
                             txDetails: txDetails,
                             psbtMan: fsCtx.psbtManager,
-                            signingParams: TxSigningParams.restore(
+                            signingParams: RestoreSigning.of(
                               sessionId: signingState.sessionId,
+                              masterAppkey: walletCtx.masterAppkey,
                             ),
                           ),
                         ),
@@ -425,15 +426,31 @@ class _TxListState extends State<TxList> {
                       onTap: () => showBottomSheetOrDialog(
                         context,
                         title: Text('Transaction Details'),
-                        builder: (context, scrollController) => walletCtx.wrap(
-                          TxDetailsPage.needsBroadcast(
-                            scrollController: scrollController,
-                            txStates: walletCtx.txStream,
-                            txDetails: txDetails,
-                            finishedSigningSessionId: unbroadcastedTx.sessionId,
-                            psbtMan: fsCtx.psbtManager,
-                          ),
-                        ),
+                        builder: (context, scrollController) {
+                          // Null only if the session was forgotten between listing this
+                          // tile and tapping it; then there is nothing to broadcast and
+                          // the plain view is the honest screen.
+                          final params = SigningFinished.of(
+                            sessionId: unbroadcastedTx.sessionId,
+                            masterAppkey: walletCtx.masterAppkey,
+                          );
+                          return walletCtx.wrap(
+                            params == null
+                                ? TxDetailsPage(
+                                    scrollController: scrollController,
+                                    txStates: walletCtx.txStream,
+                                    txDetails: txDetails,
+                                    psbtMan: fsCtx.psbtManager,
+                                  )
+                                : TxDetailsPage.needsBroadcast(
+                                    scrollController: scrollController,
+                                    txStates: walletCtx.txStream,
+                                    txDetails: txDetails,
+                                    signingParams: params,
+                                    psbtMan: fsCtx.psbtManager,
+                                  ),
+                          );
+                        },
                       ),
                       txDetails: txDetails,
                     );
@@ -855,8 +872,9 @@ class WalletBottomBar extends StatelessWidget {
             txStates: walletCtx.txStream,
             txDetails: txDetails,
             psbtMan: fsCtx.psbtManager,
-            signingParams: TxSigningParams.restore(
+            signingParams: RestoreSigning.of(
               sessionId: session.state().sessionId,
+              masterAppkey: walletCtx.masterAppkey,
             ),
           ),
         ),
@@ -865,15 +883,28 @@ class WalletBottomBar extends StatelessWidget {
       await showBottomSheetOrDialog(
         context,
         title: Text('Transaction Details'),
-        builder: (context, scrollController) => walletCtx.wrap(
-          TxDetailsPage.needsBroadcast(
-            scrollController: scrollController,
-            txStates: walletCtx.txStream,
-            txDetails: txDetails,
-            finishedSigningSessionId: unbroadcastedTx.sessionId,
-            psbtMan: fsCtx.psbtManager,
-          ),
-        ),
+        builder: (context, scrollController) {
+          final params = SigningFinished.of(
+            sessionId: unbroadcastedTx.sessionId,
+            masterAppkey: walletCtx.masterAppkey,
+          );
+          return walletCtx.wrap(
+            params == null
+                ? TxDetailsPage(
+                    scrollController: scrollController,
+                    txStates: walletCtx.txStream,
+                    txDetails: txDetails,
+                    psbtMan: fsCtx.psbtManager,
+                  )
+                : TxDetailsPage.needsBroadcast(
+                    scrollController: scrollController,
+                    txStates: walletCtx.txStream,
+                    txDetails: txDetails,
+                    signingParams: params,
+                    psbtMan: fsCtx.psbtManager,
+                  ),
+          );
+        },
       );
     }
   }

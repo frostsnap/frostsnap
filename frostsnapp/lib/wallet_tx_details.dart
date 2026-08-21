@@ -16,6 +16,7 @@ import 'package:frostsnap/psbt.dart';
 import 'package:frostsnap/snackbar.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/bitcoin.dart';
+import 'package:frostsnap/src/rust/lib.dart';
 import 'package:frostsnap/src/rust/api/device_list.dart';
 import 'package:frostsnap/src/rust/api/psbt_manager.dart';
 import 'package:frostsnap/src/rust/api/signing.dart';
@@ -27,60 +28,127 @@ import 'package:url_launcher/url_launcher.dart';
 
 const BROADCAST_TIMEOUT = Duration(seconds: 3);
 
-enum SigningMode { start, restore }
+/// What a signing screen needs, in the two shapes it comes in.
+///
+/// Both carry the transaction being signed, non-null. A mode enum beside nullable fields put
+/// the correlation — start has a transaction, restore has a session — nowhere the compiler
+/// could see it, and `!` was how each reader agreed not to check.
+sealed class TxSigningParams {
+  final UnsignedTx unsignedTx;
 
-class TxSigningParams {
-  final SigningMode mode;
+  const TxSigningParams({required this.unsignedTx});
+}
+
+/// The two states with a signing session still to run. `SigningFinished` has none, which is
+/// why `accessStructureRef` and `devices` live here and not on the base.
+sealed class TxNeedsSignatures extends TxSigningParams {
   final AccessStructureRef accessStructureRef;
   final List<DeviceId> devices;
-  final UnsignedTx? unsignedTx;
-  final SignSessionId? sessionId;
 
-  TxSigningParams._({
-    required this.mode,
+  const TxNeedsSignatures({
     required this.accessStructureRef,
     required this.devices,
-    this.unsignedTx,
-    this.sessionId,
+    required super.unsignedTx,
   });
 
-  factory TxSigningParams.start({
-    required AccessStructureRef accessStructureRef,
-    required UnsignedTx unsignedTx,
-    required List<DeviceId> devices,
-  }) => TxSigningParams._(
-    mode: SigningMode.start,
-    accessStructureRef: accessStructureRef,
-    devices: devices,
-    unsignedTx: unsignedTx,
-  );
+  Stream<SigningState> startSigning();
+}
 
-  /// Hydrates devices + access structure from the active session synchronously
-  /// so callers don't have to wait on a stream to know who the signers are.
-  /// Returns `null` if the session has ended between the caller's null-check
-  /// and this call (e.g. device event on the tap-to-build gap).
-  static TxSigningParams? restore({required SignSessionId sessionId}) {
+/// Signing a transaction the caller has just built.
+class StartSigning extends TxNeedsSignatures {
+  const StartSigning({
+    required super.accessStructureRef,
+    required super.devices,
+    required super.unsignedTx,
+  });
+
+  @override
+  Stream<SigningState> startSigning() => coord.startSigningTx(
+    accessStructureRef: accessStructureRef,
+    unsignedTx: unsignedTx,
+    devices: devices,
+  );
+}
+
+/// Reopening a session already in flight.
+class RestoreSigning extends TxNeedsSignatures {
+  final SignSessionId sessionId;
+
+  const RestoreSigning({
+    required super.accessStructureRef,
+    required super.devices,
+    required super.unsignedTx,
+    required this.sessionId,
+  });
+
+  /// Recovers everything from the session — devices, access structure, and the transaction
+  /// being signed — so no caller has to carry them alongside the id.
+  ///
+  /// `null` when the session has ended between the caller's check and this call, or is not
+  /// signing a bitcoin transaction. Absent data, not a mode.
+  static RestoreSigning? of({
+    required SignSessionId sessionId,
+    required MasterAppkey masterAppkey,
+  }) {
     final session = coord.activeSigningSession(sessionId: sessionId);
     if (session == null) return null;
-    return TxSigningParams._(
-      mode: SigningMode.restore,
+    final unsignedTx = coord.unsignedTxForSession(
+      sessionId: sessionId,
+      masterAppkey: masterAppkey,
+    );
+    if (unsignedTx == null) return null;
+    return RestoreSigning(
       accessStructureRef: session.accessStructureRef(),
       devices: session.state().neededFrom,
+      unsignedTx: unsignedTx,
       sessionId: sessionId,
     );
   }
 
-  Stream<SigningState> startSigning() {
-    switch (mode) {
-      case SigningMode.start:
-        return coord.startSigningTx(
-          accessStructureRef: accessStructureRef,
-          unsignedTx: unsignedTx!,
-          devices: devices,
-        );
-      case SigningMode.restore:
-        return coord.tryRestoreSigningSession(sessionId: sessionId!);
-    }
+  @override
+  Stream<SigningState> startSigning() =>
+      coord.tryRestoreSigningSession(sessionId: sessionId);
+}
+
+/// Signing is over and these are the signatures it produced.
+///
+/// Named for what happened, not for what may follow: a PSBT we signed only part of is in this
+/// same state, holding signatures and not ours to broadcast. Whether it can go to the network
+/// is `unsignedTx.canBroadcast()`, a property of the transaction rather than of how the screen
+/// was opened.
+///
+/// The signatures are a constructor argument because a screen that offers to broadcast must
+/// have something to broadcast. Reading them off the live signing stream is what made
+/// broadcasting later fail: a reopened session subscribes to nothing, correctly, so that
+/// stream is empty forever while the signatures sit in the coordinator.
+class SigningFinished extends TxSigningParams {
+  final SignSessionId sessionId;
+  final List<EncodedSignature> signatures;
+
+  /// Private so [`of`] is the only way to get one: requiring a *list* is not the same as
+  /// requiring signatures, and an empty one reads as ready-to-broadcast right up until the
+  /// count check refuses it.
+  const SigningFinished._({
+    required super.unsignedTx,
+    required this.sessionId,
+    required this.signatures,
+  });
+
+  /// `null` when the session has been forgotten, or was not signing a bitcoin transaction.
+  static SigningFinished? of({
+    required SignSessionId sessionId,
+    required MasterAppkey masterAppkey,
+  }) {
+    final finished = coord.finishedSigningForSession(
+      sessionId: sessionId,
+      masterAppkey: masterAppkey,
+    );
+    if (finished == null || finished.signatures.isEmpty) return null;
+    return SigningFinished._(
+      unsignedTx: finished.unsignedTx,
+      sessionId: sessionId,
+      signatures: finished.signatures,
+    );
   }
 }
 
@@ -275,17 +343,19 @@ class TxDetailsPage extends StatefulWidget {
     this.psbt,
   });
 
-  const TxDetailsPage.needsBroadcast({
+  /// Signed and waiting to go to the network. Takes the state rather than only its id: this
+  /// is the one screen that can broadcast, and it needs the transaction to do it.
+  TxDetailsPage.needsBroadcast({
     super.key,
     this.scrollController,
     required this.txStates,
     required this.txDetails,
     required this.psbtMan,
-    required SignSessionId this.finishedSigningSessionId,
-  }) : signingParams = null,
+    required SigningFinished this.signingParams,
+  }) : finishedSigningSessionId = signingParams.sessionId,
        psbt = null;
 
-  bool get isSigning => signingParams != null;
+  bool get isSigning => signingParams is TxNeedsSignatures;
 
   @override
   State<TxDetailsPage> createState() => _TxDetailsPageState();
@@ -336,15 +406,24 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
   Future<void> onSigningSessionData(SigningState data) async {
     if (!mounted) return;
 
-    if (widget.signingParams?.mode != SigningMode.start)
-      this.isFirstRun = false;
+    // This only runs on a signing session's stream, so the params are there for the whole
+    // body. Naming them once is what lets everything below read them without asserting.
+    // This only runs on a signing session's stream, so the params are there and are one of
+    // the two states that have one. Naming them once is what lets everything below read them
+    // without asserting.
+    final signingParams = widget.signingParams;
+    if (signingParams is! TxNeedsSignatures) return;
+
+    if (signingParams is! StartSigning) this.isFirstRun = false;
 
     final signatures = data.finishedSignatures;
 
     var psbt = this.psbt;
     if (psbt != null) {
       if (signatures != null) {
-        psbt = txDetails.tx.attachSignaturesToPsbt(
+        // The session that produced the signatures is what knows which input each belongs
+        // to; the transaction on screen is only a view of it.
+        psbt = signingParams.unsignedTx.attachSignaturesToPsbt(
           signatures: signatures,
           psbt: psbt,
         );
@@ -361,7 +440,7 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
         );
       }
 
-      if ((widget.signingParams?.mode == SigningMode.start && isFirstRun) ||
+      if ((widget.signingParams is StartSigning && isFirstRun) ||
           signatures != null) {
         isFirstRun = false;
         widget.psbtMan.insert(ssid: data.sessionId, psbt: psbt);
@@ -382,7 +461,7 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
 
     final encryptionKey = await existingWalletKey(
       context: mounted ? context : null,
-      accessStructureRef: widget.signingParams!.accessStructureRef,
+      accessStructureRef: signingParams.accessStructureRef,
       action: 'sign this transaction',
     );
     if (encryptionKey != null) {
@@ -438,23 +517,29 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
 
     try {
       final signingParams = widget.signingParams;
-      if (signingParams != null) {
-        // `devices` is invariant for both start and restore — for restore we
-        // hydrated it synchronously from the active session. Seed the dialog
-        // controller up front so we never go through the lazy / nullable
-        // pattern mid-stream.
-        actionDialogController = _buildActionDialogController(
-          signingParams.devices,
-        );
-        devicesSub = GlobalStreams.deviceListSubject.listen(onDeviceListData);
-        broadcastDone = false;
-        late final StreamSubscription<SigningState> sub;
-        sub = signingParams.startSigning().listen((state) {
-          // Ensure `onSigningSessionData` is called sequentially.
-          sub.pause();
-          onSigningSessionData(state).whenComplete(sub.resume);
-        });
-        signingSub = sub;
+      switch (signingParams) {
+        case TxNeedsSignatures():
+          // `devices` is invariant for both start and restore — for restore we
+          // hydrated it synchronously from the active session. Seed the dialog
+          // controller up front so we never go through the lazy / nullable
+          // pattern mid-stream.
+          actionDialogController = _buildActionDialogController(
+            signingParams.devices,
+          );
+          devicesSub = GlobalStreams.deviceListSubject.listen(onDeviceListData);
+          broadcastDone = false;
+          late final StreamSubscription<SigningState> sub;
+          sub = signingParams.startSigning().listen((state) {
+            // Ensure `onSigningSessionData` is called sequentially.
+            sub.pause();
+            onSigningSessionData(state).whenComplete(sub.resume);
+          });
+          signingSub = sub;
+        case SigningFinished():
+          // Signing is over; there is no stream to follow, only a transaction to send.
+          broadcastDone = false;
+        case null:
+          break;
       }
     } catch (e) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -549,7 +634,10 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
 
   Widget buildSignaturesNeededColumn(BuildContext context) {
     final theme = Theme.of(context);
-    final asRef = widget.signingParams?.accessStructureRef;
+    final params = widget.signingParams;
+    final asRef = params is TxNeedsSignatures
+        ? params.accessStructureRef
+        : null;
     final accessStruct = asRef != null
         ? coord.getAccessStructure(asRef: asRef)
         : null;
@@ -623,6 +711,22 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
 
   Widget buildBroadcastNeededColumn(BuildContext context) {
     final psbt = this.psbt;
+    // Two ways there is nothing to send, and both hide the button rather than disable it: no
+    // signing state at all — a screen on wallet history has no transaction of its own — or a
+    // PSBT holding inputs that are not ours, whose signatures the template cannot carry, so
+    // ours alone leave a transaction the network rejects.
+    final params = widget.signingParams;
+    final canBroadcast = params != null && params.unsignedTx.canBroadcast();
+    // And one way there is nothing *yet*: signing still running. `signingDone` says only that
+    // no stream is reporting progress, which is also true of a screen that never subscribed —
+    // so ask whether the signatures exist rather than whether a stream is quiet.
+    final haveSignatures = switch (params) {
+      // True by construction: `SigningFinished.of` is the only way to build one and refuses
+      // an empty list, so this does not have to re-check what the type already promises.
+      SigningFinished() => true,
+      TxNeedsSignatures() => signingState?.finishedSignatures != null,
+      null => false,
+    };
 
     final buttonGroup = Row(
       mainAxisSize: MainAxisSize.min,
@@ -635,14 +739,15 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
               child: Text('PSBT'),
             ),
           ),
-        Flexible(
-          child: FilledButton(
-            onPressed: (signingDone && !isBroadcasting)
-                ? () => broadcast(context)
-                : null,
-            child: Text('Broadcast'),
+        if (canBroadcast)
+          Flexible(
+            child: FilledButton(
+              onPressed: (haveSignatures && !isBroadcasting)
+                  ? () => broadcast(context)
+                  : null,
+              child: Text('Broadcast'),
+            ),
           ),
-        ),
       ],
     );
     return Column(
@@ -672,7 +777,7 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
 
   Widget buildSignAndBroadcastCard(BuildContext context) {
     final theme = Theme.of(context);
-    final signingActive = widget.signingParams != null;
+    final signingActive = widget.signingParams is TxNeedsSignatures;
     final signingColumn = Card.filled(
       margin: EdgeInsets.all(0.0),
       color: theme.colorScheme.surfaceContainerHigh,
@@ -769,9 +874,40 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
   broadcast(BuildContext context) async {
     if (mounted) setState(() => isBroadcasting = true);
     final walletCtx = WalletContext.of(context)!;
-    final tx = await txDetails.tx.withSignatures(
-      signatures: signingState?.finishedSignatures ?? [],
-    );
+    // The button is hidden in both these cases, so neither should be reachable — but a hidden
+    // button is a fact about one screen, and this is the call that would put a transaction
+    // the network rejects onto the network.
+    // Where the signatures are depends on how this screen was opened, and there is no
+    // sensible default for not having them — an empty list is not "sign with nothing", it is
+    // "we cannot send this".
+    final signingParams = widget.signingParams;
+    final signatures = switch (signingParams) {
+      SigningFinished(:final signatures) => signatures,
+      TxNeedsSignatures() => signingState?.finishedSignatures,
+      null => null,
+    };
+    if (signingParams == null ||
+        signatures == null ||
+        !signingParams.unsignedTx.canBroadcast()) {
+      if (mounted) {
+        setState(() => isBroadcasting = false);
+        showErrorSnackbar(context, 'Nothing here can be broadcast');
+      }
+      return;
+    }
+    final RTransaction tx;
+    try {
+      tx = await signingParams.unsignedTx.withSignatures(
+        signatures: signatures,
+      );
+    } catch (e) {
+      // Nothing broadcastable was produced, so there is nothing safe to send.
+      if (mounted) {
+        setState(() => isBroadcasting = false);
+        showErrorSnackbar(context, 'Cannot broadcast: $e');
+      }
+      return;
+    }
     var broadcastError = '';
     final broadcasted = await walletCtx.wallet.superWallet
         .broadcastTx(masterAppkey: walletCtx.masterAppkey, tx: tx)
@@ -860,6 +996,7 @@ Widget buildDetailsColumn(
   final walletCtx = WalletContext.of(context)!;
   final theme = Theme.of(context);
   final fee = txDetails.tx.fee();
+  final feerate = txDetails.tx.feerate;
   return Column(
     children: [
       if (txDetails.isSend)
@@ -924,19 +1061,23 @@ Widget buildDetailsColumn(
             mainAxisSize: MainAxisSize.min,
             children: [
               Text('Fee '),
-              Card.filled(
-                color: theme.colorScheme.surfaceContainerHigh,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 6.0,
-                    vertical: 2.0,
-                  ),
-                  child: Text(
-                    '${txDetails.tx.feerate()?.toStringAsFixed(1)} sat/vB',
-                    style: theme.textTheme.labelSmall,
+              // Omitted rather than shown empty: a transaction with an input we cannot
+              // witness has no knowable signed size, and interpolating the null printed
+              // "null sat/vB".
+              if (feerate != null)
+                Card.filled(
+                  color: theme.colorScheme.surfaceContainerHigh,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6.0,
+                      vertical: 2.0,
+                    ),
+                    child: Text(
+                      '${feerate.toStringAsFixed(1)} sat/vB',
+                      style: theme.textTheme.labelSmall,
+                    ),
                   ),
                 ),
-              ),
             ],
           ),
           title: fee == null ? Text('Unknown') : SatoshiText(value: fee),

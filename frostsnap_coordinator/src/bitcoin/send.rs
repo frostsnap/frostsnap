@@ -1007,7 +1007,8 @@ mod test {
         let plan = f.plan(10_000);
         let template = f.wallet.commit_send(&plan, [0]).unwrap();
         let change_index = template
-            .iter_locally_owned_outputs()
+            .as_seen_by(plan.master_appkey)
+            .iter_our_outputs()
             .map(|(_, _, spk)| spk.bip32_path.index.to_u32())
             .next()
             .expect("send has a change output");

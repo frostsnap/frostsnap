@@ -9,13 +9,54 @@ use bitcoin::{
 };
 
 use crate::{
+    message::EncodedSignature,
     tweak::{AppTweak, BitcoinBip32Path, Keychain},
     MasterAppkey,
 };
 
-/// Invalid state free representation of a transaction
+/// Marks a template that has not been narrowed to any one key: the form that travels.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Hash, bincode::Encode, bincode::Decode)]
+pub struct Unscoped;
+
+/// Marks a template narrowed to one key by [`TransactionTemplate::as_seen_by`], where
+/// `Local` can only mean that key.
+///
+/// Deliberately not `bincode::Encode`/`Decode`: a scoped template is a local conclusion, and
+/// making it unserializable means the form that goes over the wire is the general one by
+/// construction rather than by discipline.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+pub struct ScopedTo(pub MasterAppkey);
+
+/// Invalid state free representation of a transaction.
+///
+/// The type parameter is the scope: which key's transaction this is.
+///
+/// An ownership question — which inputs are ours, which recipients are foreign — has no
+/// answer until the template names a key, so those readers exist only on
+/// `TransactionTemplate<ScopedTo>`. [`TransactionTemplate::as_seen_by`] is the only way
+/// across, and it is what firmware's `WireSignTask::check` calls.
+///
+/// ```compile_fail,E0599
+/// # use frostsnap_core::bitcoin_transaction::TransactionTemplate;
+/// let template = TransactionTemplate::new();
+/// // Whose inputs? The unscoped template cannot say, so this does not compile.
+/// template.iter_our_inputs();
+/// ```
+///
+/// ```compile_fail,E0277
+/// # use frostsnap_core::{bitcoin_transaction::TransactionTemplate, MasterAppkey};
+/// # fn key() -> MasterAppkey { unimplemented!() }
+/// let scoped = TransactionTemplate::new().as_seen_by(key());
+/// // A scoped template is a local conclusion and must not go over the wire.
+/// bincode::encode_to_vec(scoped, bincode::config::standard()).unwrap();
+/// ```
+///
+/// There is deliberately no way back either: scoping erases another key's ownership, so a
+/// widened template would carry less than the one it came from. Anything that must send
+/// holds the unscoped form and narrows to read.
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode, Eq, PartialEq, Hash)]
-pub struct TransactionTemplate {
+pub struct TransactionTemplate<S = Unscoped> {
+    scope: S,
     #[bincode(with_serde)]
     version: bitcoin::blockdata::transaction::Version,
     #[bincode(with_serde)]
@@ -24,6 +65,7 @@ pub struct TransactionTemplate {
     outputs: Vec<Output>,
 }
 
+#[derive(Clone, Copy)]
 pub struct PushInput<'a> {
     pub prev_txout: PrevTxOut<'a>,
     pub sequence: bitcoin::Sequence,
@@ -87,92 +129,10 @@ impl Default for TransactionTemplate {
     }
 }
 
-impl TransactionTemplate {
-    pub fn new() -> Self {
-        Self {
-            version: bitcoin::blockdata::transaction::Version::TWO,
-            lock_time: bitcoin::absolute::LockTime::ZERO,
-            inputs: Default::default(),
-            outputs: Default::default(),
-        }
-    }
-
-    pub fn set_version(&mut self, version: bitcoin::blockdata::transaction::Version) {
-        self.version = version;
-    }
-
-    pub fn set_lock_time(&mut self, lock_time: bitcoin::absolute::LockTime) {
-        self.lock_time = lock_time;
-    }
-
+/// Facts that do not depend on whose transaction it is.
+impl<S> TransactionTemplate<S> {
     pub fn txid(&self) -> Txid {
         self.to_rust_bitcoin_tx().compute_txid()
-    }
-
-    pub fn push_foreign_input(&mut self, input: PushInput) {
-        let txout = input.prev_txout.txout();
-
-        self.inputs.push(Input {
-            outpoint: input.prev_txout.outpoint(),
-            owner: SpkOwner::Foreign(txout.script_pubkey.clone()),
-            value: txout.value.to_sat(),
-            sequence: input.sequence,
-        })
-    }
-    pub fn push_owned_input(
-        &mut self,
-        input: PushInput<'_>,
-        owner: LocalSpk,
-    ) -> Result<(), Box<SpkDoesntMatchPathError>> {
-        let txout = input.prev_txout.txout();
-        let expected_spk = owner.spk();
-
-        if txout.script_pubkey != expected_spk {
-            return Err(Box::new(SpkDoesntMatchPathError {
-                got: txout.script_pubkey.clone(),
-                expected: expected_spk,
-                path: owner
-                    .bip32_path
-                    .path_segments_from_bitcoin_appkey()
-                    .collect(),
-                master_appkey: owner.master_appkey,
-            }));
-        }
-
-        self.inputs.push(Input {
-            outpoint: input.prev_txout.outpoint(),
-            owner: SpkOwner::Local(owner),
-            value: txout.value.to_sat(),
-            sequence: input.sequence,
-        });
-        Ok(())
-    }
-
-    pub fn push_imaginary_owned_input(&mut self, owner: LocalSpk, value: bitcoin::Amount) {
-        let txout = TxOut {
-            value,
-            script_pubkey: owner.spk(),
-        };
-        let mut engine = sha256d::Hash::engine();
-        txout.consensus_encode(&mut engine).unwrap();
-        let txid = Txid::from_engine(engine);
-        let outpoint = OutPoint { txid, vout: 0 };
-        self.push_owned_input(PushInput::spend_outpoint(&txout, outpoint), owner)
-            .expect("unreachable");
-    }
-
-    pub fn push_foreign_output(&mut self, txout: TxOut) {
-        self.outputs.push(Output {
-            owner: SpkOwner::Foreign(txout.script_pubkey),
-            value: txout.value.to_sat(),
-        });
-    }
-
-    pub fn push_owned_output(&mut self, value: bitcoin::Amount, owner: LocalSpk) {
-        self.outputs.push(Output {
-            owner: SpkOwner::Local(owner),
-            value: value.to_sat(),
-        });
     }
 
     pub fn to_rust_bitcoin_tx(&self) -> bitcoin::Transaction {
@@ -216,45 +176,141 @@ impl TransactionTemplate {
         })
     }
 
-    pub fn iter_sighashes_of_locally_owned_inputs(
-        &self,
-    ) -> impl Iterator<Item = (LocalSpk, TapSighash)> + '_ {
-        self.inputs
-            .iter()
-            .zip(self.iter_sighash())
-            .filter_map(|(input, sighash)| {
-                let owner = input.owner.local_owner()?.clone();
-                Some((owner, sighash))
-            })
-    }
-
-    pub fn iter_locally_owned_inputs(&self) -> impl Iterator<Item = (usize, &Input, &LocalSpk)> {
-        self.inputs
-            .iter()
-            .enumerate()
-            .filter_map(|(i, input)| Some((i, input, input.owner.local_owner()?)))
-    }
-
-    pub fn iter_locally_owned_outputs(&self) -> impl Iterator<Item = (usize, &Output, &LocalSpk)> {
-        self.outputs
-            .iter()
-            .enumerate()
-            .filter_map(|(i, output)| Some((i, output, output.owner.local_owner()?)))
-    }
-
-    /// Returns true if this transaction has any inputs that need signing by this wallet.
-    pub fn has_any_inputs_to_sign(&self) -> bool {
-        self.inputs
-            .iter()
-            .any(|input| input.owner.local_owner().is_some())
-    }
-
     pub fn fee(&self) -> Option<u64> {
         self.inputs
             .iter()
             .map(|input| input.value)
             .sum::<u64>()
             .checked_sub(self.outputs.iter().map(|output| output.value).sum())
+    }
+}
+
+impl TransactionTemplate<Unscoped> {
+    pub fn new() -> Self {
+        Self {
+            scope: Unscoped,
+            version: bitcoin::blockdata::transaction::Version::TWO,
+            lock_time: bitcoin::absolute::LockTime::ZERO,
+            inputs: Default::default(),
+            outputs: Default::default(),
+        }
+    }
+
+    pub fn set_version(&mut self, version: bitcoin::blockdata::transaction::Version) {
+        self.version = version;
+    }
+
+    pub fn set_lock_time(&mut self, lock_time: bitcoin::absolute::LockTime) {
+        self.lock_time = lock_time;
+    }
+
+    pub fn push_foreign_input(&mut self, input: PushInput) {
+        let txout = input.prev_txout.txout();
+
+        self.inputs.push(Input {
+            outpoint: input.prev_txout.outpoint(),
+            owner: SpkOwner::Foreign(txout.script_pubkey.clone()),
+            value: txout.value.to_sat(),
+            sequence: input.sequence,
+        })
+    }
+    pub fn push_owned_input(
+        &mut self,
+        input: PushInput<'_>,
+        owner: LocalSpk,
+    ) -> Result<(), Box<SpkDoesntMatchPathError>> {
+        let txout = input.prev_txout.txout();
+        owner.check_spk(&txout.script_pubkey)?;
+
+        self.inputs.push(Input {
+            outpoint: input.prev_txout.outpoint(),
+            owner: SpkOwner::Local(owner),
+            value: txout.value.to_sat(),
+            sequence: input.sequence,
+        });
+        Ok(())
+    }
+
+    pub fn push_imaginary_owned_input(&mut self, owner: LocalSpk, value: bitcoin::Amount) {
+        let txout = TxOut {
+            value,
+            script_pubkey: owner.spk(),
+        };
+        let mut engine = sha256d::Hash::engine();
+        txout.consensus_encode(&mut engine).unwrap();
+        let txid = Txid::from_engine(engine);
+        let outpoint = OutPoint { txid, vout: 0 };
+        self.push_owned_input(PushInput::spend_outpoint(&txout, outpoint), owner)
+            .expect("unreachable");
+    }
+
+    pub fn push_foreign_output(&mut self, txout: TxOut) {
+        self.outputs.push(Output {
+            owner: SpkOwner::Foreign(txout.script_pubkey),
+            value: txout.value.to_sat(),
+        });
+    }
+
+    pub fn push_owned_output(&mut self, value: bitcoin::Amount, owner: LocalSpk) {
+        self.outputs.push(Output {
+            owner: SpkOwner::Local(owner),
+            value: value.to_sat(),
+        });
+    }
+
+    /// Claim an existing output as `owner`'s, proving the claim against its spk.
+    ///
+    /// For outputs whose spk came from somewhere other than `owner` — a PSBT, an index
+    /// lookup — where a `LocalSpk` assembled from mismatched parts would otherwise stand.
+    pub fn push_owned_output_checked(
+        &mut self,
+        txout: &TxOut,
+        owner: LocalSpk,
+    ) -> Result<(), Box<SpkDoesntMatchPathError>> {
+        owner.check_spk(&txout.script_pubkey)?;
+
+        self.push_owned_output(txout.value, owner);
+        Ok(())
+    }
+
+    /// This transaction as `master_appkey` sees it: another key's scripts become foreign,
+    /// because they are not ours to sign and its outputs are money leaving.
+    pub fn as_seen_by(&self, master_appkey: MasterAppkey) -> TransactionTemplate<ScopedTo> {
+        let foreign_to_us = |owner: &SpkOwner| match owner {
+            SpkOwner::Local(local) if local.master_appkey != master_appkey => {
+                SpkOwner::Foreign(local.spk())
+            }
+            owner => owner.clone(),
+        };
+
+        TransactionTemplate {
+            scope: ScopedTo(master_appkey),
+            version: self.version,
+            lock_time: self.lock_time,
+            inputs: self
+                .inputs
+                .iter()
+                .map(|input| Input {
+                    owner: foreign_to_us(&input.owner),
+                    ..input.clone()
+                })
+                .collect(),
+            outputs: self
+                .outputs
+                .iter()
+                .map(|output| Output {
+                    owner: foreign_to_us(&output.owner),
+                    value: output.value,
+                })
+                .collect(),
+        }
+    }
+}
+
+/// Answers that only make sense once the template has been narrowed to one key.
+impl TransactionTemplate<ScopedTo> {
+    pub fn master_appkey(&self) -> MasterAppkey {
+        self.scope.0
     }
 
     pub fn feerate(&self) -> Option<f64> {
@@ -272,20 +328,142 @@ impl TransactionTemplate {
         Some(self.fee()? as f64 / vbytes)
     }
 
-    pub fn net_value(&self) -> BTreeMap<RootOwner, i64> {
-        let mut spk_to_value: BTreeMap<RootOwner, i64> = Default::default();
+    pub fn iter_our_input_sighashes(&self) -> impl Iterator<Item = (LocalSpk, TapSighash)> + '_ {
+        self.inputs
+            .iter()
+            .zip(self.iter_sighash())
+            .filter_map(|(input, sighash)| {
+                let owner = input.owner.local_owner()?.clone();
+                Some((owner, sighash))
+            })
+    }
+
+    pub fn iter_our_inputs(&self) -> impl Iterator<Item = (usize, &Input, &LocalSpk)> {
+        self.inputs
+            .iter()
+            .enumerate()
+            .filter_map(|(i, input)| Some((i, input, input.owner.local_owner()?)))
+    }
+
+    /// Every script this key owns in this transaction, on either side, with the path that
+    /// derives it.
+    ///
+    /// The template is the authority on what is ours; asking a wallet index instead answers
+    /// a different question and is bounded by whatever it has derived so far.
+    pub fn our_spks(&self) -> BTreeMap<ScriptBuf, BitcoinBip32Path> {
+        self.iter_our_inputs()
+            .map(|(_, _, owner)| (owner.spk(), owner.bip32_path))
+            .chain(
+                self.iter_our_outputs()
+                    .map(|(_, _, owner)| (owner.spk(), owner.bip32_path)),
+            )
+            .collect()
+    }
+
+    /// Pairs each signature with the index of the input it was produced for.
+    ///
+    /// Signatures arrive in the order [`Self::iter_our_input_sighashes`] produced their
+    /// sighashes, which skips foreign inputs. Their positions are therefore *not* input
+    /// indices, and pairing them positionally against every input silently signs the wrong one.
+    pub fn signatures_by_input_index<'a>(
+        &self,
+        signatures: &'a [EncodedSignature],
+    ) -> Result<Vec<(usize, &'a EncodedSignature)>, SignatureCountMismatch> {
+        let expected = self.iter_our_inputs().count();
+        if signatures.len() != expected {
+            return Err(SignatureCountMismatch {
+                expected,
+                got: signatures.len(),
+            });
+        }
+
+        Ok(self
+            .iter_our_inputs()
+            .map(|(i, _, _)| i)
+            .zip(signatures)
+            .collect())
+    }
+
+    /// The transaction with each signature witnessed onto the input it signs.
+    pub fn to_signed_rust_bitcoin_tx(
+        &self,
+        signatures: &[EncodedSignature],
+    ) -> Result<bitcoin::Transaction, SignatureCountMismatch> {
+        let mut tx = self.to_rust_bitcoin_tx();
+        for (i, signature) in self.signatures_by_input_index(signatures)? {
+            tx.input[i].witness = signature_witness(signature);
+        }
+        Ok(tx)
+    }
+
+    pub fn iter_our_outputs(&self) -> impl Iterator<Item = (usize, &Output, &LocalSpk)> {
+        self.outputs
+            .iter()
+            .enumerate()
+            .filter_map(|(i, output)| Some((i, output, output.owner.local_owner()?)))
+    }
+
+    /// Returns true if this transaction has any inputs that need signing by this wallet.
+    /// Whether signing this ourselves produces a transaction anyone can broadcast.
+    ///
+    /// Distinct from [`Self::has_any_inputs_to_sign`], which asks whether we can *contribute*.
+    /// A PSBT can leave us inputs we do not own, and this template has nowhere to put the
+    /// signatures for those — `to_rust_bitcoin_tx` builds every input witnessless — so
+    /// witnessing ours still leaves a transaction a node will reject. Whoever else must sign
+    /// finishes it, from the PSBT.
+    pub fn owns_every_input(&self) -> bool {
+        self.inputs
+            .iter()
+            .all(|input| input.owner().local_owner().is_some())
+    }
+
+    pub fn has_any_inputs_to_sign(&self) -> bool {
+        self.inputs
+            .iter()
+            .any(|input| input.owner.local_owner().is_some())
+    }
+
+    /// What this transaction does to the balance of the key it is scoped to.
+    pub fn our_net_value(&self) -> i64 {
+        let ours = |owner: &SpkOwner, value: u64| match owner {
+            SpkOwner::Local(_) => i64::try_from(value).expect("value ridiculously large"),
+            SpkOwner::Foreign(_) => 0,
+        };
+
+        self.outputs
+            .iter()
+            .map(|output| ours(&output.owner, output.value))
+            .sum::<i64>()
+            - self
+                .inputs
+                .iter()
+                .map(|input| ours(&input.owner, input.value))
+                .sum::<i64>()
+    }
+
+    /// Net value flowing to each script that is not ours, negative where a foreign party
+    /// spends into this transaction.
+    ///
+    /// Distinct from [`Self::foreign_recipients`], which reports what an output pays
+    /// regardless of what its owner also spends.
+    pub fn foreign_net_values(&self) -> BTreeMap<ScriptBuf, i64> {
+        let mut net: BTreeMap<ScriptBuf, i64> = Default::default();
 
         for input in &self.inputs {
-            let value = spk_to_value.entry(input.owner.root_owner()).or_default();
-            *value -= i64::try_from(input.value).expect("input ridiciously large");
+            if let SpkOwner::Foreign(spk) = &input.owner {
+                *net.entry(spk.clone()).or_default() -=
+                    i64::try_from(input.value).expect("value ridiculously large");
+            }
         }
 
         for output in &self.outputs {
-            let value = spk_to_value.entry(output.owner.root_owner()).or_default();
-            *value += i64::try_from(output.value).expect("input ridiciously large");
+            if let SpkOwner::Foreign(spk) = &output.owner {
+                *net.entry(spk.clone()).or_default() +=
+                    i64::try_from(output.value).expect("value ridiculously large");
+            }
         }
 
-        spk_to_value
+        net
     }
 
     pub fn foreign_recipients(&self) -> impl Iterator<Item = (&Script, u64)> {
@@ -310,7 +488,7 @@ impl TransactionTemplate {
             .iter()
             .any(|output| matches!(output.owner, SpkOwner::Foreign(_)));
         let internal_count = self
-            .iter_locally_owned_outputs()
+            .iter_our_outputs()
             .filter(|(_, _, local)| {
                 local.bip32_path.account_keychain.keychain == Keychain::Internal
             })
@@ -406,10 +584,35 @@ impl PromptSignBitcoinTx {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub enum RootOwner {
-    Local(MasterAppkey),
-    Foreign(ScriptBuf),
+/// A signature was produced for every input of ours; a different count means the list did
+/// not come from this template.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SignatureCountMismatch {
+    pub expected: usize,
+    pub got: usize,
+}
+
+impl core::fmt::Display for SignatureCountMismatch {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(
+            f,
+            "expected {} signatures for this transaction's own inputs but got {}",
+            self.expected, self.got
+        )
+    }
+}
+
+#[cfg(feature = "std")]
+impl std::error::Error for SignatureCountMismatch {}
+
+/// A key-path taproot spend witness, which is what every input this wallet owns uses.
+pub fn signature_witness(signature: &EncodedSignature) -> bitcoin::Witness {
+    let signature = bitcoin::taproot::Signature {
+        signature: bitcoin::secp256k1::schnorr::Signature::from_slice(&signature.0)
+            .expect("a schnorr signature is 64 bytes"),
+        sighash_type: bitcoin::sighash::TapSighashType::Default,
+    };
+    bitcoin::Witness::from_slice(&[signature.to_vec()])
 }
 
 /// The provided spk doesn't match what was derived from the derivation path
@@ -467,6 +670,24 @@ pub struct LocalSpk {
 }
 
 impl LocalSpk {
+    /// Proves this owner derives `spk`, which is what separates a claim that is ours from one
+    /// that is merely made. A PSBT names a key and a path; only the script decides.
+    fn check_spk(&self, spk: &ScriptBuf) -> Result<(), Box<SpkDoesntMatchPathError>> {
+        let expected = self.spk();
+        if *spk != expected {
+            return Err(Box::new(SpkDoesntMatchPathError {
+                got: spk.clone(),
+                expected,
+                path: self
+                    .bip32_path
+                    .path_segments_from_bitcoin_appkey()
+                    .collect(),
+                master_appkey: self.master_appkey,
+            }));
+        }
+        Ok(())
+    }
+
     pub fn spk(&self) -> ScriptBuf {
         let expected_external_xonly =
             AppTweak::Bitcoin(self.bip32_path).derive_xonly_key(&self.master_appkey.to_xpub());
@@ -506,12 +727,6 @@ pub enum SpkOwner {
 }
 
 impl SpkOwner {
-    pub fn root_owner(&self) -> RootOwner {
-        match self {
-            SpkOwner::Foreign(spk) => RootOwner::Foreign(spk.clone()),
-            SpkOwner::Local(local) => RootOwner::Local(local.master_appkey),
-        }
-    }
     pub fn spk(&self) -> ScriptBuf {
         match self {
             SpkOwner::Foreign(spk) => spk.clone(),

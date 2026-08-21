@@ -15,6 +15,7 @@ pub use frostsnap_coordinator::bitcoin::wallet::PsbtValidationError;
 pub use frostsnap_coordinator::bitcoin::{chain_sync::ChainClient, wallet::CoordSuperWallet};
 pub use frostsnap_coordinator::verify_address::VerifyAddressProtocolState;
 
+use frostsnap_core::bitcoin_transaction::TransactionTemplate;
 use frostsnap_core::{DeviceId, KeyId, MasterAppkey};
 use std::collections::HashSet;
 use std::str::FromStr;
@@ -314,14 +315,12 @@ impl SuperWallet {
         psbt: &Psbt,
         master_appkey: MasterAppkey,
     ) -> Result<UnsignedTx, PsbtValidationError> {
-        let template = self
-            .inner
-            .lock()
-            .unwrap()
-            .psbt_to_tx_template(psbt, master_appkey)?;
+        let template = TransactionTemplate::from_psbt(psbt, &[master_appkey])?;
 
-        Ok(UnsignedTx {
-            template_tx: template,
+        // Unreachable while one key goes in: `from_psbt` returning `Ok` already means that key
+        // owns an input. It is the guard for the day more than one does.
+        UnsignedTx::new(template, master_appkey).ok_or_else(|| {
+            PsbtValidationError::Other("no input in this PSBT belongs to this key".into())
         })
     }
 }
