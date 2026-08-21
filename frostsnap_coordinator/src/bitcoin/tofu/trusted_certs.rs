@@ -1,7 +1,6 @@
 use anyhow::Result;
 use bdk_chain::{bitcoin, rusqlite_impl::migrate_schema};
 use rusqlite::params;
-use rustls::RootCertStore;
 use rustls_pki_types::CertificateDer;
 use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -102,25 +101,6 @@ impl TrustedCertificates {
             },
             mutations,
         );
-    }
-
-    pub fn create_combined_cert_store(&self) -> RootCertStore {
-        // Start with standard PKI certificates from webpki-roots
-        let mut store = RootCertStore::empty();
-        store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
-
-        // Add user-trusted certificates
-        for (server_url, trusted_cert) in &self.certificates {
-            if let Err(e) = store.add(trusted_cert.certificate.clone()) {
-                tracing::warn!(
-                    "Failed to add trusted certificate for {}: {:?}",
-                    server_url,
-                    e
-                );
-            }
-        }
-
-        store
     }
 
     /// Find a certificate by its SHA256 fingerprint (raw hex, no colons)

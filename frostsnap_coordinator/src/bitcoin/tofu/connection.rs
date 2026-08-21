@@ -172,8 +172,12 @@ async fn connect_with_tofu(
     host: &str,
     trusted_certificates: &mut Persisted<TrustedCertificates>,
 ) -> Result<TlsStream<TcpStream>, TofuError> {
-    // Create combined certificate store with PKI roots and TOFU certs
-    let root_store = trusted_certificates.create_combined_cert_store();
+    // webpki roots only. TOFU certs must never go in here: webpki treats every root as an
+    // unconstrained CA regardless of its basicConstraints, so a TOFU'd leaf would let whoever
+    // holds its key mint a cert for any other host. TOFU trust is per-host exact match in
+    // `TofuCertVerifier`, which runs before this verifier is ever consulted.
+    let mut root_store = rustls::RootCertStore::empty();
+    root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
     let base_verifier = WebPkiServerVerifier::builder(Arc::new(root_store))
         .build()
         .map_err(|e| TofuError::Other(anyhow!("Failed to create verifier: {:?}", e)))?;

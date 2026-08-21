@@ -90,7 +90,8 @@ impl From<anyhow::Error> for TofuError {
 ///    - Most real-world attacks would produce certificates that fail validation entirely
 ///
 /// 4. **What We DO Guarantee**:
-///    - Certificates are properly scoped to specific servers (no certificate confusion)
+///    - Certificates are properly scoped to specific servers (no certificate confusion). This
+///      relies on TOFU certs never entering the PKI root store — see `connect_with_tofu`.
 ///    - Once trusted, we detect any changes to the certificate
 ///    - We don't capture certificates with structural problems
 pub struct TofuCertVerifier {
@@ -414,8 +415,9 @@ mod tests {
 
     #[test]
     fn test_certificate_confusion_attack_prevention() {
-        // This test should FAIL if the vulnerability exists
-        // A certificate accepted for one server should NOT be accepted for a different server
+        // A certificate accepted for one server should NOT be accepted for a different server.
+        // Only covers byte-for-byte reuse: TEST_CERT1 has no SAN for "bank.com" so it fails name
+        // checking anyway, which is why this can't detect PKI root store leakage on its own.
 
         let mut trusted_certs =
             TrustedCertificates::new_for_test(bdk_chain::bitcoin::Network::Bitcoin);
