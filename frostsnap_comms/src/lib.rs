@@ -258,10 +258,10 @@ impl From<CoordinatorSendMessage> for CoordinatorSendMessage<WireCoordinatorSend
 ///
 /// There are two `PrepareUpgrade` variants that differ in which digest they send:
 ///
-/// - [`PrepareUpgrade`]: Legacy variant that sends digest of entire signed firmware
+/// - [`Self::PrepareUpgrade`]: Legacy variant that sends digest of entire signed firmware
 ///   (including signature block and padding). Used by v0.0.1 and earlier devices.
 ///
-/// - [`PrepareUpgrade2`]: New variant that sends digest of deterministic firmware only
+/// - [`Self::PrepareUpgrade2`]: New variant that sends digest of deterministic firmware only
 ///   (excluding signature block and padding). The device displays this digest on screen,
 ///   allowing users to verify it matches their locally-built reproducible firmware.
 ///
