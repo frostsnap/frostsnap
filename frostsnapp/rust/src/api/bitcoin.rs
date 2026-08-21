@@ -1,4 +1,5 @@
 use anyhow::Result;
+use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine};
 pub use bitcoin::Transaction as RTransaction;
 pub use bitcoin::{
     psbt::Error as PsbtError, Address, Network as BitcoinNetwork, OutPoint, Psbt, ScriptBuf, TxOut,
@@ -546,10 +547,35 @@ impl AddressExt for bitcoin::Address {
 impl Psbt {
     #[frb(sync)]
     pub fn serialize(&self) -> Vec<u8> {}
+}
 
-    #[frb(sync)]
-    #[allow(unused)]
-    pub fn deserialize(bytes: &[u8]) -> Result<Psbt, PsbtError> {}
+const PSBT_MAGIC: &[u8] = b"psbt\xff";
+
+/// Deserializes a binary PSBT or its Base64/hex text representation.
+#[frb(sync)]
+pub fn deserialize_psbt(bytes: &[u8]) -> std::result::Result<Psbt, PsbtError> {
+    if bytes.starts_with(PSBT_MAGIC) {
+        return Psbt::deserialize(bytes);
+    }
+
+    // `from_utf8_lossy` leaves valid text unchanged and lets malformed input
+    // gracefully fall through to the usual rust-bitcoin deserialization error.
+    let text = String::from_utf8_lossy(bytes);
+    let text = text.trim().trim_matches('"').trim();
+
+    if let Ok(decoded) = BASE64_STANDARD.decode(text) {
+        if decoded.starts_with(PSBT_MAGIC) {
+            return Psbt::deserialize(&decoded);
+        }
+    }
+
+    if let Ok(decoded) = hex::decode(text) {
+        if decoded.starts_with(PSBT_MAGIC) {
+            return Psbt::deserialize(&decoded);
+        }
+    }
+
+    Psbt::deserialize(bytes)
 }
 
 #[frb(external)]
@@ -909,5 +935,39 @@ mod test {
             "the fee is knowable but the signed size is not: we cannot weigh a witness for an \
              input that is not ours. `is_some()` here is what let an inflated rate stand."
         );
+    }
+
+    fn valid_psbt_bytes() -> Vec<u8> {
+        Psbt::from_unsigned_tx(bitcoin::Transaction {
+            version: bitcoin::transaction::Version::TWO,
+            lock_time: bitcoin::absolute::LockTime::ZERO,
+            input: vec![],
+            output: vec![],
+        })
+        .expect("empty unsigned transaction is valid")
+        .serialize()
+    }
+
+    #[test]
+    fn deserialize_psbt_accepts_binary_psbt() {
+        let bytes = valid_psbt_bytes();
+        assert!(deserialize_psbt(&bytes).is_ok());
+    }
+
+    #[test]
+    fn deserialize_psbt_accepts_base64_psbt() {
+        let encoded = BASE64_STANDARD.encode(valid_psbt_bytes());
+        assert!(deserialize_psbt(format!("  \"{encoded}\"  ").as_bytes()).is_ok());
+    }
+
+    #[test]
+    fn deserialize_psbt_accepts_hex_psbt() {
+        let encoded = hex::encode(valid_psbt_bytes());
+        assert!(deserialize_psbt(format!("  \"{encoded}\"  ").as_bytes()).is_ok());
+    }
+
+    #[test]
+    fn deserialize_psbt_rejects_invalid_input() {
+        assert!(deserialize_psbt(b"not a PSBT").is_err());
     }
 }

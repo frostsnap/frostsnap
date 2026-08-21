@@ -3878,6 +3878,7 @@ name = "rust_lib_frostsnapp"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "base64",
  "bincode",
  "bip21",
  "bitcoin",
@@ -3887,6 +3888,7 @@ dependencies = [
  "frostsnap_desktop_camera",
  "frostsnap_secure_boot",
  "futures",
+ "hex",
  "image",
  "lazy_static",
  "rand 0.8.6",
