@@ -90,6 +90,16 @@ pub const EARLIEST_ACCEPTABLE: VersionNumber = VersionNumber::new(0, 4, 0);
 /// the digest a device computes over a written image, and the
 /// deterministic-build digest.
 const KNOWN_FIRMWARE_VERSIONS: &[(Sha256Digest, VersionNumber)] = &[
+    // Coordinator-only so registering a digest can't change the image it names.
+    // Next release: delete this attribute and bump EARLIEST_ACCEPTABLE in the
+    // same commit. The device can only block releases it links.
+    #[cfg(feature = "coordinator")]
+    (
+        Sha256Digest(hex!(
+            "037c345c9db9866d30e219ae56de5efe3905a4050a82df362590d5017e709df0"
+        )),
+        VersionNumber::new(0, 4, 0),
+    ),
     (
         Sha256Digest(hex!(
             "6273dc08ca7c805fa70ac8feeb98c62f7b6fcb337fb1cd8412f24f0d6dda51f7"
@@ -126,12 +136,12 @@ const V0_0_1_FULL_IMAGE_DIGEST: Sha256Digest = Sha256Digest(hex!(
 mod test {
     use super::*;
 
+    /// Only the release currently shipping may sit at or above the bound.
     #[test]
-    fn every_known_version_is_below_earliest_acceptable() {
-        assert_eq!(
-            EARLIEST_ACCEPTABLE.versions_before().count(),
-            KNOWN_FIRMWARE_VERSIONS.len()
-        );
+    fn at_most_one_release_is_registered_but_not_superseded() {
+        let registered = KNOWN_FIRMWARE_VERSIONS.len();
+        let superseded = EARLIEST_ACCEPTABLE.versions_before().count();
+        assert!(registered <= superseded + 1);
     }
 
     #[test]
