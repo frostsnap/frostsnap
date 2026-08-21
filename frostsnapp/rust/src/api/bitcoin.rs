@@ -368,9 +368,7 @@ impl Transaction {
     /// Returns `None` if any input is missing a previous output.
     #[frb(sync, type_64bit_int)]
     pub fn fee(&self) -> Option<u64> {
-        let inputs_sum = self._sum_inputs(None)?;
-        let outputs_sum = self._sum_outputs(None);
-        Some(inputs_sum.saturating_sub(outputs_sum))
+        Self::fee_from(&self.prevouts, &self.inner)
     }
 
     #[frb(sync, type_64bit_int)]

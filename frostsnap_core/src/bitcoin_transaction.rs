@@ -220,19 +220,7 @@ impl TransactionTemplate<Unscoped> {
         owner: LocalSpk,
     ) -> Result<(), Box<SpkDoesntMatchPathError>> {
         let txout = input.prev_txout.txout();
-        let expected_spk = owner.spk();
-
-        if txout.script_pubkey != expected_spk {
-            return Err(Box::new(SpkDoesntMatchPathError {
-                got: txout.script_pubkey.clone(),
-                expected: expected_spk,
-                path: owner
-                    .bip32_path
-                    .path_segments_from_bitcoin_appkey()
-                    .collect(),
-                master_appkey: owner.master_appkey,
-            }));
-        }
+        owner.check_spk(&txout.script_pubkey)?;
 
         self.inputs.push(Input {
             outpoint: input.prev_txout.outpoint(),
@@ -279,19 +267,7 @@ impl TransactionTemplate<Unscoped> {
         txout: &TxOut,
         owner: LocalSpk,
     ) -> Result<(), Box<SpkDoesntMatchPathError>> {
-        let expected_spk = owner.spk();
-
-        if txout.script_pubkey != expected_spk {
-            return Err(Box::new(SpkDoesntMatchPathError {
-                got: txout.script_pubkey.clone(),
-                expected: expected_spk,
-                path: owner
-                    .bip32_path
-                    .path_segments_from_bitcoin_appkey()
-                    .collect(),
-                master_appkey: owner.master_appkey,
-            }));
-        }
+        owner.check_spk(&txout.script_pubkey)?;
 
         self.push_owned_output(txout.value, owner);
         Ok(())
@@ -694,6 +670,24 @@ pub struct LocalSpk {
 }
 
 impl LocalSpk {
+    /// Proves this owner derives `spk`, which is what separates a claim that is ours from one
+    /// that is merely made. A PSBT names a key and a path; only the script decides.
+    fn check_spk(&self, spk: &ScriptBuf) -> Result<(), Box<SpkDoesntMatchPathError>> {
+        let expected = self.spk();
+        if *spk != expected {
+            return Err(Box::new(SpkDoesntMatchPathError {
+                got: spk.clone(),
+                expected,
+                path: self
+                    .bip32_path
+                    .path_segments_from_bitcoin_appkey()
+                    .collect(),
+                master_appkey: self.master_appkey,
+            }));
+        }
+        Ok(())
+    }
+
     pub fn spk(&self) -> ScriptBuf {
         let expected_external_xonly =
             AppTweak::Bitcoin(self.bip32_path).derive_xonly_key(&self.master_appkey.to_xpub());
