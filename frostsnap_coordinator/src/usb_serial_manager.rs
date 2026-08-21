@@ -2,12 +2,12 @@
 const USB_VID: u16 = 12346;
 const USB_PID: u16 = 4097;
 
-// The genuine check as currently implemented is vulnerable to a MITM:
-// a malicious device can forward a received challenge to a genuine
-// device and relay the response back, passing the check without
-// actually holding the DS key. The signature needs to be over the
-// device's own DeviceId to bind it. Disabled until that's fixed.
-const DO_GENUINE_CHECK: bool = false;
+// Each device binds its own DeviceId into the proof it returns, so a relayed proof
+// won't verify against the relayer's id (see
+// `genuine_certificate::verify_genuine_bound`), and the app now surfaces the result.
+// A build with no genuine certificate key compiled in still never challenges
+// anything — see `UsbSerialManager::genuine_cert_key`.
+const DO_GENUINE_CHECK: bool = true;
 
 use crate::firmware::ValidatedFirmwareBin;
 use crate::PortOpenError;
@@ -59,10 +59,15 @@ pub struct UsbSerialManager {
     firmware_bin: Option<ValidatedFirmwareBin>,
     /// Genuine certificate public key for verifying device certificates
     genuine_cert_key: Option<Point<EvenY>>,
-    /// Ongoing genuine check challenges to devices
+    /// Genuine challenges we are waiting on answers to, keyed by the device we
+    /// sent them to.
+    ///
+    /// Per connection, and dropped by [`Self::forget_device`] the moment a device
+    /// goes away, so a device is challenged afresh every time it connects. Never
+    /// keyed on a remembered verdict: `from` is self-asserted and a DeviceId is
+    /// public, so honouring a past pass would make announcing a known id a cheaper
+    /// attack than the relay `verify_genuine_bound` exists to stop.
     challenges: HashMap<DeviceId, frostsnap_comms::GenuineChallenge>,
-    /// Devices that passed genuine certificate verification
-    genuine_devices: HashMap<DeviceId, frostsnap_comms::genuine_certificate::CertificateBody>,
 }
 
 pub struct DevicePort {
@@ -98,7 +103,6 @@ impl UsbSerialManager {
             firmware_bin: None,
             genuine_cert_key: None,
             challenges: Default::default(),
-            genuine_devices: Default::default(),
         }
     }
 
@@ -130,9 +134,7 @@ impl UsbSerialManager {
                 if self.device_ports.remove(&device_id).is_some() {
                     changes.push(DeviceChange::Disconnected { id: device_id });
                 }
-                self.registered_devices.remove(&device_id);
-                self.challenges.remove(&device_id);
-                self.genuine_devices.remove(&device_id);
+                self.forget_device(device_id);
                 event!(
                     Level::DEBUG,
                     port = port,
@@ -141,6 +143,35 @@ impl UsbSerialManager {
                 )
             }
         }
+    }
+
+    /// Drop every piece of per-connection state we hold for a device that has gone
+    /// away. Must be called from *every* path that removes a device, not just port
+    /// disconnection — the downstream disconnect below removes devices too, and used
+    /// to leave their entries behind.
+    fn forget_device(&mut self, device_id: DeviceId) {
+        self.registered_devices.remove(&device_id);
+        self.challenges.remove(&device_id);
+    }
+
+    /// Consume the challenge we are waiting on from `device_id`.
+    ///
+    /// `None` for an unsolicited proof, or for a second proof after we already
+    /// consumed the first — a device cannot use an extra answer to replace an
+    /// earlier verdict.
+    fn take_pending_challenge(
+        &mut self,
+        device_id: DeviceId,
+    ) -> Option<frostsnap_comms::GenuineChallenge> {
+        let pending = self.challenges.remove(&device_id);
+        if pending.is_none() {
+            event!(
+                Level::WARN,
+                device = device_id.to_string(),
+                "ignoring genuine proof: no challenge was pending"
+            );
+        }
+        pending
     }
 
     pub fn active_ports(&self) -> HashSet<String> {
@@ -352,13 +383,17 @@ impl UsbSerialManager {
                                             .find(|(_, device_id)| **device_id == message.from)
                                         {
                                             let index_of_disconnection = i + 1;
+                                            let mut disconnected = vec![];
                                             while device_list.len() > index_of_disconnection {
                                                 let device_id = device_list.pop().unwrap();
                                                 self.device_ports.remove(&device_id);
-                                                self.registered_devices.remove(&device_id);
+                                                disconnected.push(device_id);
                                                 device_changes.push(DeviceChange::Disconnected {
                                                     id: device_id,
                                                 });
+                                            }
+                                            for device_id in disconnected {
+                                                self.forget_device(device_id);
                                             }
                                         }
                                     }
@@ -413,37 +448,84 @@ impl UsbSerialManager {
                                         body: AppMessageBody::Misc(inner),
                                     }))
                                 }
-                                DeviceSendBody::SignedChallenge {
-                                    signature,
+                                DeviceSendBody::_LegacyGenuineProof { certificate, .. } => {
+                                    // Legacy unbound response from pre-binding
+                                    // firmware: relay-able, so never trusted. The
+                                    // device needs a firmware upgrade to be verified.
+                                    // Report that distinctly — the device isn't
+                                    // suspect, it just can't answer the question.
+                                    if self.take_pending_challenge(message.from).is_none() {
+                                        continue;
+                                    }
+                                    event!(
+                                        Level::INFO,
+                                        device = message.from.to_string(),
+                                        "received legacy unbound genuine response; \
+                                         firmware upgrade required to verify genuineness"
+                                    );
+                                    // Colour is cosmetic identity, not a trust
+                                    // signal, so we take it from the unverified
+                                    // certificate here as we do below.
+                                    device_changes.push(DeviceChange::CaseColor {
+                                        id: message.from,
+                                        color: certificate.unverified_case_color(),
+                                    });
+                                    device_changes.push(DeviceChange::GenuineCheck {
+                                        id: message.from,
+                                        outcome: GenuineOutcome::FirmwareTooOld,
+                                    });
+                                }
+                                DeviceSendBody::GenuineProof {
+                                    rsa_signature,
+                                    identity_signature,
                                     certificate,
                                 } => {
-                                    let Some(challenge) = self.challenges.remove(&message.from)
+                                    let Some(challenge) = self.take_pending_challenge(message.from)
                                     else {
-                                        event!(
-                                            Level::WARN,
-                                            device = message.from.to_string(),
-                                            "received SignedChallenge but no challenge was pending"
-                                        );
                                         continue;
                                     };
-                                    match self.genuine_cert_key.and_then(|key| {
-                                        frostsnap_comms::genuine_certificate::verify_genuine(
-                                            &certificate,
-                                            key,
-                                            challenge,
-                                            &signature,
-                                        )
-                                    }) {
-                                        Some(certificate_body) => {
-                                            self.genuine_devices
-                                                .insert(message.from, certificate_body.clone());
-                                            device_changes.push(DeviceChange::GenuineDevice {
+                                    let Some(key) = self.genuine_cert_key else {
+                                        continue;
+                                    };
+                                    // The colour the device claims. Shown whatever
+                                    // the verdict — it is how the user tells their
+                                    // own devices apart, and withholding it until a
+                                    // proof lands would leave every device on old
+                                    // firmware permanently colourless. Trust is
+                                    // carried by the check below, never by colour.
+                                    device_changes.push(DeviceChange::CaseColor {
+                                        id: message.from,
+                                        color: certificate.unverified_case_color(),
+                                    });
+                                    // Verify against `message.from`, the device
+                                    // we're actually talking to, not the message body.
+                                    match frostsnap_comms::genuine_certificate::verify_genuine_bound(
+                                        &certificate,
+                                        key,
+                                        challenge,
+                                        message.from,
+                                        &rsa_signature,
+                                        &identity_signature,
+                                    ) {
+                                        Ok(certificate_body) => {
+                                            device_changes.push(DeviceChange::GenuineCheck {
                                                 id: message.from,
-                                                certificate: certificate_body,
+                                                outcome: GenuineOutcome::Genuine(Box::new(
+                                                    certificate_body,
+                                                )),
                                             });
                                         }
-                                        None => {
-                                            event!(Level::WARN, device = message.from.to_string(), "genuine check failed — invalid certificate or challenge response");
+                                        Err(e) => {
+                                            event!(
+                                                Level::WARN,
+                                                device = message.from.to_string(),
+                                                error = e.to_string(),
+                                                "genuine check failed"
+                                            );
+                                            device_changes.push(DeviceChange::GenuineCheck {
+                                                id: message.from,
+                                                outcome: GenuineOutcome::Failed,
+                                            });
                                         }
                                     }
                                 }
@@ -604,14 +686,20 @@ impl UsbSerialManager {
             .unwrap();
 
         if DO_GENUINE_CHECK && self.genuine_cert_key.is_some() {
-            let challenge = frostsnap_comms::GenuineChallenge::random(&mut rand::thread_rng());
-            self.challenges.insert(from, challenge);
-            self.outbox_sender
-                .send(CoordinatorSendMessage::to(
-                    from,
-                    CoordinatorSendBody::Challenge(Box::new(challenge)),
-                ))
-                .unwrap();
+            // Don't replace a challenge we're still waiting on. A device
+            // re-announces when its connection re-handshakes, and the device would
+            // be answering the first challenge while we'd be checking against the
+            // second — reporting a genuine device as not genuine.
+            if let std::collections::hash_map::Entry::Vacant(entry) = self.challenges.entry(from) {
+                let challenge = frostsnap_comms::GenuineChallenge::random(&mut rand::thread_rng());
+                entry.insert(challenge);
+                self.outbox_sender
+                    .send(CoordinatorSendMessage::to(
+                        from,
+                        CoordinatorSendBody::Challenge(Box::new(challenge)),
+                    ))
+                    .unwrap();
+            }
         }
 
         self.reverse_device_ports
@@ -846,10 +934,31 @@ pub enum DeviceChange {
         id: DeviceId,
     },
     AppMessage(AppMessage),
-    GenuineDevice {
+    /// The device's claimed case colour, learned from a certificate we have not
+    /// (yet) verified. Cosmetic identity only — emitted separately from
+    /// [`Self::GenuineCheck`] so that displaying a colour never implies a verdict.
+    CaseColor {
         id: DeviceId,
-        certificate: frostsnap_comms::genuine_certificate::CertificateBody,
+        color: frostsnap_comms::genuine_certificate::CaseColor,
     },
+    /// The genuine check for this connection resolved.
+    GenuineCheck {
+        id: DeviceId,
+        outcome: GenuineOutcome,
+    },
+}
+
+/// How the genuine check turned out for one connection.
+#[derive(Debug, Clone)]
+pub enum GenuineOutcome {
+    /// Proof verified against the id we are talking to.
+    Genuine(Box<frostsnap_comms::genuine_certificate::CertificateBody>),
+    /// The device answered but the proof did not verify: counterfeit, tampered, or
+    /// a relay attempt.
+    Failed,
+    /// Pre-binding firmware: it can only produce the retired unbound proof, so we
+    /// cannot judge it either way until it is upgraded.
+    FirmwareTooOld,
 }
 
 #[derive(Debug, Clone)]

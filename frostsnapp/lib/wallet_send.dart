@@ -12,6 +12,8 @@ import 'package:frostsnap/src/rust/api/signing.dart';
 import 'package:frostsnap/src/rust/api/super_wallet.dart';
 import 'package:frostsnap/src/rust/api/transaction.dart';
 import 'package:frostsnap/theme.dart';
+import 'package:frostsnap/device_colors.dart';
+import 'package:frostsnap/genuine_badge.dart';
 import 'package:frostsnap/wallet.dart';
 import 'package:frostsnap/wallet_send_controllers.dart';
 import 'package:frostsnap/wallet_send_feerate_picker.dart';
@@ -512,8 +514,19 @@ class _WalletSendPageState extends State<WalletSendPage> {
                           ? state.selectSigner(dId: id)
                           : state.deselectSigner(dId: id)
                     : null,
-                secondary: Icon(Icons.key),
-                title: Text(name ?? '<unknown>'),
+                secondary: Icon(Icons.key, color: caseAccentColor(id)),
+                title: Row(
+                  spacing: 8,
+                  children: [
+                    Flexible(
+                      child: Text(
+                        name ?? '<unknown>',
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    GenuineBadge.forDeviceId(id),
+                  ],
+                ),
                 subtitle: nonces == 0
                     ? Text(
                         'no nonces remaining or too many signing sessions',
