@@ -274,7 +274,7 @@ impl HandlerState {
                 // The url comes from the app as the user typed it, so it must be reduced to a
                 // host the same way `Conn::new` does. A key stored any other way is a key the
                 // next connection won't find.
-                let hostname = host_from_url(&server_url).to_string();
+                let hostname = host_from_url(&server_url);
 
                 tracing::info!("Storing certificate for hostname: {}", hostname);
 
