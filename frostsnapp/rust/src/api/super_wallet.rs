@@ -34,6 +34,9 @@ pub struct TxState {
     pub txs: Vec<Transaction>,
     pub balance: i64,
     pub untrusted_pending_balance: i64,
+    /// The tip `txs` was canonicalized against. It travels with them so a listener updates both
+    /// at once and never renders a transaction against a height from another moment.
+    pub chain_tip_height: u32,
 }
 
 #[frb(external)]
@@ -100,8 +103,10 @@ impl SuperWallet {
 
     #[frb(sync)]
     pub fn tx_state(&self, master_appkey: MasterAppkey) -> TxState {
-        let txs = self.inner.lock().unwrap().list_transactions(master_appkey);
-        txs.into()
+        let mut wallet = self.inner.lock().unwrap();
+        let chain_tip_height = wallet.chain_tip().height();
+        let txs = wallet.list_transactions(master_appkey);
+        (txs, chain_tip_height).into()
     }
 
     pub fn reconnect(&self) {
@@ -272,8 +277,9 @@ impl SuperWallet {
                 inner.broadcast_success(tx);
                 let wallet_streams = self.wallet_streams.lock().unwrap();
                 if let Some(stream) = wallet_streams.get(&master_appkey) {
+                    let chain_tip_height = inner.chain_tip().height();
                     let txs = inner.list_transactions(master_appkey);
-                    stream.add(txs.into()).unwrap();
+                    stream.add((txs, chain_tip_height).into()).unwrap();
                 }
                 Ok(())
             }

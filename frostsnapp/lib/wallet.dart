@@ -473,8 +473,9 @@ class _TxListState extends State<TxList> {
                   child: Center(child: CircularProgressIndicator()),
                 );
               }
-              final transactions = snapshot.data?.txs ?? [];
-              final chainTipHeight = walletCtx.wallet.superWallet.height();
+              final txState = snapshot.data!;
+              final transactions = txState.txs;
+              final chainTipHeight = txState.chainTipHeight;
               final now = DateTime.now();
               return SliverList.builder(
                 itemCount: transactions.length,

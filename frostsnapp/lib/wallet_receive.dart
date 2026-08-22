@@ -206,6 +206,10 @@ class _ReceiverPageState extends State<ReceivePage> {
   late final StreamSubscription txStreamSub;
   List<Transaction> allTxs = [];
 
+  /// The tip `allTxs` arrived with. Kept beside them so a tile counts confirmations against the
+  /// height its transaction was listed at, not against whatever the chain has since reached.
+  int chainTipHeight = 0;
+
   StreamSubscription<VerifyAddressProtocolState>? _verifyStreamSub;
   FullscreenActionDialogController? _fullscreenDialogController;
   bool verificationSuccess = false;
@@ -329,6 +333,7 @@ class _ReceiverPageState extends State<ReceivePage> {
         }
         setState(() {
           allTxs = txState.txs;
+          chainTipHeight = txState.chainTipHeight;
           if (addr != null) _address = addr;
         });
       }
@@ -575,7 +580,6 @@ class _ReceiverPageState extends State<ReceivePage> {
     final isFocused = focus == ReceivePageFocus.awaitTx;
     final theme = Theme.of(context);
     final now = DateTime.now();
-    final chainTipHeight = walletCtx.wallet.superWallet.height();
 
     final relevantTxs = allTxs.where((tx) {
       if (thisAddr == null || thisSpk == null) return false;

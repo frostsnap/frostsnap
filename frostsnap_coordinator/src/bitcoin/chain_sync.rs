@@ -366,7 +366,7 @@ impl ConnectionHandler {
     pub fn run<SW, F>(mut self, super_wallet: SW, update_action: F)
     where
         SW: Deref<Target = sync::Mutex<CoordSuperWallet>> + Clone + Send + 'static,
-        F: FnMut(MasterAppkey, Vec<crate::bitcoin::wallet::Transaction>) + Send + 'static,
+        F: FnMut(MasterAppkey, Vec<crate::bitcoin::wallet::Transaction>, u32) + Send + 'static,
     {
         let chain_tip: CheckPoint;
         let network: bitcoin::Network;
@@ -425,7 +425,7 @@ impl ConnectionHandler {
         mut action: F,
     ) where
         SW: Deref<Target = sync::Mutex<CoordSuperWallet>> + Clone + Send + 'static,
-        F: FnMut(MasterAppkey, Vec<crate::bitcoin::wallet::Transaction>) + Send,
+        F: FnMut(MasterAppkey, Vec<crate::bitcoin::wallet::Transaction>, u32) + Send,
     {
         for update in block_on_stream(update_recv) {
             let master_appkeys = update
@@ -442,9 +442,12 @@ impl ConnectionHandler {
                 }
             };
             if changed {
+                // Read under the same lock as the transactions: the tip is what they were
+                // canonicalized against, and a later read could be a block ahead of them.
+                let chain_tip_height = wallet.chain_tip().height();
                 for master_appkey in master_appkeys {
                     let txs = wallet.list_transactions(master_appkey);
-                    action(master_appkey, txs);
+                    action(master_appkey, txs, chain_tip_height);
                 }
             }
         }
