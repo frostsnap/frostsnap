@@ -155,7 +155,11 @@ class SigningFinished extends TxSigningParams {
 class TxDetailsModel {
   /// The raw transaction.
   Transaction tx;
-  final int chainTipHeight;
+
+  /// The tip `tx` is read against. It is what turns a confirmation height into a
+  /// confirmation count, so it has to move with the transaction: a stale one leaves a mined
+  /// transaction reading as pending.
+  int chainTipHeight;
   final DateTime now;
 
   TxDetailsModel({
@@ -164,7 +168,10 @@ class TxDetailsModel {
     required this.now,
   });
 
-  update(Transaction tx) => this.tx = tx;
+  update(Transaction tx, int chainTipHeight) {
+    this.tx = tx;
+    this.chainTipHeight = chainTipHeight;
+  }
 
   int get netValue => tx.balanceDelta() ?? 0;
 
@@ -398,7 +405,9 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
 
   onTxStateData(TxState data) {
     final tx = data.txs.firstWhereOrNull((tx) => tx.txid == txDetails.tx.txid);
-    if (tx != null && mounted) setState(() => txDetails.update(tx));
+    if (tx != null && mounted) {
+      setState(() => txDetails.update(tx, data.chainTipHeight));
+    }
   }
 
   bool isFirstRun = true;

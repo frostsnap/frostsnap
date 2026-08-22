@@ -9,6 +9,7 @@ use frostsnap_coordinator::bitcoin::chain_sync::{
     default_backup_electrum_server, default_electrum_server, SUPPORTED_NETWORKS,
 };
 pub use frostsnap_coordinator::bitcoin::wallet::ConfirmationTime;
+use frostsnap_coordinator::bitcoin::wallet::Transaction as WalletTransaction;
 pub use frostsnap_coordinator::frostsnap_core::{self, MasterAppkey};
 use frostsnap_core::bitcoin_transaction::{ScopedTo, TransactionTemplate};
 use frostsnap_core::message::EncodedSignature;
@@ -432,8 +433,10 @@ pub struct _ConfirmationTime {
     pub time: u64,
 }
 
-impl From<Vec<frostsnap_coordinator::bitcoin::wallet::Transaction>> for TxState {
-    fn from(txs: Vec<frostsnap_coordinator::bitcoin::wallet::Transaction>) -> Self {
+/// The transactions and the chain tip they were canonicalized against, so a snapshot can never
+/// pair a transaction with a height from a different moment.
+impl From<(Vec<WalletTransaction>, u32)> for TxState {
+    fn from((txs, chain_tip_height): (Vec<WalletTransaction>, u32)) -> Self {
         let txs = txs
             .into_iter()
             .map(From::from)
@@ -472,12 +475,13 @@ impl From<Vec<frostsnap_coordinator::bitcoin::wallet::Transaction>> for TxState 
             balance,
             untrusted_pending_balance,
             txs,
+            chain_tip_height,
         }
     }
 }
 
-impl From<frostsnap_coordinator::bitcoin::wallet::Transaction> for Transaction {
-    fn from(value: frostsnap_coordinator::bitcoin::wallet::Transaction) -> Self {
+impl From<WalletTransaction> for Transaction {
+    fn from(value: WalletTransaction) -> Self {
         let inner: RTransaction = (value.inner).deref().clone();
         // In the canonical graph means broadcast or seen on chain, so `inner` carries real
         // witnesses and its own size is the signed size.

@@ -97,10 +97,10 @@ impl Settings {
                 move || {
                     conn_handler.run(super_wallet.inner.clone(), {
                         let wallet_streams = super_wallet.wallet_streams.clone();
-                        move |master_appkey, txs| {
+                        move |master_appkey, txs, chain_tip_height| {
                             let wallet_streams = wallet_streams.lock().unwrap();
                             if let Some(stream) = wallet_streams.get(&master_appkey) {
-                                if let Err(err) = stream.add(txs.into()) {
+                                if let Err(err) = stream.add((txs, chain_tip_height).into()) {
                                     tracing::error!(
                                         {
                                             master_appkey = master_appkey.to_redacted_string(),
