@@ -329,7 +329,11 @@ class _TxListState extends State<TxList> {
 
   @override
   Widget build(BuildContext context) {
-    final walletCtx = WalletContext.of(context)!;
+    // The coordinator can delete the wallet while we're still mounted: the key
+    // is gone before the wallet list stream drops this tab, so our ancestor is
+    // a plain KeyContext for a frame or two.
+    final walletCtx = WalletContext.of(context);
+    if (walletCtx == null) return SizedBox();
     final settingsCtx = SettingsContext.of(context)!;
     final fsCtx = FrostsnapContext.of(context)!;
     final frostKey = coord.getFrostKey(keyId: walletCtx.keyId);
@@ -691,12 +695,14 @@ class WalletDrawer extends StatelessWidget {
               controller.selectedIndex = null;
               scaffoldKey.currentState?.closeDrawer();
             } else if (index == walletCount + 1) {
+              scaffoldKey.currentState?.closeDrawer();
               await MaybeFullscreenDialog.show(
                 context: context,
                 barrierDismissible: true,
                 child: homeCtx.wrap(DeviceListPage()),
               );
             } else if (index == walletCount + 2) {
+              scaffoldKey.currentState?.closeDrawer();
               await Navigator.push(
                 context,
                 MaterialPageRoute(builder: (context) => SettingsPage()),
