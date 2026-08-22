@@ -19,7 +19,11 @@ pub struct TrustedCertificate {
 pub struct TrustedCertificates {
     /// The network this certificate store is for
     network: bitcoin::Network,
-    /// Maps server_url -> trusted certificate
+    /// Maps server_url -> trusted certificate. Host names are case-insensitive, so keys are
+    /// lowercased both on the way in and on lookup: otherwise `Electrum.Frostsn.App` would get
+    /// an entry of its own and quietly side-step the pin on `electrum.frostsn.app`. Entries
+    /// persisted before this canonicalisation keep their stored case and so are never found
+    /// again: the user gets prompted once more, which is the safe direction.
     certificates: HashMap<String, TrustedCertificate>,
 }
 
@@ -75,9 +79,12 @@ impl TrustedCertificates {
     pub fn add_certificate(
         &mut self,
         cert: CertificateDer<'static>,
-        server_url: String,
+        mut server_url: String,
         mutations: &mut Vec<CertificateMutation>,
     ) {
+        // Canonicalise here so the mutation carries the key that both the in-memory map and the
+        // persisted row get keyed by.
+        server_url.make_ascii_lowercase();
         // HashMap will automatically replace any existing entry
         self.mutate(
             CertificateMutation::Add {
@@ -91,9 +98,10 @@ impl TrustedCertificates {
 
     pub fn remove_certificate(
         &mut self,
-        server_url: String,
+        mut server_url: String,
         mutations: &mut Vec<CertificateMutation>,
     ) {
+        server_url.make_ascii_lowercase();
         self.mutate(
             CertificateMutation::Remove {
                 network: self.network,
@@ -122,7 +130,9 @@ impl TrustedCertificates {
     }
 
     pub fn get_certificate_for_server(&self, server_url: &str) -> Option<&CertificateDer<'_>> {
-        self.certificates.get(server_url).map(|tc| &tc.certificate)
+        self.certificates
+            .get(&server_url.to_ascii_lowercase())
+            .map(|tc| &tc.certificate)
     }
 
     #[cfg(test)]

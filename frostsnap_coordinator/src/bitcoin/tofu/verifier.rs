@@ -123,7 +123,10 @@ impl TofuCertVerifier {
 
     /// Extract the TOFU error for a specific server if any
     pub fn take_tofu_error(&self, server_url: &str) -> Option<TofuError> {
-        self.tofu_errors.lock().unwrap().remove(server_url)
+        self.tofu_errors
+            .lock()
+            .unwrap()
+            .remove(&server_url.to_ascii_lowercase())
     }
 }
 
@@ -136,14 +139,15 @@ impl ServerCertVerifier for TofuCertVerifier {
         ocsp_response: &[u8],
         now: UnixTime,
     ) -> Result<ServerCertVerified, RustlsError> {
-        let server_str = server_name.to_str();
+        // Host names are case-insensitive, so fold the case before this is used to key the
+        // trust store (and the captured errors): otherwise `Electrum.Frostsn.App` gets an
+        // entry of its own and the pin on `electrum.frostsn.app` is quietly side-stepped.
+        let server_str = server_name.to_str().to_ascii_lowercase();
 
-        tracing::info!("TOFU verifier checking server: {}", server_str.as_ref());
+        tracing::info!("TOFU verifier checking server: {}", server_str);
 
         // Check if we have a TOFU certificate for this server
-        let previous_cert = self
-            .trusted_certs
-            .get_certificate_for_server(server_str.as_ref());
+        let previous_cert = self.trusted_certs.get_certificate_for_server(&server_str);
 
         if let Some(trusted_cert) = &previous_cert {
             if trusted_cert == &end_entity {
@@ -153,12 +157,12 @@ impl ServerCertVerifier for TofuCertVerifier {
                 // Certificate changed - this requires user approval, not PKI fallback
                 tracing::warn!(
                     "Certificate for {} has changed - capturing for user approval",
-                    server_str.as_ref()
+                    server_str
                 );
 
                 let untrusted_cert = UntrustedCertificate {
                     fingerprint: end_entity.sha256_fingerprint(),
-                    server_url: server_str.to_string(),
+                    server_url: server_str.clone(),
                     is_changed: true,
                     old_fingerprint: Some(trusted_cert.sha256_fingerprint()),
                     certificate_der: end_entity.to_vec(),
@@ -169,14 +173,14 @@ impl ServerCertVerifier for TofuCertVerifier {
                 self.tofu_errors
                     .lock()
                     .unwrap()
-                    .insert(server_str.to_string(), tofu_error);
+                    .insert(server_str, tofu_error);
 
                 return Err(RustlsError::General(
                     "Certificate changed - requires user approval".to_string(),
                 ));
             }
         } else {
-            tracing::info!("No stored certificate found for {}", server_str.as_ref());
+            tracing::info!("No stored certificate found for {}", server_str);
         }
 
         match self.base_verifier.verify_server_cert(
@@ -231,7 +235,7 @@ impl ServerCertVerifier for TofuCertVerifier {
 
                     let untrusted_cert = UntrustedCertificate {
                         fingerprint: end_entity.sha256_fingerprint(),
-                        server_url: server_str.to_string(),
+                        server_url: server_str.clone(),
                         is_changed: previous_cert.is_some(),
                         old_fingerprint: previous_cert.map(|cert| cert.sha256_fingerprint()),
                         certificate_der: end_entity.to_vec(),
@@ -242,7 +246,7 @@ impl ServerCertVerifier for TofuCertVerifier {
                     self.tofu_errors
                         .lock()
                         .unwrap()
-                        .insert(server_str.to_string(), tofu_error);
+                        .insert(server_str, tofu_error);
                 }
 
                 Err(e)
@@ -368,6 +372,40 @@ mod tests {
 
         let result = tofu_verifier.verify_server_cert(&test_cert1, &[], &server_name, &[], now);
         assert!(result.is_ok(), "Trusted certificate should be accepted");
+    }
+
+    /// Re-spelling a host name in different capitalisation must not get you past a pin. Both
+    /// directions are checked: the mixed-case spelling being the one in the trust store, and it
+    /// being the one we connect to.
+    #[test]
+    fn test_tofu_trust_is_case_insensitive() {
+        let mut root_store = rustls::RootCertStore::empty();
+        root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+        let base_verifier = WebPkiServerVerifier::builder(Arc::new(root_store))
+            .build()
+            .unwrap();
+
+        let test_cert1 = CertificateDer::from(TEST_CERT1.to_vec());
+        let now = test_now();
+        let mut mutations = Vec::new();
+
+        for (stored, connected_to) in [
+            ("test.example.com", "Test.Example.Com"),
+            ("Test.Example.Com", "test.example.com"),
+        ] {
+            let mut trusted_certs =
+                TrustedCertificates::new_for_test(bdk_chain::bitcoin::Network::Bitcoin);
+            trusted_certs.add_certificate(test_cert1.clone(), stored.to_string(), &mut mutations);
+
+            let tofu_verifier = TofuCertVerifier::new(base_verifier.clone(), trusted_certs);
+            let server_name = ServerName::try_from(connected_to).unwrap();
+
+            let result = tofu_verifier.verify_server_cert(&test_cert1, &[], &server_name, &[], now);
+            assert!(
+                result.is_ok(),
+                "certificate trusted for {stored} should be trusted for {connected_to}"
+            );
+        }
     }
 
     #[test]
