@@ -120,13 +120,8 @@ impl Conn {
             };
             tracing::info!(url, "Connecting");
             if is_ssl {
-                let host = socket_addr
-                    .clone()
-                    .split_once(":")
-                    .map(|(host, _)| host.to_string())
-                    .unwrap_or(socket_addr.clone());
-
-                let stream = connect_with_tofu(&socket_addr, &host, trusted_certificates).await?;
+                let host = host_from_url(&socket_addr);
+                let stream = connect_with_tofu(&socket_addr, host, trusted_certificates).await?;
                 let (mut rh, mut wh) = tokio::io::split(stream);
                 check_conn(&mut rh, &mut wh, genesis_hash)
                     .await
@@ -163,6 +158,24 @@ impl Conn {
             TofuError::Other(e) => TofuError::Other(e.context(format!("connecting to {url}"))),
             not_trusted => not_trusted,
         })
+    }
+}
+
+/// The host part of an electrum url (with or without a `scheme://` prefix): the name TLS is
+/// verified against and the key the TOFU trust store is keyed by, so every caller must agree on
+/// it. An IPv6 literal is bracketed in a url but not in a server name, so `[2001:db8::1]:50002`
+/// has to come back as `2001:db8::1`: splitting on the first colon would give `[2001`.
+pub fn host_from_url(url: &str) -> &str {
+    let authority = url.split_once("://").map(|(_, rest)| rest).unwrap_or(url);
+    match authority.strip_prefix('[') {
+        Some(after_bracket) => after_bracket
+            .split_once(']')
+            .map(|(host, _)| host)
+            .unwrap_or(after_bracket),
+        None => authority
+            .split_once(':')
+            .map(|(host, _)| host)
+            .unwrap_or(authority),
     }
 }
 
@@ -300,6 +313,21 @@ pub struct TargetServerReq {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn host_from_url_strips_scheme_port_and_ipv6_brackets() {
+        assert_eq!(host_from_url("ssl://[2001:db8::1]:50002"), "2001:db8::1");
+        assert_eq!(host_from_url("[2001:db8::1]:50002"), "2001:db8::1");
+        assert_eq!(
+            host_from_url("ssl://electrum.frostsn.app:50002"),
+            "electrum.frostsn.app"
+        );
+        assert_eq!(host_from_url("192.0.2.1:50002"), "192.0.2.1");
+        assert_eq!(
+            host_from_url("electrum.frostsn.app"),
+            "electrum.frostsn.app"
+        );
+    }
 
     #[tokio::test]
     #[ignore] // requires network
