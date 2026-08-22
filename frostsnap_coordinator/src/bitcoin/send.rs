@@ -603,8 +603,26 @@ impl CoordSuperWallet {
             );
         }
 
+        // A recipient this wallet derives is not money leaving, and the signer has to be able
+        // to see that: tag it owned so the prompt names it as ours instead of showing a
+        // self-payment as an ordinary send. Only the coordinator can answer this — the device is
+        // told which outputs are its own — but it is not trusted on it, because a `Local` output
+        // carries key and path rather than a script and the device derives the script itself.
+        // `push_owned_output_checked` re-derives here too, so a path that does not reproduce the
+        // planned script is caught before it reaches a signing session.
         for txo in &plan.recipients {
-            template.push_foreign_output(txo.clone());
+            match self.spk_path(plan.master_appkey, txo.script_pubkey.clone()) {
+                Some(bip32_path) => template
+                    .push_owned_output_checked(
+                        txo,
+                        LocalSpk {
+                            master_appkey: plan.master_appkey,
+                            bip32_path,
+                        },
+                    )
+                    .expect("spk_path resolved this path from this very script"),
+                None => template.push_foreign_output(txo.clone()),
+            }
         }
 
         Ok(template)
@@ -836,6 +854,96 @@ mod test {
                 )
                 .unwrap()
         }
+
+        /// Plan a payment to one of our own receive addresses, the way a user does it: read the
+        /// address off the receive screen, then paste it into send.
+        fn plan_to_own_address(&mut self, index: u32, sats: u64) -> SendPlan {
+            let own = bitcoin::Address::from_script(
+                &crate::bitcoin::peek_spk(
+                    self.master_appkey,
+                    BitcoinBip32Path {
+                        account_keychain: BitcoinAccountKeychain::external(),
+                        index: NormalIndex::new(index).expect("fixture index below 2^31"),
+                    },
+                ),
+                NETWORK,
+            )
+            .expect("a taproot spk has an address form");
+            self.wallet
+                .plan_send(self.master_appkey, [(own, Some(sats))], 1.0)
+                .unwrap()
+        }
+    }
+
+    /// Paying our own receive address is not money leaving, and the prompt the device shows is
+    /// built from what the coordinator tags. Tagging it foreign — which is all `commit_send` ever
+    /// did — renders a self-payment identically to paying a stranger on the one screen the user is
+    /// meant to check.
+    #[test]
+    fn a_recipient_we_derive_is_tagged_owned() {
+        let mut f = Fixture::new();
+        f.fund(0, 1_000_000, 100);
+
+        let plan = f.plan_to_own_address(7, 200_000);
+        let template = f.wallet.commit_send(&plan, []).unwrap();
+
+        let paid = template
+            .outputs()
+            .iter()
+            .find(|output| output.value == 200_000)
+            .expect("the payment is in the template");
+        let owner = paid
+            .owner
+            .local_owner()
+            .expect("a script this wallet derives is ours, not foreign");
+        assert_eq!(owner.master_appkey, f.master_appkey);
+        assert_eq!(
+            owner.bip32_path,
+            BitcoinBip32Path {
+                account_keychain: BitcoinAccountKeychain::external(),
+                index: NormalIndex::new(7).unwrap(),
+            },
+        );
+    }
+
+    /// The tag has to survive into the prompt, since that is the whole point of setting it. A
+    /// self-payment has no foreign output, so `hide_single_change` stops applying and the change
+    /// is disclosed too — both outputs come back to us and the signer is shown both.
+    #[test]
+    fn the_prompt_names_a_self_payment_as_ours() {
+        let mut f = Fixture::new();
+        f.fund(0, 1_000_000, 100);
+
+        let plan = f.plan_to_own_address(7, 200_000);
+        let template = f.wallet.commit_send(&plan, []).unwrap();
+        let prompt = template.as_seen_by(f.master_appkey).user_prompt(NETWORK);
+
+        assert!(
+            prompt.recipients.iter().all(|r| r.owned.is_some()),
+            "nothing in a self-payment leaves the wallet",
+        );
+        assert_eq!(prompt.foreign_value(), None, "no value is at foreign risk");
+    }
+
+    /// The other half of the same decision: an address we do not derive stays foreign. A tag that
+    /// said otherwise would tell the signer money is coming back when it is leaving.
+    #[test]
+    fn a_foreign_recipient_stays_foreign() {
+        let mut f = Fixture::new();
+        f.fund(0, 1_000_000, 100);
+
+        let plan = f.plan(200_000);
+        let template = f.wallet.commit_send(&plan, []).unwrap();
+
+        let paid = template
+            .outputs()
+            .iter()
+            .find(|output| output.value == 200_000)
+            .expect("the payment is in the template");
+        assert!(
+            paid.owner.local_owner().is_none(),
+            "a script we do not derive is not ours",
+        );
     }
 
     /// The feature, in the shape that produced it. 0.3 could pay change far past the frontier it
