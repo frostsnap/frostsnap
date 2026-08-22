@@ -51,21 +51,12 @@ impl PsbtQrDecoder {
         let decoder = &mut self.decoder;
         let decoding_progress = &mut self.decoding_progress;
 
-        if decoder.complete() {
-            match decoder.message() {
-                Ok(message) => {
-                    event!(Level::INFO, "Successfully decoded UR code");
-                    let raw_psbt =
-                        trim_until_psbt_magic(&message.expect("already checked complete"))
-                            .expect("found magic bytes");
-                    event!(Level::INFO, "Found PSBT magic bytes",);
-                    return Ok(QrDecoderStatus::Decoded(raw_psbt));
-                }
-                Err(e) => return Err(anyhow!("Decoded UR code has inconsistencies: {}", e)),
-            }
-        }
-
         for part in qr_strings {
+            // the decoder may already have been completed by an earlier frame
+            if decoder.complete() {
+                break;
+            }
+
             if part.len() < 3 || part[0..3].to_lowercase() != "ur:" {
                 continue; // TODO: return invalid QR error
             }
@@ -114,26 +105,21 @@ impl PsbtQrDecoder {
                 }
                 Err(e) => event!(Level::WARN, "Failed to decode UR: {}\n{}", e, decoding_part),
             }
-            if decoder.complete() {
-                match decoder.message() {
-                    Ok(message) => {
-                        event!(Level::INFO, "Successfully decoded UR code.");
-                        let raw_psbt = match trim_until_psbt_magic(
-                            &message.expect("already checked complete"),
-                        ) {
-                            Some(raw_psbt) => raw_psbt,
-                            None => {
-                                return Err(anyhow!(
-                                    "Failed to find PSBT, is this a correct QR code?"
-                                ))
-                            }
-                        };
-                        event!(Level::INFO, "Found PSBT magic bytes");
-                        return Ok(QrDecoderStatus::Decoded(raw_psbt));
-                    }
-                    Err(e) => return Err(anyhow!("Decoded UR code has inconsistencies: {}", e)),
-                }
-            }
+        }
+
+        if decoder.complete() {
+            let message = match decoder.message() {
+                Ok(Some(message)) => message,
+                Ok(None) => return Err(anyhow!("Decoded UR code has no message")),
+                Err(e) => return Err(anyhow!("Decoded UR code has inconsistencies: {}", e)),
+            };
+            event!(Level::INFO, "Successfully decoded UR code");
+            let raw_psbt = match trim_until_psbt_magic(&message) {
+                Some(raw_psbt) => raw_psbt,
+                None => return Err(anyhow!("Failed to find PSBT, is this a correct QR code?")),
+            };
+            event!(Level::INFO, "Found PSBT magic bytes");
+            return Ok(QrDecoderStatus::Decoded(raw_psbt));
         }
 
         event!(Level::TRACE, "Scanning progress {:?}", decoding_progress);
