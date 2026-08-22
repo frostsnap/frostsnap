@@ -90,15 +90,16 @@ impl Widget for ProgressBar {
             .bar_rect
             .expect("ProgressBar::draw called before set_constraints");
 
-        // Our AA rounded rect writes every pixel of its bounding rect (corners
-        // are blended against the backdrop), so redrawing it covers everything
-        // it previously lit — unlike embedded-graphics' RoundedRectangle, whose
-        // silently confined radius at small widths orphans corner pixels.
+        // Filled so it writes every pixel of its bounding rect, and redrawing
+        // therefore covers everything it previously lit. We use our AA rounded
+        // rect rather than embedded-graphics', whose silently confined radius at
+        // small widths orphans corner pixels.
         let background_color = target.background_color();
 
         AARoundedRectangle::new(bar_rect, background_color)
             .with_corner_radius(self.corner_radius)
             .with_border(PALETTE.outline, 2)
+            .with_fill(background_color)
             .draw(target)?;
 
         // Calculate the filled width based on progress
