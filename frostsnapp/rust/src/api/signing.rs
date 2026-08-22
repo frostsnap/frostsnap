@@ -3,7 +3,10 @@ use super::{
     bitcoin::{Psbt, RTransaction, Transaction, TxOutInfo},
     coordinator::Coordinator,
 };
-use crate::{frb_generated::StreamSink, sink_wrap::SinkWrap};
+use crate::{
+    frb_generated::StreamSink,
+    sink_wrap::{report_start_failure, SinkWrap},
+};
 use anyhow::{anyhow, Result};
 use flutter_rust_bridge::frb;
 pub use frostsnap_coordinator::signing::SigningState;
@@ -255,13 +258,14 @@ impl Coordinator {
         message: String,
         sink: StreamSink<SigningState>,
     ) -> Result<()> {
-        self.0.start_signing(
-            access_structure_ref,
-            devices.into_iter().collect(),
-            WireSignTask::Test { message },
-            SinkWrap(sink),
-        )?;
-        Ok(())
+        report_start_failure(sink, |sink| {
+            self.0.start_signing(
+                access_structure_ref,
+                devices.into_iter().collect(),
+                WireSignTask::Test { message },
+                sink,
+            )
+        })
     }
 
     /// Borrows rather than takes: frb disposes the Dart handle for a value it moves, and the
@@ -275,13 +279,14 @@ impl Coordinator {
         devices: Vec<DeviceId>,
         sink: StreamSink<SigningState>,
     ) -> Result<()> {
-        self.0.start_signing(
-            access_structure_ref,
-            devices.into_iter().collect(),
-            WireSignTask::BitcoinTransaction(unsigned_tx.template_tx.clone()),
-            SinkWrap(sink),
-        )?;
-        Ok(())
+        report_start_failure(sink, |sink| {
+            self.0.start_signing(
+                access_structure_ref,
+                devices.into_iter().collect(),
+                WireSignTask::BitcoinTransaction(unsigned_tx.template_tx.clone()),
+                sink,
+            )
+        })
     }
 
     #[frb(sync)]
@@ -294,8 +299,9 @@ impl Coordinator {
         session_id: SignSessionId,
         sink: StreamSink<SigningState>,
     ) -> Result<()> {
-        self.0
-            .try_restore_signing_session(session_id, SinkWrap(sink))
+        report_start_failure(sink, |sink| {
+            self.0.try_restore_signing_session(session_id, sink)
+        })
     }
 
     #[frb(sync)]

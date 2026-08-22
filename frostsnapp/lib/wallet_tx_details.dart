@@ -529,11 +529,23 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
           devicesSub = GlobalStreams.deviceListSubject.listen(onDeviceListData);
           broadcastDone = false;
           late final StreamSubscription<SigningState> sub;
-          sub = signingParams.startSigning().listen((state) {
-            // Ensure `onSigningSessionData` is called sequentially.
-            sub.pause();
-            onSigningSessionData(state).whenComplete(sub.resume);
-          });
+          sub = signingParams.startSigning().listen(
+            (state) {
+              // Ensure `onSigningSessionData` is called sequentially.
+              sub.pause();
+              onSigningSessionData(state).whenComplete(sub.resume);
+            },
+            // A session that failed to start arrives here rather than at the
+            // call: frb drops the `Result` of a stream-returning call, so rust
+            // puts the failure onto the stream instead. Without this the error
+            // is an unhandled zone error and the screen sits on a session that
+            // never began.
+            onError: (error) {
+              if (!mounted) return;
+              showErrorSnackbar(context, error.toString());
+              Navigator.popUntil(context, (r) => r.isFirst);
+            },
+          );
           signingSub = sub;
         case SigningFinished():
           // Signing is over; there is no stream to follow, only a transaction to send.
