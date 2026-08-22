@@ -604,7 +604,24 @@ impl CoordSuperWallet {
         }
 
         for txo in &plan.recipients {
-            template.push_foreign_output(txo.clone());
+            // A recipient can be an address of our own: pasting one is how a user moves coins
+            // between their own wallets. Claim it here or the signing device has nothing to name
+            // it by, and the user is asked to approve a bare address the app already told them
+            // was theirs. Checked because the device derives a claimed output's script from the
+            // path rather than reading it here, so a path that did not reproduce this script
+            // would move the payment to a different address of ours.
+            match self.spk_path(plan.master_appkey, txo.script_pubkey.clone()) {
+                Some(bip32_path) => template
+                    .push_owned_output_checked(
+                        txo,
+                        LocalSpk {
+                            master_appkey: plan.master_appkey,
+                            bip32_path,
+                        },
+                    )
+                    .expect("spk_path resolved this path from this very script"),
+                None => template.push_foreign_output(txo.clone()),
+            }
         }
 
         Ok(template)
@@ -1604,5 +1621,56 @@ mod test {
             Some(far + 1),
             "the keychain that revealed locally is the one the server must be told about: {asked:?}"
         );
+    }
+
+    /// Pasting one of our own addresses is how a user moves coins between their own wallets. The
+    /// app labels such a recipient off the same index the wallet derives it at, so a template
+    /// that hands the device a bare foreign script leaves the two surfaces disagreeing about
+    /// what is being approved.
+    #[test]
+    fn a_recipient_we_derive_is_claimed_so_the_device_can_name_it() {
+        let mut f = Fixture::new();
+        f.fund(0, 1_000_000, 100);
+        let own_path = BitcoinBip32Path {
+            account_keychain: BitcoinAccountKeychain::external(),
+            index: NormalIndex::new(7).unwrap(),
+        };
+        let own_address = bitcoin::Address::from_script(
+            &crate::bitcoin::peek_spk(f.master_appkey, own_path),
+            NETWORK,
+        )
+        .unwrap();
+
+        let plan = f
+            .wallet
+            .plan_send(f.master_appkey, [(own_address, Some(500_000))], 1.0)
+            .unwrap();
+        let template = f.wallet.commit_send(&plan, []).unwrap();
+        let prompt = template.as_seen_by(f.master_appkey).user_prompt(NETWORK);
+
+        // Change first, then the recipient, both ours: with nothing foreign left to contrast it
+        // against, the change output stops being the skippable half of an ordinary send and is
+        // disclosed too.
+        assert_eq!(
+            prompt
+                .recipients
+                .iter()
+                .map(|r| (r.amount.to_sat(), r.owned))
+                .collect::<Vec<_>>(),
+            vec![
+                (
+                    plan.change_value.expect("send has change"),
+                    Some(BitcoinBip32Path {
+                        account_keychain: BitcoinAccountKeychain::internal(),
+                        index: NormalIndex::ZERO,
+                    })
+                ),
+                (500_000, Some(own_path)),
+            ]
+        );
+        // Nothing leaves, so the fee warning measures itself against the self-spend total
+        // instead of dividing by a foreign value of zero.
+        assert_eq!(prompt.foreign_value(), None);
+        assert_eq!(prompt.value_at_risk(), prompt.value_moved());
     }
 }
