@@ -13,7 +13,11 @@ use crate::settings::ElectrumEnabled;
 use super::{
     chain_sync::{ConnectionResult, ElectrumConfig, Message},
     status_tracker::{ConnPhase, StatusTracker},
-    tofu::{connection::Conn, trusted_certs::TrustedCertificates, verifier::TofuError},
+    tofu::{
+        connection::{host_from_url, Conn},
+        trusted_certs::TrustedCertificates,
+        verifier::TofuError,
+    },
 };
 
 /// Identifies the server a live connection is on. Carried by the connection state so failover
@@ -267,18 +271,10 @@ impl HandlerState {
                 tracing::info!(msg = "TrustCertificate", server_url = server_url);
                 let cert = certificate_der.into();
 
-                let hostname = match server_url.split_once("://") {
-                    Some((_, addr)) => addr
-                        .split_once(':')
-                        .map(|(host, _)| host)
-                        .unwrap_or(addr)
-                        .to_string(),
-                    None => server_url
-                        .split_once(':')
-                        .map(|(host, _)| host)
-                        .unwrap_or(&server_url)
-                        .to_string(),
-                };
+                // The url comes from the app as the user typed it, so it must be reduced to a
+                // host the same way `Conn::new` does. A key stored any other way is a key the
+                // next connection won't find.
+                let hostname = host_from_url(&server_url);
 
                 tracing::info!("Storing certificate for hostname: {}", hostname);
 
