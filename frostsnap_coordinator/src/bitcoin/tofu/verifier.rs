@@ -4,7 +4,7 @@ use rustls::{DigitallySignedStruct, Error as RustlsError, SignatureScheme};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
-use super::trusted_certs::TrustedCertificates;
+use super::trusted_certs::{TrustKey, TrustedCertificates};
 
 /// Extension trait for certificate fingerprinting
 pub trait CertificateExt {
@@ -100,7 +100,7 @@ pub struct TofuCertVerifier {
     /// Trusted certificates store
     trusted_certs: TrustedCertificates,
     /// Storage for TOFU errors indexed by server URL
-    tofu_errors: Arc<Mutex<HashMap<String, TofuError>>>,
+    tofu_errors: Arc<Mutex<HashMap<TrustKey, TofuError>>>,
 }
 
 impl std::fmt::Debug for TofuCertVerifier {
@@ -122,7 +122,7 @@ impl TofuCertVerifier {
     }
 
     /// Extract the TOFU error for a specific server if any
-    pub fn take_tofu_error(&self, server_url: &str) -> Option<TofuError> {
+    pub fn take_tofu_error(&self, server_url: &TrustKey) -> Option<TofuError> {
         self.tofu_errors.lock().unwrap().remove(server_url)
     }
 }
@@ -136,14 +136,12 @@ impl ServerCertVerifier for TofuCertVerifier {
         ocsp_response: &[u8],
         now: UnixTime,
     ) -> Result<ServerCertVerified, RustlsError> {
-        let server_str = server_name.to_str();
+        let server_key = TrustKey::new(server_name.to_str());
 
-        tracing::info!("TOFU verifier checking server: {}", server_str.as_ref());
+        tracing::info!("TOFU verifier checking server: {}", server_key);
 
         // Check if we have a TOFU certificate for this server
-        let previous_cert = self
-            .trusted_certs
-            .get_certificate_for_server(server_str.as_ref());
+        let previous_cert = self.trusted_certs.get_certificate_for_server(&server_key);
 
         if let Some(trusted_cert) = &previous_cert {
             if trusted_cert == &end_entity {
@@ -153,12 +151,12 @@ impl ServerCertVerifier for TofuCertVerifier {
                 // Certificate changed - this requires user approval, not PKI fallback
                 tracing::warn!(
                     "Certificate for {} has changed - capturing for user approval",
-                    server_str.as_ref()
+                    server_key
                 );
 
                 let untrusted_cert = UntrustedCertificate {
                     fingerprint: end_entity.sha256_fingerprint(),
-                    server_url: server_str.to_string(),
+                    server_url: server_key.to_string(),
                     is_changed: true,
                     old_fingerprint: Some(trusted_cert.sha256_fingerprint()),
                     certificate_der: end_entity.to_vec(),
@@ -169,14 +167,14 @@ impl ServerCertVerifier for TofuCertVerifier {
                 self.tofu_errors
                     .lock()
                     .unwrap()
-                    .insert(server_str.to_string(), tofu_error);
+                    .insert(server_key, tofu_error);
 
                 return Err(RustlsError::General(
                     "Certificate changed - requires user approval".to_string(),
                 ));
             }
         } else {
-            tracing::info!("No stored certificate found for {}", server_str.as_ref());
+            tracing::info!("No stored certificate found for {}", server_key);
         }
 
         match self.base_verifier.verify_server_cert(
@@ -187,7 +185,7 @@ impl ServerCertVerifier for TofuCertVerifier {
             now,
         ) {
             Ok(verified) => {
-                tracing::debug!("Certificate validated via PKI for {}", server_str);
+                tracing::debug!("Certificate validated via PKI for {}", server_key);
                 Ok(verified)
             }
             Err(e) => {
@@ -231,7 +229,7 @@ impl ServerCertVerifier for TofuCertVerifier {
 
                     let untrusted_cert = UntrustedCertificate {
                         fingerprint: end_entity.sha256_fingerprint(),
-                        server_url: server_str.to_string(),
+                        server_url: server_key.to_string(),
                         is_changed: previous_cert.is_some(),
                         old_fingerprint: previous_cert.map(|cert| cert.sha256_fingerprint()),
                         certificate_der: end_entity.to_vec(),
@@ -242,7 +240,7 @@ impl ServerCertVerifier for TofuCertVerifier {
                     self.tofu_errors
                         .lock()
                         .unwrap()
-                        .insert(server_str.to_string(), tofu_error);
+                        .insert(server_key, tofu_error);
                 }
 
                 Err(e)
@@ -278,7 +276,7 @@ impl ServerCertVerifier for TofuCertVerifier {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bitcoin::tofu::trusted_certs::TrustedCertificates;
+    use crate::bitcoin::tofu::trusted_certs::{TrustKey, TrustedCertificates};
     use rustls::client::WebPkiServerVerifier;
     use rustls::pki_types::{ServerName, UnixTime};
 
@@ -331,7 +329,7 @@ mod tests {
         let result = tofu_verifier.verify_server_cert(&test_cert1, &[], &server_name, &[], now);
         assert!(result.is_err(), "First connection should fail");
 
-        let tofu_error = tofu_verifier.take_tofu_error("test.example.com");
+        let tofu_error = tofu_verifier.take_tofu_error(&TrustKey::new("test.example.com"));
         assert!(tofu_error.is_some(), "Should have captured TOFU error");
         match tofu_error.unwrap() {
             TofuError::NotTrusted(cert) => {
@@ -354,7 +352,7 @@ mod tests {
 
         trusted_certs.add_certificate(
             test_cert1.clone(),
-            "test.example.com".to_string(),
+            TrustKey::new("test.example.com"),
             &mut mutations,
         );
 
@@ -370,6 +368,44 @@ mod tests {
         assert!(result.is_ok(), "Trusted certificate should be accepted");
     }
 
+    /// Re-spelling a host name in different capitalisation must not get you past a pin. Both
+    /// directions are checked: the mixed-case spelling being the one in the trust store, and it
+    /// being the one we connect to.
+    #[test]
+    fn test_tofu_trust_is_case_insensitive() {
+        let mut root_store = rustls::RootCertStore::empty();
+        root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+        let base_verifier = WebPkiServerVerifier::builder(Arc::new(root_store))
+            .build()
+            .unwrap();
+
+        let test_cert1 = CertificateDer::from(TEST_CERT1.to_vec());
+        let now = test_now();
+        let mut mutations = Vec::new();
+
+        for (stored, connected_to) in [
+            ("test.example.com", "Test.Example.Com"),
+            ("Test.Example.Com", "test.example.com"),
+        ] {
+            let mut trusted_certs =
+                TrustedCertificates::new_for_test(bdk_chain::bitcoin::Network::Bitcoin);
+            trusted_certs.add_certificate(
+                test_cert1.clone(),
+                TrustKey::new(stored),
+                &mut mutations,
+            );
+
+            let tofu_verifier = TofuCertVerifier::new(base_verifier.clone(), trusted_certs);
+            let server_name = ServerName::try_from(connected_to).unwrap();
+
+            let result = tofu_verifier.verify_server_cert(&test_cert1, &[], &server_name, &[], now);
+            assert!(
+                result.is_ok(),
+                "certificate trusted for {stored} should be trusted for {connected_to}"
+            );
+        }
+    }
+
     #[test]
     fn test_tofu_certificate_change_detection() {
         let mut trusted_certs =
@@ -383,7 +419,7 @@ mod tests {
 
         trusted_certs.add_certificate(
             test_cert1.clone(),
-            "test.example.com".to_string(),
+            TrustKey::new("test.example.com"),
             &mut mutations,
         );
 
@@ -398,7 +434,7 @@ mod tests {
         let result = tofu_verifier.verify_server_cert(&test_cert2, &[], &server_name, &[], now);
         assert!(result.is_err(), "Different certificate should fail");
 
-        let tofu_error = tofu_verifier.take_tofu_error("test.example.com");
+        let tofu_error = tofu_verifier.take_tofu_error(&TrustKey::new("test.example.com"));
         assert!(
             tofu_error.is_some(),
             "Should have captured changed certificate"
@@ -434,7 +470,7 @@ mod tests {
             .unwrap();
 
         // Step 1: User accepts a certificate for attacker.com
-        trusted_certs.add_certificate(cert.clone(), "attacker.com".to_string(), &mut mutations);
+        trusted_certs.add_certificate(cert.clone(), TrustKey::new("attacker.com"), &mut mutations);
 
         let tofu_verifier = TofuCertVerifier::new(base_verifier.clone(), trusted_certs.clone());
 
@@ -451,7 +487,7 @@ mod tests {
         );
 
         // The certificate should be captured as unverified
-        let tofu_error = tofu_verifier.take_tofu_error("bank.com");
+        let tofu_error = tofu_verifier.take_tofu_error(&TrustKey::new("bank.com"));
         assert!(
             tofu_error.is_some(),
             "Should have captured the certificate for TOFU prompt"
@@ -473,18 +509,24 @@ mod tests {
 
         // Add a certificate for a server
         let cert1 = CertificateDer::from(TEST_CERT1.to_vec());
-        trusted_certs.add_certificate(cert1.clone(), "example.com:443".to_string(), &mut mutations);
+        trusted_certs.add_certificate(
+            cert1.clone(),
+            TrustKey::new("example.com:443"),
+            &mut mutations,
+        );
 
         // Check if we can find it
         let certs = trusted_certs.get_all_certificates();
-        let found = certs.iter().find(|(url, _)| url == "example.com:443");
+        let found = certs
+            .iter()
+            .find(|(url, _)| url.as_str() == "example.com:443");
 
         assert!(found.is_some(), "Should find the certificate");
         assert_eq!(found.unwrap().1.certificate, cert1);
 
         // Verify we can get the certificate back
         assert_eq!(
-            trusted_certs.get_certificate_for_server("example.com:443"),
+            trusted_certs.get_certificate_for_server(&TrustKey::new("example.com:443")),
             Some(&cert1)
         );
 
@@ -494,11 +536,15 @@ mod tests {
         let new_fingerprint = cert2.sha256_fingerprint();
 
         // Add second certificate (should replace the first one)
-        trusted_certs.add_certificate(cert2.clone(), "example.com:443".to_string(), &mut mutations);
+        trusted_certs.add_certificate(
+            cert2.clone(),
+            TrustKey::new("example.com:443"),
+            &mut mutations,
+        );
 
         // Only the second certificate should be stored for this server now
         assert_eq!(
-            trusted_certs.get_certificate_for_server("example.com:443"),
+            trusted_certs.get_certificate_for_server(&TrustKey::new("example.com:443")),
             Some(&cert2),
             "Server should now have cert2"
         );
@@ -545,7 +591,7 @@ mod tests {
         );
 
         // Most importantly: verify NO TOFU error was captured
-        let tofu_error = tofu_verifier.take_tofu_error("electrum.emzy.de");
+        let tofu_error = tofu_verifier.take_tofu_error(&TrustKey::new("electrum.emzy.de"));
         assert!(
             tofu_error.is_none(),
             "Should NOT capture TOFU error for unsupported cert version"

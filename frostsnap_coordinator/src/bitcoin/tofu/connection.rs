@@ -10,7 +10,7 @@ use std::time::Duration;
 use tokio::net::{lookup_host, TcpStream};
 use tokio_rustls::{client::TlsStream, TlsConnector};
 
-use super::trusted_certs::TrustedCertificates;
+use super::trusted_certs::{TrustKey, TrustedCertificates};
 use super::verifier::{TofuCertVerifier, TofuError};
 use crate::persist::Persisted;
 
@@ -120,12 +120,7 @@ impl Conn {
             };
             tracing::info!(url, "Connecting");
             if is_ssl {
-                let host = socket_addr
-                    .clone()
-                    .split_once(":")
-                    .map(|(host, _)| host.to_string())
-                    .unwrap_or(socket_addr.clone());
-
+                let host = host_from_url(&socket_addr);
                 let stream = connect_with_tofu(&socket_addr, &host, trusted_certificates).await?;
                 let (mut rh, mut wh) = tokio::io::split(stream);
                 check_conn(&mut rh, &mut wh, genesis_hash)
@@ -166,10 +161,30 @@ impl Conn {
     }
 }
 
+/// The host part of an electrum url (with or without a `scheme://` prefix): the name TLS is
+/// verified against, handed back as the `TrustKey` the trust store is keyed by so that every
+/// caller lands on the same key. An IPv6 literal is bracketed in a url but not in a server name,
+/// so `[2001:db8::1]:50002` has to come back as `2001:db8::1`: splitting on the first colon would
+/// give `[2001`.
+pub fn host_from_url(url: &str) -> TrustKey {
+    let authority = url.split_once("://").map(|(_, rest)| rest).unwrap_or(url);
+    let host = match authority.strip_prefix('[') {
+        Some(after_bracket) => after_bracket
+            .split_once(']')
+            .map(|(host, _)| host)
+            .unwrap_or(after_bracket),
+        None => authority
+            .split_once(':')
+            .map(|(host, _)| host)
+            .unwrap_or(authority),
+    };
+    TrustKey::new(host)
+}
+
 /// Attempt to connect with TOFU support
 async fn connect_with_tofu(
     socket_addr: &str,
-    host: &str,
+    host: &TrustKey,
     trusted_certificates: &mut Persisted<TrustedCertificates>,
 ) -> Result<TlsStream<TcpStream>, TofuError> {
     // webpki roots only. TOFU certs must never go in here: webpki treats every root as an
@@ -191,7 +206,7 @@ async fn connect_with_tofu(
         .with_custom_certificate_verifier(tofu_verifier.clone())
         .with_no_client_auth();
 
-    let dnsname = ServerName::try_from(host.to_owned())
+    let dnsname = ServerName::try_from(host.as_str().to_owned())
         .map_err(|e| TofuError::Other(anyhow!("Invalid DNS name: {}", e)))?;
 
     let sock = happy_eyeballs_connect(socket_addr).await.map_err(|e| {
@@ -300,6 +315,24 @@ pub struct TargetServerReq {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn host_from_url_strips_scheme_port_and_ipv6_brackets() {
+        assert_eq!(
+            host_from_url("ssl://[2001:db8::1]:50002").as_str(),
+            "2001:db8::1"
+        );
+        assert_eq!(host_from_url("[2001:db8::1]:50002").as_str(), "2001:db8::1");
+        assert_eq!(
+            host_from_url("ssl://electrum.frostsn.app:50002").as_str(),
+            "electrum.frostsn.app"
+        );
+        assert_eq!(host_from_url("192.0.2.1:50002").as_str(), "192.0.2.1");
+        assert_eq!(
+            host_from_url("electrum.frostsn.app").as_str(),
+            "electrum.frostsn.app"
+        );
+    }
 
     #[tokio::test]
     #[ignore] // requires network
