@@ -11,7 +11,6 @@ debug_fps = []
 debug_mem = []
 debug_log = []
 debug = [ "debug_fps", "debug_mem", "debug_log" ]
-prefill-words = []
 # turns on the esp32c3 hardware stack guard
 stack_guard = []
 # FIXME: remove this feature when v2.rs is deleted (only used in legacy factory code)
@@ -60,3 +59,7 @@ path = "src/bin/frontier.rs"
 
 [[bin]]
 name = "widget_dev"
+
+[lints.rust]
+# prefill_words is deliberately a --cfg, not a feature: see src/widget_tree.rs.
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(prefill_words)'] }
