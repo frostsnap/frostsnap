@@ -4,6 +4,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:frostsnap/animated_check.dart';
 import 'package:frostsnap/device_action.dart';
+import 'package:frostsnap/device_colors.dart';
+import 'package:frostsnap/genuine_badge.dart';
 import 'package:frostsnap/id_ext.dart';
 import 'package:frostsnap/global.dart';
 import 'package:frostsnap/wallet_key_mismatch.dart';
@@ -184,8 +186,18 @@ class _SigningDeviceSelectorState extends State<SigningDeviceSelector> {
         final enoughNonces = coord.noncesAvailable(id: id) >= 1;
         return CheckboxListTile(
           contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-          title: Text(
-            "${name ?? '<unknown>'}${enoughNonces ? '' : ' (not enough nonces)'}",
+          secondary: Icon(Icons.key, color: caseAccentColor(id)),
+          title: Row(
+            spacing: 8,
+            children: [
+              Flexible(
+                child: Text(
+                  "${name ?? '<unknown>'}${enoughNonces ? '' : ' (not enough nonces)'}",
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              GenuineBadge.forDeviceId(id),
+            ],
           ),
           value: selected.contains(id),
           onChanged: enoughNonces ? onChanged : null,

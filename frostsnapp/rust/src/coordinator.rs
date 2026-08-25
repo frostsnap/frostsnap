@@ -16,7 +16,7 @@ use frostsnap_coordinator::firmware_upgrade::{
 use frostsnap_coordinator::frostsnap_comms::{
     CoordinatorSendBody, CoordinatorSendMessage, Destination, Sha256Digest,
 };
-use frostsnap_coordinator::frostsnap_persist::DeviceNames;
+use frostsnap_coordinator::frostsnap_persist::{DeviceNames, GenuineDeviceInfo, GenuineRecord};
 use frostsnap_coordinator::nonce_replenish::NonceReplenishState;
 use frostsnap_coordinator::persist::Persisted;
 use frostsnap_coordinator::signing::SigningState;
@@ -25,8 +25,8 @@ use frostsnap_coordinator::wait_for_single_device::{
     WaitForSingleDevice, WaitForSingleDeviceState,
 };
 use frostsnap_coordinator::{
-    AppMessageBody, DeviceChange, DeviceMode, FirmwareVersion, Sink, UiProtocol, UiStack,
-    UsbSender, UsbSerialManager, ValidatedFirmwareBin, WaitForToUserMessage,
+    AppMessageBody, DeviceChange, DeviceMode, FirmwareVersion, GenuineOutcome, Sink, UiProtocol,
+    UiStack, UsbSender, UsbSerialManager, ValidatedFirmwareBin, WaitForToUserMessage,
 };
 use frostsnap_core::coordinator::restoration::{
     PhysicalBackupPhase, RecoverShare, RestorationState, ToUserRestoration,
@@ -63,6 +63,7 @@ pub struct FfiCoordinator {
     // // persisted things
     pub(crate) db: Arc<Mutex<rusqlite::Connection>>,
     device_names: Arc<Mutex<Persisted<DeviceNames>>>,
+    genuine_devices: Arc<Mutex<Persisted<GenuineDeviceInfo>>>,
     pub(crate) coordinator: Arc<Mutex<Persisted<FrostCoordinator>>>,
     // backup management
     pub(crate) backup_state: Arc<Mutex<Persisted<BackupState>>>,
@@ -70,6 +71,20 @@ pub struct FfiCoordinator {
 }
 
 type Signal = Box<dyn Sink<()>>;
+
+/// Case colour from a persisted record, translated into the app's own enum.
+///
+/// `None` when we've never verified the device, or when it claimed a colour this
+/// build has no name for — better to show none than to show the wrong one, since
+/// colour is what the user matches against the object in their hand.
+fn get_case_color(
+    genuine_devices: &Mutex<Persisted<GenuineDeviceInfo>>,
+    id: DeviceId,
+) -> Option<api::device_list::CaseColor> {
+    use frostsnap_coordinator::frostsnap_comms::genuine_certificate::CaseColor;
+    let stored = genuine_devices.lock().unwrap().get(id)?.case_color.clone();
+    api::device_list::CaseColor::from_comms(CaseColor::from_str(&stored).ok()?)
+}
 
 impl FfiCoordinator {
     pub fn new(
@@ -82,6 +97,8 @@ impl FfiCoordinator {
         let coordinator = Persisted::<FrostCoordinator>::new(&mut db_, ())?;
         event!(Level::DEBUG, "loading device names");
         let device_names = Persisted::<DeviceNames>::new(&mut db_, ())?;
+        event!(Level::DEBUG, "loading genuine device info");
+        let genuine_devices = Persisted::<GenuineDeviceInfo>::new(&mut db_, ())?;
         event!(Level::DEBUG, "loading backup state");
         let backup_state = Persisted::<BackupState>::new(&mut db_, ())?;
 
@@ -105,6 +122,7 @@ impl FfiCoordinator {
             db,
             coordinator: Arc::new(Mutex::new(coordinator)),
             device_names: Arc::new(Mutex::new(device_names)),
+            genuine_devices: Arc::new(Mutex::new(genuine_devices)),
             backup_state: Arc::new(Mutex::new(backup_state)),
             backup_run_streams: Default::default(),
         })
@@ -130,6 +148,7 @@ impl FfiCoordinator {
         let ui_stack = self.ui_stack.clone();
         let db_loop = self.db.clone();
         let device_names = self.device_names.clone();
+        let genuine_devices = self.genuine_devices.clone();
         let usb_sender = self.usb_sender.clone();
         let firmware_upgrade_progress = self.firmware_upgrade_progress.clone();
         let device_list = self.device_list.clone();
@@ -196,6 +215,16 @@ impl FfiCoordinator {
                     for change in device_changes {
                         device_list.consume_manager_event(change.clone());
                         match change {
+                            DeviceChange::Connected { id, .. } => {
+                                // Show a known device's colour straight away rather
+                                // than waiting on a challenge that may be queued
+                                // behind other devices — or that this device can't
+                                // answer at all. Colour only; the genuine status
+                                // stays Unknown until this connection proves itself.
+                                if let Some(color) = get_case_color(&genuine_devices, id) {
+                                    device_list.set_case_color(id, color);
+                                }
+                            }
                             DeviceChange::Registered { id, .. } => {
                                 let pending = coordinator.pending_physical_consolidations(id);
                                 if !pending.is_empty() {
@@ -258,13 +287,57 @@ impl FfiCoordinator {
                             DeviceChange::NeedsName { id } => {
                                 ui_stack.connected(id, DeviceMode::Blank);
                             }
-                            DeviceChange::GenuineDevice { id, certificate } => {
-                                event!(
-                                    Level::INFO,
-                                    device = id.to_string(),
-                                    serial = certificate.serial_number(),
-                                    "device passed genuine check"
-                                );
+                            DeviceChange::GenuineCheck { id, outcome } => {
+                                // Only a pass or an outright failure changes what we
+                                // store. Checking/NoAnswer/FirmwareTooOld all mean
+                                // "no new information about this hardware", and must
+                                // not erase what an earlier successful check learned
+                                // — otherwise a device would lose its colour the
+                                // moment it was downgraded or unplugged mid-check.
+                                let record = match outcome {
+                                    GenuineOutcome::Genuine(certificate) => {
+                                        event!(
+                                            Level::INFO,
+                                            device = id.to_string(),
+                                            serial = certificate.serial_number(),
+                                            "device passed the genuine check"
+                                        );
+                                        Some(GenuineRecord {
+                                            case_color: certificate.case_color().to_string(),
+                                            serial: certificate.raw_serial(),
+                                            revision: certificate.revision().to_string(),
+                                        })
+                                    }
+                                    GenuineOutcome::Failed => {
+                                        event!(
+                                            Level::WARN,
+                                            device = id.to_string(),
+                                            "device failed the genuine check"
+                                        );
+                                        None
+                                    }
+                                    _ => continue,
+                                };
+
+                                let mut genuine_devices = genuine_devices.lock().unwrap();
+                                let result =
+                                    genuine_devices.staged_mutate(&mut *db, |genuine| {
+                                        match record {
+                                            Some(record) => genuine.set(id, record),
+                                            // Stop vouching for hardware that just
+                                            // failed in front of us.
+                                            None => genuine.remove(id),
+                                        }
+                                        Ok(())
+                                    });
+                                if let Err(e) = result {
+                                    event!(
+                                        Level::ERROR,
+                                        id = id.to_string(),
+                                        error = e.to_string(),
+                                        "failed to persist genuine device record"
+                                    );
+                                }
                             }
                             _ => { /* ignore rest */ }
                         }
@@ -643,6 +716,18 @@ impl FfiCoordinator {
 
     pub fn get_device_name(&self, id: DeviceId) -> Option<String> {
         self.device_names.lock().unwrap().get(id)
+    }
+
+    /// Case colour from the persisted record, for a device that may not be
+    /// connected. `None` if we've never verified it, or if it claimed a colour this
+    /// build doesn't know.
+    pub fn get_device_case_color(&self, id: DeviceId) -> Option<api::device_list::CaseColor> {
+        get_case_color(&self.genuine_devices, id)
+    }
+
+    /// Whether a genuine certificate key was compiled into this build.
+    pub fn genuine_check_enabled(&self) -> bool {
+        cfg!(genuine_cert_key)
     }
 
     /// Persist a user-typed device name into the coord's local `device_names` store without

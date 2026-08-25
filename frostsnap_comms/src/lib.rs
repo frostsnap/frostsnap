@@ -22,6 +22,7 @@ pub use fixed_string::{
     DeviceName, FixedString, StringTooLong, DEVICE_NAME_MAX_LENGTH, KEY_NAME_MAX_LENGTH,
 };
 
+use frostsnap_core::schnorr_fun::Signature;
 use genuine_certificate::Certificate;
 
 /// We choose this baudrate because esp32c3 freezes interrupts during flash
@@ -448,8 +449,21 @@ pub enum DeviceSendBody {
     NeedName,
     _LegacyAckUpgradeMode, // Used by earliest devices
     Misc(CommsMisc),
-    SignedChallenge {
+    /// Retired unbound genuine response (RSA over the bare challenge, no DeviceId
+    /// binding), superseded by [`Self::GenuineProof`] and never trusted (it's
+    /// relay-able). Kept only to decode pre-binding firmware; its wire position
+    /// must be preserved so it doesn't shift `GenuineProof`'s discriminant.
+    _LegacyGenuineProof {
         signature: Box<[u8; 384]>,
+        certificate: Box<Certificate>,
+    },
+    /// Bound genuine proof responding to a [`CoordinatorSendBody::Challenge`].
+    /// `rsa_signature` is the hardware DS key over `SHA256(tag ‖ challenge ‖ device_id)`
+    /// (bound to this DeviceId, defeating relay/MITM); `identity_signature` is the
+    /// DeviceId key over the challenge (proof of possession).
+    GenuineProof {
+        rsa_signature: Box<[u8; 384]>,
+        identity_signature: Signature,
         certificate: Box<Certificate>,
     },
 }
@@ -547,6 +561,18 @@ impl Gist for DeviceSendBody {
         match self {
             DeviceSendBody::Core(msg) => msg.gist(),
             DeviceSendBody::Debug { message } => format!("debug: {message}"),
+            DeviceSendBody::_LegacyGenuineProof { certificate, .. } => {
+                format!(
+                    "_LegacyGenuineProof(serial={})",
+                    certificate.unverified_raw_serial()
+                )
+            }
+            DeviceSendBody::GenuineProof { certificate, .. } => {
+                format!(
+                    "GenuineProof(serial={})",
+                    certificate.unverified_raw_serial()
+                )
+            }
             _ => format!("{self:?}"),
         }
     }

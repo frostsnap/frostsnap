@@ -572,10 +572,32 @@ impl<'a> DeviceLoop<'a> {
                     if let (Some(hw_rsa), Some(cert)) =
                         (self.hardware_rsa.as_mut(), self.certificate.as_ref())
                     {
-                        let signature = hw_rsa.sign(&challenge.0, self.sha256);
+                        use frostsnap_core::schnorr_fun;
+                        // Genuine-hardware proof: DS (RSA) signature over
+                        // `tag ‖ challenge ‖ device_id` (see genuine_challenge_message).
+                        let bound_message =
+                            frostsnap_comms::genuine_certificate::genuine_challenge_message(
+                                **challenge,
+                                self.device_id,
+                            );
+                        let rsa_signature = hw_rsa.sign(&bound_message, self.sha256);
+
+                        // Identity proof: schnorr signature over the challenge with
+                        // our DeviceId key (proof of possession).
+                        let schnorr = schnorr_fun::new_with_deterministic_nonces::<
+                            frostsnap_core::sha2::Sha256,
+                        >();
+                        let identity_signature =
+                            frostsnap_comms::genuine_certificate::sign_identity_challenge(
+                                &schnorr,
+                                self.signer.keypair(),
+                                **challenge,
+                            );
+
                         self.upstream_connection.send_to_coordinator([
-                            DeviceSendBody::SignedChallenge {
-                                signature: Box::new(signature),
+                            DeviceSendBody::GenuineProof {
+                                rsa_signature: Box::new(rsa_signature),
+                                identity_signature,
                                 certificate: Box::new(cert.clone()),
                             },
                         ]);
