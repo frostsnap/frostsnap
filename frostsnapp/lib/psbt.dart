@@ -50,7 +50,7 @@ class LoadPsbtPageState extends State<LoadPsbtPage> {
     final UnsignedTx unsignedTx;
 
     try {
-      psbt = Psbt.deserialize(bytes: psbtBytes);
+      psbt = deserializePsbt(bytes: psbtBytes);
     } catch (e) {
       if (context.mounted) {
         await showExceptionDialog(
