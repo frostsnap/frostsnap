@@ -1,4 +1,4 @@
-use super::{chain_sync::ChainClient, multi_x_descriptor_for_account};
+use super::{backend::ChainBackend, multi_x_descriptor_for_account};
 use crate::persist::Persisted;
 use anyhow::{anyhow, Context, Result};
 use bdk_chain::{
@@ -7,6 +7,7 @@ use bdk_chain::{
     indexer::keychain_txout::{self, KeychainTxOutIndex},
     local_chain,
     miniscript::{Descriptor, DescriptorPublicKey},
+    spk_client::FullScanResponse,
     CanonicalizationParams, ChainPosition, CheckPoint, ConfirmationBlockTime, Merge,
 };
 use frostsnap_core::{
@@ -49,7 +50,7 @@ pub type WalletIndexedTxGraphChangeSet =
 pub struct CoordSuperWallet {
     pub(super) tx_graph: Persisted<WalletIndexedTxGraph>,
     pub(super) chain: Persisted<local_chain::LocalChain>,
-    pub(super) chain_client: ChainClient,
+    pub(super) chain_client: Box<dyn ChainBackend>,
     pub network: bitcoin::Network,
     pub(super) db: Arc<Mutex<rusqlite::Connection>>,
 }
@@ -58,7 +59,7 @@ impl CoordSuperWallet {
     pub fn load_or_init(
         db: Arc<Mutex<rusqlite::Connection>>,
         network: bitcoin::Network,
-        chain_client: ChainClient,
+        chain_client: impl ChainBackend,
     ) -> anyhow::Result<Self> {
         Self::load_or_init_with_lookahead(db, network, chain_client, LOOKAHEAD)
     }
@@ -72,7 +73,7 @@ impl CoordSuperWallet {
     pub fn load_or_init_with_lookahead(
         db: Arc<Mutex<rusqlite::Connection>>,
         network: bitcoin::Network,
-        chain_client: ChainClient,
+        chain_client: impl ChainBackend,
         lookahead: u32,
     ) -> anyhow::Result<Self> {
         event!(
@@ -93,7 +94,7 @@ impl CoordSuperWallet {
         Ok(Self {
             tx_graph,
             chain,
-            chain_client,
+            chain_client: Box::new(chain_client),
             db,
             network,
         })
@@ -452,7 +453,7 @@ impl CoordSuperWallet {
 
     pub fn apply_update(
         &mut self,
-        update: bdk_electrum_streaming::Update<KeychainId>,
+        update: FullScanResponse<KeychainId, ConfirmationBlockTime>,
     ) -> Result<bool> {
         let mut db = self.db.lock().unwrap();
         let changed = self

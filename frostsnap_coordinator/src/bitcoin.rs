@@ -1,3 +1,4 @@
+pub mod backend;
 pub mod chain_sync;
 mod handler_state;
 pub mod outgoing;
