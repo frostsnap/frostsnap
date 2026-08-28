@@ -1,13 +1,47 @@
 //! Wallet-side abstraction over the chain source.
 
-use super::{
-    chain_sync::{ChainClient, ChainStatus},
-    wallet::KeychainId,
-};
+use super::{chain_sync::ChainClient, wallet::KeychainId};
 use crate::Sink;
 use anyhow::Result;
 use bdk_chain::bitcoin;
 use std::collections::BTreeMap;
+
+/// Status of the chain source: shared lifecycle plus backend-specific detail.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ChainStatus {
+    pub state: ChainStatusState,
+    pub detail: ChainStatusDetail,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum ChainStatusState {
+    Idle,
+    Connecting,
+    Connected,
+    Disconnected,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum ChainStatusDetail {
+    Electrum(ElectrumStatus),
+    CompactFilters(FilterStatus),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct ElectrumStatus {
+    pub primary_url: String,
+    pub backup_url: String,
+    pub on_backup: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FilterStatus {
+    pub peers: u32,
+    /// Fraction of the requested filter range checked, from 0 to 1.
+    pub progress: f32,
+    /// Chain tip height the node believes in, or 0 before it knows one.
+    pub chain_height: u32,
+}
 
 /// A source of chain data for a `CoordSuperWallet`.
 pub trait ChainBackend: Send + 'static {

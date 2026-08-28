@@ -2,8 +2,7 @@
 
 use super::{connect, WatchSet, MATCH_LOOKAHEAD};
 use crate::bitcoin::{
-    backend::ChainBackend,
-    chain_sync::ChainStatus,
+    backend::{ChainBackend, ChainStatus, ChainStatusDetail, ChainStatusState, FilterStatus},
     wallet::{CoordSuperWallet, KeychainId},
 };
 use crate::Sink;
@@ -15,7 +14,7 @@ use bdk_chain::{
 };
 use bip157::{
     chain::{BlockHeaderChanges, IndexedHeader},
-    ChainState, Event, HashCheckpoint, Requester, TrustedPeer,
+    ChainState, Event, HashCheckpoint, Info, Progress, Requester, TrustedPeer, Warning,
 };
 use futures::channel::mpsc;
 use std::{
@@ -165,6 +164,84 @@ fn is_plausible_hostname(host: &str) -> bool {
         && host
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_'))
+}
+
+/// Projects node events into the app's `ChainStatus`, deduping repeated emissions.
+struct FilterStatusTracker {
+    peers: u32,
+    progress: f32,
+    chain_height: u32,
+    connected: bool,
+    last_emitted: Option<ChainStatus>,
+    sink: Box<dyn Sink<ChainStatus>>,
+}
+
+impl Default for FilterStatusTracker {
+    fn default() -> Self {
+        Self {
+            peers: 0,
+            progress: 0.0,
+            chain_height: 0,
+            connected: false,
+            last_emitted: None,
+            sink: Box::new(()),
+        }
+    }
+}
+
+impl FilterStatusTracker {
+    fn set_sink(&mut self, sink: Box<dyn Sink<ChainStatus>>) {
+        self.sink = sink;
+        let status = self.project();
+        self.last_emitted = Some(status.clone());
+        self.sink.send(status);
+    }
+
+    fn handshake(&mut self) {
+        self.peers = self.peers.saturating_add(1);
+        self.emit();
+    }
+
+    fn connections_met(&mut self) {
+        self.connected = true;
+        self.emit();
+    }
+
+    fn needs_connections(&mut self) {
+        self.connected = false;
+        self.peers = 0;
+        self.emit();
+    }
+
+    fn progress(&mut self, progress: Progress) {
+        self.progress = progress.fraction_complete();
+        self.chain_height = progress.chain_height();
+        self.emit();
+    }
+
+    fn project(&self) -> ChainStatus {
+        ChainStatus {
+            state: match (self.connected, self.peers) {
+                (true, _) => ChainStatusState::Connected,
+                (false, 0) => ChainStatusState::Idle,
+                (false, _) => ChainStatusState::Connecting,
+            },
+            detail: ChainStatusDetail::CompactFilters(FilterStatus {
+                peers: self.peers,
+                progress: self.progress,
+                chain_height: self.chain_height,
+            }),
+        }
+    }
+
+    fn emit(&mut self) {
+        let status = self.project();
+        if self.last_emitted.as_ref() == Some(&status) {
+            return;
+        }
+        self.last_emitted = Some(status.clone());
+        self.sink.send(status);
+    }
 }
 
 enum Message {
@@ -330,7 +407,8 @@ impl FilterHandler {
         let bip157::Client {
             requester,
             mut event_rx,
-            ..
+            mut info_rx,
+            mut warn_rx,
         } = client;
         *self.requester.lock().unwrap() = Some(requester.clone());
         let (update_sender, update_recv) =
@@ -345,6 +423,7 @@ impl FilterHandler {
                 )
             }
         });
+        let mut status = FilterStatusTracker::default();
         let node_handle = rt.spawn(async move { node.run().await });
         rt.block_on(async move {
             loop {
@@ -395,13 +474,33 @@ impl FilterHandler {
                             }
                         }
                     }
+                    info = info_rx.recv() => {
+                        match info {
+                            Some(Info::Progress(progress)) => status.progress(progress),
+                            Some(Info::ConnectionsMet) => status.connections_met(),
+                            Some(Info::SuccessfulHandshake) => status.handshake(),
+                            Some(Info::BlockReceived(_)) => {}
+                            None => break,
+                        }
+                    }
+                    warning = warn_rx.recv() => {
+                        match warning {
+                            Some(Warning::NeedConnections { .. }) => status.needs_connections(),
+                            Some(warning) => {
+                                event!(Level::DEBUG, %warning, "compact filter node warning");
+                            }
+                            None => break,
+                        }
+                    }
                     message = next_message(&mut req_recv) => {
                         match message {
                             Some(Message::RefreshWatchSet) => {
                                 let (_fresh_tip, fresh_watch) = snapshot(&super_wallet);
                                 watch = fresh_watch;
                             }
-                            Some(Message::SetStatusSink(_sink)) => {}
+                            Some(Message::SetStatusSink(sink)) => {
+                                status.set_sink(sink);
+                            }
                             None => break,
                         }
                     }
@@ -630,6 +729,65 @@ mod test {
         assert_eq!(config.required_peers, 4);
         assert!(config.whitelist_only);
         assert_eq!(config.trusted_peers.len(), 1);
+    }
+
+    /// One peer is not the quorum the node was told to reach, so it must not read as connected.
+    /// Reporting "connected" off a single handshake would tell the user their wallet is up to date
+    /// while the node is still waiting to trust what it hears.
+    #[test]
+    fn a_single_handshake_is_connecting_not_connected() {
+        let mut status = FilterStatusTracker::default();
+        assert_eq!(status.project().state, ChainStatusState::Idle);
+
+        status.handshake();
+        assert_eq!(status.project().state, ChainStatusState::Connecting);
+
+        status.connections_met();
+        assert_eq!(status.project().state, ChainStatusState::Connected);
+    }
+
+    #[test]
+    fn losing_peers_stops_claiming_a_count_we_no_longer_know() {
+        let mut status = FilterStatusTracker::default();
+        status.handshake();
+        status.handshake();
+        status.connections_met();
+
+        status.needs_connections();
+        let projected = status.project();
+        assert_eq!(projected.state, ChainStatusState::Idle);
+        match projected.detail {
+            ChainStatusDetail::CompactFilters(filters) => assert_eq!(filters.peers, 0),
+            other => panic!("expected compact filter detail, got {other:?}"),
+        }
+    }
+
+    /// The node reports progress continuously through a long download; forwarding every one would
+    /// be a stream of identical statuses.
+    #[test]
+    fn an_unchanged_status_is_not_re_emitted() {
+        use std::sync::{Arc, Mutex};
+
+        #[derive(Clone)]
+        struct Log(Arc<Mutex<Vec<ChainStatus>>>);
+        impl crate::Sink<ChainStatus> for Log {
+            fn send(&self, status: ChainStatus) {
+                self.0.lock().unwrap().push(status);
+            }
+        }
+
+        let log = Log(Default::default());
+        let mut status = FilterStatusTracker::default();
+        status.set_sink(Box::new(log.clone()));
+        assert_eq!(
+            log.0.lock().unwrap().len(),
+            1,
+            "a new sink sees the current status"
+        );
+
+        status.connections_met();
+        status.connections_met();
+        assert_eq!(log.0.lock().unwrap().len(), 2, "only the change was sent");
     }
 
     #[test]
