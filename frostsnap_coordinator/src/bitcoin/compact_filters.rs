@@ -1,5 +1,8 @@
 //! Compact block filter matching for the BIP157 backend.
 
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+pub mod node;
+
 use super::wallet::{KeychainId, WalletIndexer};
 use anyhow::{Context, Result};
 use bdk_chain::{

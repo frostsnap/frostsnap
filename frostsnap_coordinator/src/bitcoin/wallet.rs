@@ -105,6 +105,15 @@ impl CoordSuperWallet {
         self.chain.tip()
     }
 
+    /// Every outpoint the indexer has attributed to one of our keychains.
+    pub fn owned_outpoints(&self) -> impl Iterator<Item = OutPoint> + '_ {
+        self.tx_graph
+            .index
+            .outpoints()
+            .iter()
+            .map(|(_, outpoint)| *outpoint)
+    }
+
     /// Transaction cache for the chain client.
     pub fn tx_cache(&self) -> impl Iterator<Item = (Txid, Arc<bitcoin::Transaction>)> + '_ {
         self.tx_graph

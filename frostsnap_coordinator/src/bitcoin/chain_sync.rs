@@ -419,7 +419,7 @@ impl ConnectionHandler {
         rt.block_on(conn_loop.drive());
     }
 
-    fn handle_wallet_updates<SW, F>(
+    pub(super) fn handle_wallet_updates<SW, F>(
         super_wallet: SW,
         update_recv: mpsc::UnboundedReceiver<Update<KeychainId>>,
         mut action: F,
