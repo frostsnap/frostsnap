@@ -20,7 +20,9 @@ use bip157::{
 use futures::channel::mpsc;
 use std::{
     collections::BTreeMap,
+    net::{IpAddr, SocketAddr},
     ops::Deref,
+    str::FromStr,
     sync::{self, Arc},
     time::Duration,
 };
@@ -80,12 +82,89 @@ impl FilterConfig {
     pub fn new(network: bitcoin::Network) -> Self {
         Self {
             network,
-            required_peers: 2,
+            required_peers: crate::settings::Settings::default().get_filter_required_peers(network),
             trusted_peers: Vec::new(),
             whitelist_only: false,
             birthday: None,
         }
     }
+
+    /// Build from persisted settings, dropping unparseable peers with a warning.
+    pub fn from_settings(settings: &crate::settings::Settings, network: bitcoin::Network) -> Self {
+        let default_port = default_p2p_port(network);
+        let trusted_peers = settings
+            .get_filter_peers(network)
+            .into_iter()
+            .filter_map(|spec| match parse_peer(&spec, default_port) {
+                Some(peer) => Some(peer),
+                None => {
+                    event!(Level::WARN, peer = spec, "ignoring unparseable filter peer");
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+        let whitelist_only = settings.get_filter_whitelist_only(network);
+        if whitelist_only && trusted_peers.is_empty() {
+            event!(
+                Level::ERROR,
+                network = network.to_string(),
+                "whitelist-only peering with no usable peers: the node will not connect"
+            );
+        }
+        Self {
+            network,
+            required_peers: settings.get_filter_required_peers(network),
+            trusted_peers,
+            whitelist_only,
+            birthday: Some(default_birthday(network)),
+        }
+    }
+}
+
+/// Starting checkpoint for a wallet with no history; mainnet floors at taproot activation.
+fn default_birthday(network: bitcoin::Network) -> HashCheckpoint {
+    match network {
+        bitcoin::Network::Bitcoin => HashCheckpoint::taproot_activation(),
+        _ => HashCheckpoint::from_genesis(bitcoin::params::Params::new(network)),
+    }
+}
+
+/// Default P2P port when the peer setting omits one.
+fn default_p2p_port(network: bitcoin::Network) -> u16 {
+    match network {
+        bitcoin::Network::Bitcoin => 8333,
+        bitcoin::Network::Signet => 38333,
+        bitcoin::Network::Regtest => 18444,
+        _ => 18333,
+    }
+}
+
+/// Parse a `host:port`, bare IP, or bare hostname into a `TrustedPeer`.
+fn parse_peer(spec: &str, default_port: u16) -> Option<TrustedPeer> {
+    let spec = spec.trim();
+    if spec.is_empty() {
+        return None;
+    }
+    if let Ok(socket) = SocketAddr::from_str(spec) {
+        return Some(TrustedPeer::from_socket_addr(socket));
+    }
+    if let Ok(ip) = IpAddr::from_str(spec) {
+        return Some(TrustedPeer::from((ip, Some(default_port))));
+    }
+    let (host, port) = match spec.rsplit_once(':') {
+        Some((host, port)) => (host, port.parse().ok()?),
+        None => (spec, default_port),
+    };
+    is_plausible_hostname(host).then(|| TrustedPeer::from_hostname(host, port))
+}
+
+/// Cheap character-set check to reject text that was never a hostname.
+fn is_plausible_hostname(host: &str) -> bool {
+    !host.is_empty()
+        && host.len() <= 253
+        && host
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_'))
 }
 
 enum Message {
@@ -483,6 +562,74 @@ mod test {
             "the wallet only reached height {reached} in {}s — the node did not follow signet",
             started.elapsed().as_secs()
         );
+    }
+
+    #[test]
+    fn peers_are_parsed_in_every_form_a_user_might_type() {
+        for spec in [
+            "10.0.0.1:8333",
+            "10.0.0.1",
+            "[2001:db8::1]:8333",
+            "::1",
+            "node.example:8333",
+            "node.example",
+            "  10.0.0.1:8333  ",
+        ] {
+            assert!(parse_peer(spec, 8333).is_some(), "should parse: {spec}");
+        }
+    }
+
+    #[test]
+    fn nonsense_peers_are_rejected_rather_than_guessed_at() {
+        for spec in [
+            "",
+            "   ",
+            ":8333",
+            "node.example:not-a-port",
+            "not a peer at all",
+            "http://node.example",
+        ] {
+            assert!(parse_peer(spec, 8333).is_none(), "should not parse: {spec}");
+        }
+    }
+
+    #[test]
+    fn a_peer_without_a_port_takes_the_network_default() {
+        let peer = parse_peer("10.0.0.1", 38333).expect("parses");
+        assert_eq!(peer.port(), Some(38333));
+    }
+
+    #[test]
+    fn each_network_has_its_own_p2p_port() {
+        assert_eq!(default_p2p_port(bitcoin::Network::Bitcoin), 8333);
+        assert_eq!(default_p2p_port(bitcoin::Network::Signet), 38333);
+        assert_eq!(default_p2p_port(bitcoin::Network::Regtest), 18444);
+        assert_eq!(default_p2p_port(bitcoin::Network::Testnet), 18333);
+    }
+
+    #[test]
+    fn mainnet_starts_at_taproot_activation() {
+        let birthday = default_birthday(bitcoin::Network::Bitcoin);
+        assert_eq!(birthday.height, 709_631);
+        let signet = default_birthday(bitcoin::Network::Signet);
+        assert_eq!(signet.height, 0, "no taproot checkpoint outside mainnet");
+    }
+
+    #[test]
+    fn settings_carry_through_to_the_node_configuration() {
+        let mut settings = crate::settings::Settings::default();
+        let mut mutations = vec![];
+        settings.set_filter_peers(
+            bitcoin::Network::Signet,
+            vec!["10.0.0.1:38333".into(), "not a peer at all".into()],
+            &mut mutations,
+        );
+        settings.set_filter_required_peers(bitcoin::Network::Signet, 4, &mut mutations);
+        settings.set_filter_whitelist_only(bitcoin::Network::Signet, true, &mut mutations);
+        let config = FilterConfig::from_settings(&settings, bitcoin::Network::Signet);
+        assert_eq!(config.required_peers, 4);
+        assert!(config.whitelist_only);
+        assert_eq!(config.trusted_peers.len(), 1);
     }
 
     #[test]
