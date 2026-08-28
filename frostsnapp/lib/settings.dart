@@ -10,6 +10,7 @@ import 'package:frostsnap/bullet_list.dart';
 import 'package:frostsnap/contexts.dart';
 import 'package:frostsnap/copy_feedback.dart';
 import 'package:frostsnap/device_action_fullscreen_dialog.dart';
+import 'package:frostsnap/chain_source_settings.dart';
 import 'package:frostsnap/electrum_server_settings.dart';
 import 'package:frostsnap/global.dart';
 import 'package:frostsnap/id_ext.dart';
@@ -191,6 +192,13 @@ class SettingsPage extends StatelessWidget {
                   icon: Icons.info_outline,
                   bodyBuilder: (context) {
                     return AboutPage();
+                  },
+                ),
+                SettingsItem(
+                  title: Text('Chain source'),
+                  icon: Icons.hub_outlined,
+                  bodyBuilder: (context) {
+                    return ChainSourceSettingsPage();
                   },
                 ),
                 SettingsItem(
