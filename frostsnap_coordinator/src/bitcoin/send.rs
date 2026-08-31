@@ -677,6 +677,7 @@ mod test {
     use crate::settings::ElectrumEnabled;
     use bdk_chain::{
         bitcoin::{hashes::Hash, BlockHash, TxIn},
+        spk_client::FullScanResponse,
         BlockId, CheckPoint, ConfirmationBlockTime, TxUpdate,
     };
     use bdk_coin_select::Drain;
@@ -790,7 +791,7 @@ mod test {
             )]
             .into();
             self.wallet
-                .apply_update(bdk_electrum_streaming::Update {
+                .apply_update(FullScanResponse {
                     tx_update,
                     last_active_indices: [((self.master_appkey, account_keychain), index)].into(),
                     chain_update: Some(
@@ -859,7 +860,7 @@ mod test {
             )]
             .into();
             self.wallet
-                .apply_update(bdk_electrum_streaming::Update {
+                .apply_update(FullScanResponse {
                     tx_update,
                     last_active_indices: Default::default(),
                     chain_update: Some(
@@ -1619,7 +1620,7 @@ mod test {
             .into();
 
             wallet
-                .apply_update(bdk_electrum_streaming::Update {
+                .apply_update(FullScanResponse {
                     tx_update,
                     last_active_indices: [(external, far)].into(),
                     chain_update: Some(CheckPoint::from_block_ids(blocks).unwrap()),
@@ -1685,7 +1686,7 @@ mod test {
         .into();
         f.blocks.push(block);
         f.wallet
-            .apply_update(bdk_electrum_streaming::Update {
+            .apply_update(FullScanResponse {
                 tx_update,
                 last_active_indices: Default::default(),
                 chain_update: Some(CheckPoint::from_block_ids(f.blocks.iter().copied()).unwrap()),
