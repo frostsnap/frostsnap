@@ -700,7 +700,7 @@ mod test {
             Persisted::new(&mut *conn, NETWORK).unwrap()
         };
         ChainClient::new(
-            bitcoin::constants::genesis_block(NETWORK).block_hash(),
+            NETWORK,
             ElectrumConfig {
                 enabled: ElectrumEnabled::None,
                 primary: String::new(),

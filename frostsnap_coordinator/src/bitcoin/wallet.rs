@@ -126,6 +126,37 @@ impl CoordSuperWallet {
             })
     }
 
+    /// Which of our scripts each transaction we hold appears in the history of, keyed the way
+    /// the server keys it.
+    ///
+    /// This is what lets an eviction be noticed: the chain source spots one by missing a txid
+    /// from the history the server now reports, so it can only spot the ones it knew about. It
+    /// is not persisted with the rest of the cache — this is the wallet data it is rebuilt from
+    /// on every startup, and without it an eviction that happened while we were disconnected is
+    /// never detected.
+    ///
+    /// Mirrors Electrum's definition of a script's history: a transaction is in it if it pays
+    /// the script or spends an output of it.
+    pub fn spk_txid_cache(&self) -> impl Iterator<Item = (ScriptBuf, Txid)> + '_ {
+        let graph = self.tx_graph.graph();
+        let index = &self.tx_graph.index;
+        graph.full_txs().flat_map(move |tx_node| {
+            let txid = tx_node.txid;
+            let paid_to = tx_node.tx.output.iter().map(|txout| &txout.script_pubkey);
+            let spent_from = tx_node
+                .tx
+                .input
+                .iter()
+                .filter_map(|txin| graph.get_txout(txin.previous_output))
+                .map(|txout| &txout.script_pubkey);
+            paid_to
+                .chain(spent_from)
+                .filter(|spk| index.index_of_spk((*spk).clone()).is_some())
+                .map(|spk| (spk.clone(), txid))
+                .collect::<Vec<_>>()
+        })
+    }
+
     /// How far past a frontier the indexer derives. Not what the chain source subscribes to — see
     /// `SUBSCRIPTION_LOOKAHEAD`.
     pub fn lookahead(&self) -> u32 {

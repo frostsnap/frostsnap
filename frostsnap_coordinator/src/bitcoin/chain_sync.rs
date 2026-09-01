@@ -7,8 +7,8 @@ use bdk_chain::{
     CheckPoint, ConfirmationBlockTime,
 };
 use bdk_electrum_streaming::{
-    electrum_streaming_client::request, run_async, AsyncReceiver, AsyncState, Cache,
-    DerivedSpkTracker, ReqCoord, Update,
+    electrum_streaming_client::{request, ElectrumScriptHash},
+    run_async, AsyncReceiver, AsyncState, Cache, DerivedSpkTracker, ReqCoord, Update,
 };
 use frostsnap_core::MasterAppkey;
 use futures::{
@@ -35,12 +35,13 @@ use tokio::sync::watch;
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 use tracing::{event, Level};
 
-use crate::persist::Persisted;
+use crate::persist::{Persist, Persisted};
 use crate::settings::ElectrumEnabled;
 use crate::Sink;
 
 use super::{
     descriptor_for_account_keychain,
+    electrum_cache::ElectrumCache,
     handler_state::{ConnectedTo, Establish, HandlerState},
     status_tracker::ConnPhase,
     tofu::{
@@ -154,7 +155,7 @@ pub struct ChainClient {
 
 impl ChainClient {
     pub fn new(
-        genesis_hash: BlockHash,
+        network: bitcoin::Network,
         config: ElectrumConfig,
         trusted_certificates: Persisted<TrustedCertificates>,
         db: Arc<sync::Mutex<rusqlite::Connection>>,
@@ -162,7 +163,12 @@ impl ChainClient {
         let (req_sender, req_recv) = mpsc::unbounded();
         let (client, client_recv) = KeychainClient::new();
         let (config_tx, config_rx) = watch::channel(config);
-        let cache = Cache::default();
+        let genesis_hash = bitcoin::constants::genesis_block(network).block_hash();
+        let electrum_cache = {
+            let mut db_ = db.lock().unwrap();
+            Persisted::<ElectrumCache>::new(&mut db_, network)
+                .expect("must load persisted electrum cache")
+        };
         (
             Self {
                 req_sender,
@@ -173,7 +179,8 @@ impl ChainClient {
             ConnectionHandler {
                 req_recv,
                 client_recv,
-                cache,
+                cache: electrum_cache.cache.clone(),
+                network,
                 client,
                 genesis_hash,
                 trusted_certificates,
@@ -338,11 +345,32 @@ pub const fn default_backup_electrum_server(network: bitcoin::Network) -> &'stat
     }
 }
 
+/// Rebuild the half of the cache that is derived from the wallet rather than persisted.
+///
+/// [`Cache::tx_cache`] is deliberately not persisted — every part of it is already in the
+/// wallet, and a second copy would only give the two something to disagree about. That makes
+/// this the only thing standing between a restart and a silently missed eviction: the chain
+/// source reports one by missing a txid from the history the server now gives, so a txid it
+/// was never told about cannot go missing.
+fn seed_tx_cache_from_wallet(cache: &mut Cache, super_wallet: &CoordSuperWallet) {
+    cache.tx_cache.txs.extend(super_wallet.tx_cache());
+    cache.tx_cache.anchors.extend(super_wallet.anchor_cache());
+    for (spk, txid) in super_wallet.spk_txid_cache() {
+        cache
+            .tx_cache
+            .spk_txids
+            .entry(ElectrumScriptHash::new(&spk))
+            .or_default()
+            .insert(txid);
+    }
+}
+
 pub struct ConnectionHandler {
     client: KeychainClient,
     client_recv: KeychainClientReceiver,
     req_recv: mpsc::UnboundedReceiver<Message>,
     cache: Cache,
+    network: bitcoin::Network,
     genesis_hash: BlockHash,
     trusted_certificates: Persisted<TrustedCertificates>,
     db: Arc<sync::Mutex<rusqlite::Connection>>,
@@ -374,8 +402,7 @@ impl ConnectionHandler {
             let super_wallet = super_wallet.lock().expect("must lock");
             network = super_wallet.network;
             chain_tip = super_wallet.chain_tip();
-            self.cache.txs.extend(super_wallet.tx_cache());
-            self.cache.anchors.extend(super_wallet.anchor_cache());
+            seed_tx_cache_from_wallet(&mut self.cache, &super_wallet);
         }
 
         tracing::info!("Running ConnectionHandler for {} network", network);
@@ -396,7 +423,7 @@ impl ConnectionHandler {
             self.genesis_hash,
             self.config_rx.clone(),
             self.trusted_certificates,
-            self.db,
+            self.db.clone(),
         );
 
         let electrum_state = AsyncState::<KeychainId>::new(
@@ -414,6 +441,8 @@ impl ConnectionHandler {
             update_sender,
             electrum_state,
             config_rx: self.config_rx,
+            network: self.network,
+            db: self.db,
         };
 
         rt.block_on(conn_loop.drive());
@@ -479,11 +508,35 @@ struct ConnLoop {
     update_sender: mpsc::UnboundedSender<Update<KeychainId>>,
     electrum_state: AsyncState<KeychainId>,
     config_rx: watch::Receiver<ElectrumConfig>,
+    network: bitcoin::Network,
+    db: Arc<sync::Mutex<rusqlite::Connection>>,
 }
 
 impl ConnLoop {
     const PING_DELAY: Duration = Duration::from_secs(21);
     const PING_TIMEOUT: Duration = Duration::from_secs(3);
+
+    /// Snapshot `subscriptions`/`headers` to the db (`tx_cache` is never written — see
+    /// `electrum_cache` module docs). Called whenever a connection ends, which is the natural
+    /// checkpoint: best-effort, so a failure just means a slower resync next launch, not
+    /// something to bubble up.
+    ///
+    /// Takes its inputs explicitly (not `&self`) so it can be called with `self.network` and
+    /// `self.electrum_state` still live inside `service`'s field-destructured borrows.
+    fn persist_cache(
+        network: bitcoin::Network,
+        db: &sync::Mutex<rusqlite::Connection>,
+        cache: &Cache,
+    ) {
+        let electrum_cache = ElectrumCache::new(network, cache.clone());
+        let result = db
+            .lock()
+            .map_err(|_| anyhow!("db mutex poisoned"))
+            .and_then(|mut conn| electrum_cache.persist_update(&mut conn, ()));
+        if let Err(err) = result {
+            tracing::warn!(error = err.to_string(), "Failed to persist electrum cache");
+        }
+    }
 
     async fn drive(&mut self) {
         let mut next = Next::Idle;
@@ -563,6 +616,7 @@ impl ConnLoop {
             update_sender,
             electrum_state,
             config_rx,
+            ..
         } = self;
 
         let next = {
@@ -647,6 +701,10 @@ impl ConnLoop {
                 }
             }
         };
+
+        // Every path out of a connection is a natural checkpoint, Stop (app going away)
+        // included, so persist before anything else here.
+        Self::persist_cache(self.network, &self.db, electrum_state.cache());
 
         // The control channel closed: stop without touching status (the app is going away).
         if matches!(next, Next::Stop) {
@@ -759,6 +817,126 @@ mod test {
             },
         );
         ElectrumScriptHash::new(&spk)
+    }
+
+    /// A transaction dropped from the mempool while we were disconnected must still be noticed
+    /// as evicted on the next startup.
+    ///
+    /// The chain source spots an eviction by missing a txid from the history the server now
+    /// reports, so it can only spot txids it already holds for that script — and that set
+    /// (`Cache::tx_cache::spk_txids`) is deliberately not persisted. If startup does not rebuild
+    /// it from the wallet, the eviction is invisible for as long as the script's history does not
+    /// change again, and the wallet goes on showing a transaction the network has forgotten.
+    #[test]
+    fn an_eviction_that_happened_while_disconnected_is_detected_after_a_restart() {
+        use bdk_chain::bitcoin::{Amount, TxIn, TxOut};
+        use bdk_chain::BlockId;
+        use bdk_electrum_streaming::{JobId, ReqCoord, ReqQueue, SpkJob, SpkProgress};
+
+        const NETWORK: bitcoin::Network = bitcoin::Network::Bitcoin;
+        const INDEX: u32 = 3;
+
+        let db = Arc::new(sync::Mutex::new(
+            rusqlite::Connection::open_in_memory().unwrap(),
+        ));
+        let master_appkey =
+            MasterAppkey::derive_from_rootkey(Point::random(&mut rand::thread_rng()));
+        let keychain = (master_appkey, BitcoinAccountKeychain::external());
+        let spk = crate::bitcoin::peek_spk(
+            master_appkey,
+            BitcoinBip32Path {
+                account_keychain: BitcoinAccountKeychain::external(),
+                index: NormalIndex::new(INDEX).unwrap(),
+            },
+        );
+
+        fn chain_client(
+            db: &Arc<sync::Mutex<rusqlite::Connection>>,
+        ) -> (ChainClient, ConnectionHandler) {
+            let trusted = {
+                let mut conn = db.lock().unwrap();
+                Persisted::new(&mut *conn, NETWORK).unwrap()
+            };
+            ChainClient::new(
+                NETWORK,
+                ElectrumConfig {
+                    enabled: ElectrumEnabled::None,
+                    primary: String::new(),
+                    backup: String::new(),
+                },
+                trusted,
+                db.clone(),
+            )
+        }
+
+        // A session that saw the transaction in the mempool and stored it.
+        let txid = {
+            let (client, _handler) = chain_client(&db);
+            let mut wallet = CoordSuperWallet::load_or_init(db.clone(), NETWORK, client).unwrap();
+            wallet.list_addresses(master_appkey);
+
+            let tx = bitcoin::Transaction {
+                version: bitcoin::transaction::Version::TWO,
+                lock_time: bitcoin::absolute::LockTime::ZERO,
+                input: vec![TxIn::default()],
+                output: vec![TxOut {
+                    value: Amount::from_sat(1_000_000),
+                    script_pubkey: spk.clone(),
+                }],
+            };
+            let txid = tx.compute_txid();
+            let mut tx_update = bdk_chain::TxUpdate::default();
+            tx_update.txs = vec![Arc::new(tx)];
+
+            wallet
+                .apply_update(Update {
+                    tx_update,
+                    last_active_indices: [(keychain, INDEX)].into(),
+                    chain_update: Some(
+                        CheckPoint::from_block_ids([BlockId {
+                            height: 0,
+                            hash: bitcoin::constants::genesis_block(NETWORK).block_hash(),
+                        }])
+                        .unwrap(),
+                    ),
+                })
+                .unwrap();
+            assert!(wallet.get_tx(txid).is_some(), "the wallet stored the tx");
+            txid
+        };
+
+        // Restart: same database, fresh wallet, and a cache with nothing carried over in memory.
+        let (client, _handler) = chain_client(&db);
+        let mut wallet = CoordSuperWallet::load_or_init(db.clone(), NETWORK, client).unwrap();
+        wallet.list_addresses(master_appkey);
+        assert!(
+            wallet.get_tx(txid).is_some(),
+            "the tx is still on disk after the restart"
+        );
+
+        let mut cache = Cache::default();
+        seed_tx_cache_from_wallet(&mut cache, &wallet);
+
+        // The server now reports no history at all for the script: while we were away, the
+        // transaction was dropped and nothing replaced it.
+        let spk_hash = ElectrumScriptHash::new(&spk);
+        let mut job = SpkJob::new(&cache, spk_hash, None);
+        let mut queue = ReqQueue::default();
+        let mut coord = ReqCoord::new(0);
+        let mut queuer = coord.queuer(&mut queue, JobId::Spk(spk_hash));
+        let progress = job.poll(&mut queuer, &cache).unwrap();
+
+        let SpkProgress::Done(tx_update) = progress else {
+            panic!("a script the server has no history for leaves nothing to fetch: {progress:?}");
+        };
+        assert!(
+            tx_update
+                .evicted_ats
+                .iter()
+                .any(|&(evicted, _)| evicted == txid),
+            "the dropped tx must be reported as evicted, got {:?}",
+            tx_update.evicted_ats,
+        );
     }
 
     /// Pins the upstream contract `monitor_keychain` rides on (bdk_electrum_streaming >= 0.5.3):

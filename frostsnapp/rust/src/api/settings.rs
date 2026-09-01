@@ -1,5 +1,4 @@
 use anyhow::{anyhow, Result};
-use bitcoin::constants::genesis_block;
 use bitcoin::Network as BitcoinNetwork;
 use flutter_rust_bridge::frb;
 use frostsnap_coordinator::bitcoin::chain_sync::{ChainClient, ElectrumConfig, SUPPORTED_NETWORKS};
@@ -73,8 +72,6 @@ impl Settings {
                 backup: persisted.get_backup_electrum_server(network),
             };
 
-            let genesis_hash = genesis_block(bitcoin::params::Params::new(network)).block_hash();
-
             // Load trusted certificates for this network from the database
             let trusted_certificates = {
                 let mut db_ = db.lock().unwrap();
@@ -83,12 +80,8 @@ impl Settings {
                 Persisted::<TrustedCertificates>::new(&mut *db_, network)?
             };
 
-            let (chain_api, conn_handler) = ChainClient::new(
-                genesis_hash,
-                electrum_config,
-                trusted_certificates,
-                db.clone(),
-            );
+            let (chain_api, conn_handler) =
+                ChainClient::new(network, electrum_config, trusted_certificates, db.clone());
             let super_wallet =
                 SuperWallet::load_or_new(&app_directory, network, chain_api.clone())?;
             // FIXME: the dependency relationship here is overly convoluted.

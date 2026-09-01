@@ -350,9 +350,9 @@ dependencies = [
 
 [[package]]
 name = "bdk_electrum_streaming"
-version = "0.5.3"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a16576b1efa0960f4c6d65d588005889ee9bee600d47540adca62d21003154bc"
+checksum = "0b76decece975a438ab263082cb223757dd4137b0f3ff7aebdd868a75cb46875"
 dependencies = [
  "anyhow",
  "bdk_core",
@@ -360,6 +360,7 @@ dependencies = [
  "futures",
  "futures-timer",
  "miniscript",
+ "serde",
  "serde_json",
  "tracing",
 ]
