@@ -83,6 +83,18 @@ tracing-subscriber = { version = "0.3" }
 rsa = { version = "0.9" }
 crc = "3"
 
+# The firmware target has no C compiler and only needs secp256k1 to parse and
+# serialize keys, so it uses a fork where the C backend is optional. secp256k1-sys is
+# patched along with it to avoid two packages claiming the same `links` key.
+#
+# secp256kfun_k256 is that fork's arithmetic backend, split out of secp256kfun so that
+# secp256k1 can depend on it without forming a secp256k1 -> secp256kfun -> secp256k1
+# dependency cycle. Unpatched secp256kfun is used as published.
+[patch.crates-io]
+secp256k1 = { git = "https://github.com/nickfarrow/rust-secp256k1", rev = "8b797e7d41bc3fd9153d987418879eff0a759e3c" }
+secp256k1-sys = { git = "https://github.com/nickfarrow/rust-secp256k1", rev = "8b797e7d41bc3fd9153d987418879eff0a759e3c" }
+secp256kfun_k256 = { git = "https://github.com/nickfarrow/secp256kfun", rev = "5b3a9053fd51c7e0289a7de21ec7c4ceb083b1c3" }
+
 [profile.dev]
 # Rust debug is too slow.
 # For debug builds always builds with some optimization

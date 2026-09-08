@@ -685,7 +685,7 @@ impl LocalSpk {
         let expected_external_xonly =
             AppTweak::Bitcoin(self.bip32_path).derive_xonly_key(&self.master_appkey.to_xpub());
         ScriptBuf::new_p2tr_tweaked(TweakedPublicKey::dangerous_assume_tweaked(
-            expected_external_xonly.into(),
+            crate::tweak::point_to_libsecp_xonly(expected_external_xonly),
         ))
     }
 }

@@ -312,11 +312,33 @@ impl AppTweakKind {
     }
 }
 
+/// Convert a `secp256kfun` point into the `bitcoin` crate's public key type.
+///
+/// This goes via the compressed encoding rather than `secp256kfun`'s `libsecp_compat`
+/// `From` impl, so that enabling that feature -- and pulling `secp256k1` into
+/// `secp256kfun`'s build -- is not needed just to move a key between the two crates.
+pub fn point_to_libsecp_key(point: Point) -> secp256k1::PublicKey {
+    secp256k1::PublicKey::from_slice(&point.to_bytes()).expect("a point is a valid public key")
+}
+
+/// The inverse of [`point_to_libsecp_key`].
+pub fn libsecp_key_to_point(key: secp256k1::PublicKey) -> Point {
+    Point::from_bytes(key.serialize()).expect("a public key is a valid point")
+}
+
+/// Convert a `secp256kfun` even-y point into the `bitcoin` crate's x-only key type.
+///
+/// See [`point_to_libsecp_key`] for why this does not use `libsecp_compat`.
+pub fn point_to_libsecp_xonly(point: Point<EvenY>) -> secp256k1::XOnlyPublicKey {
+    secp256k1::XOnlyPublicKey::from_slice(&point.to_xonly_bytes())
+        .expect("an even-y point is a valid x-only public key")
+}
+
 pub trait TweakableKey: Clone + core::fmt::Debug {
     type XOnly;
     fn to_key(&self) -> Point;
     fn to_libsecp_key(&self) -> secp256k1::PublicKey {
-        self.to_key().into()
+        point_to_libsecp_key(self.to_key())
     }
     fn to_libsecp_xonly(&self) -> secp256k1::XOnlyPublicKey {
         self.to_key().to_libsecp_xonly()
@@ -721,7 +743,7 @@ mod test {
             depth: 0,
             parent_fingerprint: Fingerprint::default(),
             child_number: ChildNumber::from_normal_idx(0).unwrap(),
-            public_key: root_xpub.key.public_key().into(),
+            public_key: point_to_libsecp_key(root_xpub.key.public_key()),
             chain_code: ChainCode::from(root_xpub.chaincode),
         };
         let path = [1337u32, 42, 0];
@@ -738,7 +760,7 @@ mod test {
         );
         assert_eq!(
             our_derived_xpub.key.public_key(),
-            derived_xpub.public_key.into()
+            libsecp_key_to_point(derived_xpub.public_key)
         );
     }
 }
