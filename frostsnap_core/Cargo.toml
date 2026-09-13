@@ -7,7 +7,9 @@ edition = "2021"
 
 [dependencies]
 rand_core = { version = "0.6", default-features = false }
-schnorr_fun = { workspace = true, features = ["bincode", "serde","alloc", "share_backup", "libsecp_compat_0_29", "vrf_cert_keygen"] }
+# `libsecp_compat_0_29` is deliberately absent: tweak.rs converts through bytes, so
+# there is no reason to pull secp256k1 into secp256kfun as well.
+schnorr_fun = { workspace = true, features = ["bincode", "serde","alloc", "share_backup", "vrf_cert_keygen"] }
 rand_chacha = { workspace = true }
 frostsnap_macros = { workspace = true }
 frost_backup = { workspace = true, default-features = false }
@@ -28,6 +30,7 @@ proptest-state-machine = "0.3"
 proptest = "=1.6.0"
 
 [features]
-std = ["tracing?/std", "schnorr_fun/std"]
+# bitcoin/std is what names a backend for secp256k1; no_std builds name it in device/.
+std = ["tracing?/std", "schnorr_fun/std", "bitcoin/std"]
 coordinator = ["std", "tracing", "rusqlite"]
 default = ["coordinator", "serde_json"]
