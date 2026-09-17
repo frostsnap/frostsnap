@@ -7,7 +7,7 @@ use core::convert::Infallible;
 use core::marker::PhantomData;
 use esp_hal::time::{Duration, Instant};
 use esp_hal::uart::{self, RxConfig, Uart};
-use esp_hal::usb_serial_jtag::UsbSerialJtag;
+use esp_hal::usb::usb_serial_jtag::UsbSerialJtag;
 use esp_hal::Blocking;
 use frostsnap_comms::Direction;
 use frostsnap_comms::MagicBytes;
