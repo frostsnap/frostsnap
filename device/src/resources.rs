@@ -20,7 +20,7 @@ use crate::{
 /// Type alias for serial interfaces
 type Serial<'a, D> = SerialInterface<'a, D>;
 use esp_hal::{
-    gpio::Input, rsa::Rsa, sha::Sha, uart::Uart, usb_serial_jtag::UsbSerialJtag, Blocking,
+    gpio::Input, rsa::Rsa, sha::Sha, uart::Uart, usb::usb_serial_jtag::UsbSerialJtag, Blocking,
 };
 
 /// Device resources containing provisioned state and runtime partitions

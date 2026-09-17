@@ -17,7 +17,7 @@ use esp_hal::{
     spi::master::Spi,
     time::Rate,
     uart::Uart,
-    usb_serial_jtag::UsbSerialJtag,
+    usb::usb_serial_jtag::UsbSerialJtag,
     Blocking,
 };
 use frostsnap_cst816s::CST816S;

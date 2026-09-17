@@ -25,7 +25,7 @@ frost_backup = { workspace = true, features = ["bincode"] }
 bitcoin.workspace = true
 esp-hal = { workspace = true, features = ["esp32c3", "rt"] }
 rand_core.workspace = true
-esp-alloc = { workspace = true }
+esp-alloc = { workspace = true, features = ["esp32c3"] }
 esp-bootloader-esp-idf = { workspace = true, features = ["esp32c3"] }
 nb = "1"
 embedded-hal-nb = "1"
