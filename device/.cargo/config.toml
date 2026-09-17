@@ -8,6 +8,9 @@ runner = "espflash flash --baud 921600 --partition-table partitions.csv --bootlo
 target = "riscv32imc-unknown-none-elf"
 rustflags = ["-C", "link-arg=-Tlinkall.x"]
 
+[env]
+ESP_BOOTLOADER_ESP_IDF_CONFIG_PARTITION_TABLE_OFFSET = "0xD000"
+
 [profile.release]
 debug = 0
 strip = "symbols"
