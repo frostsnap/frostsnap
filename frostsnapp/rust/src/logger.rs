@@ -32,7 +32,7 @@ impl io::Write for DartLogWriter {
     }
 }
 
-/// Set the global [`StreamSink`] used by [`dart_logger`].
+/// Set the global `StreamSink` used by [`dart_logger`].
 ///
 /// Returns whether this is the first call.
 pub fn set_dart_logger(sink: StreamSink<String>) -> bool {

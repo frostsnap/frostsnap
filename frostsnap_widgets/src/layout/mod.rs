@@ -69,13 +69,13 @@ pub enum MainAxisAlignment {
     /// Place children at the end with no spacing between them
     End,
     /// Place children with equal spacing between them, with no space before the first or after the last child
-    /// Example with 3 children: [Child1]--space--[Child2]--space--[Child3]
+    /// Example with 3 children: `[Child1]--space--[Child2]--space--[Child3]`
     SpaceBetween,
     /// Place children with equal spacing around them, with half spacing before the first and after the last child
-    /// Example with 3 children: -half-[Child1]-full-[Child2]-full-[Child3]-half-
+    /// Example with 3 children: `-half-[Child1]-full-[Child2]-full-[Child3]-half-`
     SpaceAround,
     /// Place children with equal spacing between and around them
-    /// Example with 3 children: --space--[Child1]--space--[Child2]--space--[Child3]--space--
+    /// Example with 3 children: `--space--[Child1]--space--[Child2]--space--[Child3]--space--`
     SpaceEvenly,
 }
 
