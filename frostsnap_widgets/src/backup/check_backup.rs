@@ -629,6 +629,8 @@ impl DynWidget for CheckBackupScreen {
 impl Widget for CheckBackupScreen {
     type Color = Rgb565;
 
+    // Keep this screen's rendering and construction temporaries out of WidgetTree::draw.
+    #[inline(never)]
     fn draw<D>(
         &mut self,
         target: &mut crate::SuperDrawTarget<D, Self::Color>,
