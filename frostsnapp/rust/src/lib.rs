@@ -1,4 +1,5 @@
 pub mod api;
+pub(crate) mod chain_api;
 mod coordinator;
 mod device_list;
 #[allow(clippy::all)]
