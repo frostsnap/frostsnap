@@ -33,7 +33,7 @@ runs:
         java-version: 17
         cache: gradle
     - name: Install android
-      uses: android-actions/setup-android@v3
+      uses: android-actions/setup-android@v4
     - name: Install NDK
       uses: nttld/setup-ndk@v1
       with:
