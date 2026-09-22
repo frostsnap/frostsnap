@@ -1,4 +1,4 @@
-use frostsnap_coordinator::bitcoin::tofu::trusted_certs::TrustedCertificates;
+use frostsnap_coordinator::bitcoin::tofu::trusted_certs::{TrustKey, TrustedCertificates};
 use frostsnap_coordinator::persist::Persist;
 use rusqlite::Connection;
 use rustls_pki_types::ServerName;
@@ -24,7 +24,7 @@ async fn test_electrum_frostsn_app_ssl_connection() {
     // Verify that electrum.frostsn.app is pre-trusted
     assert!(
         trusted_certs
-            .get_certificate_for_server("electrum.frostsn.app")
+            .get_certificate_for_server(&TrustKey::new("electrum.frostsn.app"))
             .is_some(),
         "electrum.frostsn.app should be pre-trusted"
     );
