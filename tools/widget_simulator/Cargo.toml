@@ -3,9 +3,6 @@ name = "widget_simulator"
 version = "0.1.0"
 edition = "2024"
 
-[features]
-prefill-words = []
-
 [dependencies]
 frostsnap_widgets = { workspace = true, features = ["std"] }
 frostsnap_core.workspace = true
@@ -14,3 +11,8 @@ embedded-graphics-simulator = "0.8.0"
 rand.workspace = true
 bitcoin.workspace = true
 frost_backup.workspace = true
+
+[lints.rust]
+# demo_widget! expands `cfg!(prefill_words)` here, so the check-cfg must be declared
+# in this crate rather than in frostsnap_widgets where the macro is defined.
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(prefill_words)'] }
