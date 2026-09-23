@@ -48,7 +48,7 @@ just full-provision black
 ```
 
 This:
-1. Builds the bootloader via Nix (ESP-IDF v5.3.1, cached after first build)
+1. Builds the bootloader via Nix (ESP-IDF v5.5.4, cached after first build)
 2. Signs the bootloader with `secure-boot-key.pem` → `signed-bootloader.bin`
 3. Builds the frontier firmware and signs it → `dev-frontier.bin`
 4. Flashes bootloader + partition table to the device
@@ -63,7 +63,7 @@ embedded in the 4KB signature block appended during signing (see `secure_boot.rs
 the ROM hashes the public key from the signature block and burns that hash into eFuse. On subsequent
 boots, it re-hashes the key from the signature block and checks it against the eFuse digest. This
 means the eFuse stores only a hash, and the full public key travels with every signed binary.
-See: https://docs.espressif.com/projects/esp-idf/en/v5.3.1/esp32c3/security/secure-boot-v2.html
+See: https://docs.espressif.com/projects/esp-idf/en/v5.5.4/esp32c3/security/secure-boot-v2.html
 
 For production: `just env=prod full-provision black`
 

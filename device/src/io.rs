@@ -5,38 +5,25 @@ use bincode::error::DecodeError;
 use bincode::error::EncodeError;
 use core::convert::Infallible;
 use core::marker::PhantomData;
-use esp_hal::uart::{AnyUart, Uart};
+use esp_hal::time::{Duration, Instant};
+use esp_hal::uart::{self, Uart};
+use esp_hal::usb::usb_serial_jtag::UsbSerialJtag;
 use esp_hal::Blocking;
-use esp_hal::{prelude::*, timer, uart, usb_serial_jtag::UsbSerialJtag};
 use frostsnap_comms::Direction;
 use frostsnap_comms::MagicBytes;
 use frostsnap_comms::ReceiveSerial;
 use frostsnap_comms::BINCODE_CONFIG;
 
-use crate::uart_interrupt::RX_FIFO_THRESHOLD;
 use crate::uart_interrupt::{UartHandle, UartNum, UartReceiver};
 
-pub struct SerialInterface<'a, T, D> {
+pub struct SerialInterface<'a, D> {
     io: SerialIo<'a>,
     magic_bytes_progress: usize,
-    timer: &'a T,
     direction: PhantomData<D>,
 }
 
-impl<'a, T, D> SerialInterface<'a, T, D> {
-    pub fn new_uart(
-        mut uart: Uart<'static, Blocking, AnyUart>,
-        uart_num: UartNum,
-        timer: &'a T,
-    ) -> Self {
-        // Configure UART with standard settings
-        let serial_conf = uart::Config {
-            baudrate: frostsnap_comms::BAUDRATE,
-            rx_fifo_full_threshold: RX_FIFO_THRESHOLD,
-            ..Default::default()
-        };
-        uart.apply_config(&serial_conf).unwrap();
-
+impl<'a, D> SerialInterface<'a, D> {
+    pub fn new_uart(uart: Uart<'static, Blocking>, uart_num: UartNum) -> Self {
         // Register UART for interrupt handling
         let (handle, consumer) = crate::uart_interrupt::register_uart(uart, uart_num);
 
@@ -47,7 +34,6 @@ impl<'a, T, D> SerialInterface<'a, T, D> {
                 consumer,
             },
             magic_bytes_progress: 0,
-            timer,
             direction: PhantomData,
         }
     }
@@ -57,23 +43,21 @@ impl<'a, T, D> SerialInterface<'a, T, D> {
     }
 }
 
-impl<'a, T, D> SerialInterface<'a, T, D> {
-    pub fn new_jtag(jtag: UsbSerialJtag<'a, Blocking>, timer: &'a T) -> Self {
+impl<'a, D> SerialInterface<'a, D> {
+    pub fn new_jtag(jtag: UsbSerialJtag<'a, Blocking>) -> Self {
         Self {
             io: SerialIo::Jtag {
                 jtag,
                 peek_byte: None,
             },
             magic_bytes_progress: 0,
-            timer,
             direction: PhantomData,
         }
     }
 }
 
-impl<'a, T, D> SerialInterface<'a, T, D>
+impl<'a, D> SerialInterface<'a, D>
 where
-    T: timer::Timer,
     D: Direction,
 {
     pub fn fill_buffer(&mut self) {
@@ -172,14 +156,13 @@ where
     }
 }
 
-impl<T, D> Reader for SerialInterface<'_, T, D>
+impl<D> Reader for SerialInterface<'_, D>
 where
-    T: timer::Timer,
     D: Direction,
 {
     fn read(&mut self, bytes: &mut [u8]) -> Result<(), DecodeError> {
         for (i, target_byte) in bytes.iter_mut().enumerate() {
-            let start_time = self.timer.now();
+            let start_time = Instant::now();
             *target_byte = loop {
                 if let Some(next_byte) = self.io.read_byte() {
                     break next_byte;
@@ -187,14 +170,7 @@ where
 
                 self.fill_buffer();
 
-                if self
-                    .timer
-                    .now()
-                    .checked_duration_since(start_time)
-                    .unwrap()
-                    .to_millis()
-                    > 1_000
-                {
+                if start_time.elapsed() > Duration::from_millis(1_000) {
                     return Err(DecodeError::UnexpectedEnd {
                         additional: bytes.len() - i + 1,
                     });
@@ -205,7 +181,7 @@ where
     }
 }
 
-impl<T, D> Writer for SerialInterface<'_, T, D> {
+impl<D> Writer for SerialInterface<'_, D> {
     fn write(&mut self, bytes: &[u8]) -> Result<(), EncodeError> {
         match self.io.write_bytes(bytes) {
             Err(e) => Err(EncodeError::OtherString(format!("{e:?}"))),
@@ -240,13 +216,18 @@ impl SerialIo<'_> {
         match self {
             SerialIo::Uart {
                 consumer, handle, ..
-            } => match consumer.dequeue() {
-                Some(byte) => Some(byte),
-                None => {
-                    handle.fill_buffer();
-                    consumer.dequeue()
+            } => {
+                // The blocking OTA loop reads through here without returning to DeviceLoop::poll,
+                // and decoding must not turn the gap into some other failure first.
+                crate::uart_interrupt::panic_on_rx_overflow();
+                match consumer.dequeue() {
+                    Some(byte) => Some(byte),
+                    None => {
+                        handle.fill_buffer();
+                        consumer.dequeue()
+                    }
                 }
-            },
+            }
             SerialIo::Jtag { jtag, peek_byte } => {
                 // First check if we have a peeked byte
                 if let Some(byte) = peek_byte.take() {
@@ -303,7 +284,7 @@ impl SerialIo<'_> {
                 .write_bytes(bytes)
                 .map_err(SerialInterfaceError::UartWriteError)?,
             SerialIo::Jtag { jtag, .. } => {
-                let _infallible = jtag.write_bytes(bytes);
+                let _infallible = jtag.write(bytes);
             }
         }
         Ok(())
@@ -328,12 +309,7 @@ impl SerialIo<'_> {
     // something before resetting.
     pub fn flush(&mut self) {
         match self {
-            SerialIo::Uart { handle, .. } => {
-                // just waits until evertything has been written
-                while let Err(nb::Error::WouldBlock) = handle.flush_tx() {
-                    // wait
-                }
-            }
+            SerialIo::Uart { handle, .. } => handle.flush_tx(),
             SerialIo::Jtag { jtag, .. } => {
                 // flushes and waits until everything has been written
                 let _ = jtag.flush_tx();
@@ -345,6 +321,6 @@ impl SerialIo<'_> {
 #[derive(Debug)]
 pub enum SerialInterfaceError {
     UartReadError,
-    UartWriteError(uart::Error),
+    UartWriteError(uart::TxError),
     JtagError,
 }
