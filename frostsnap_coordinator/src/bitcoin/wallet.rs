@@ -234,13 +234,30 @@ impl CoordSuperWallet {
     /// ever widens, and only scripts it does not already hold become subscribe requests. A wallet
     /// with nothing far out generates no traffic.
     fn resync_monitoring(&self) {
+        let mut expected_spk_txids = HashMap::<KeychainId, Vec<(ScriptBuf, Txid)>>::new();
+        for (spk, txid) in self.tx_graph.list_expected_spk_txids(
+            self.chain.as_ref(),
+            self.chain.tip().block_id(),
+            ..,
+        ) {
+            if let Some(&(keychain_id, _)) = self.tx_graph.index.index_of_spk(spk.clone()) {
+                expected_spk_txids
+                    .entry(keychain_id)
+                    .or_default()
+                    .push((spk, txid));
+            }
+        }
         for (keychain_id, _) in self.tx_graph.index.keychains() {
             let next_index = self
                 .tx_graph
                 .index
                 .last_revealed_index(keychain_id)
                 .map_or(0, |lr| lr + 1);
-            self.chain_client.monitor_keychain(keychain_id, next_index);
+            self.chain_client.monitor_keychain(
+                keychain_id,
+                next_index,
+                expected_spk_txids.remove(&keychain_id).unwrap_or_default(),
+            );
         }
     }
 
