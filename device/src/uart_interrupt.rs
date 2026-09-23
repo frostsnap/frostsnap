@@ -1,7 +1,10 @@
 use core::cell::RefCell;
+use core::sync::atomic::{AtomicBool, Ordering};
 /// UART interrupt handling module
 use critical_section::Mutex;
-use esp_hal::uart::{self, RxConfig, Uart, UartInterrupt};
+use esp_hal::delay::Delay;
+use esp_hal::peripherals::{UART0, UART1};
+use esp_hal::uart::{self, RxConfig, RxError, RxErrorKind, Uart, UartInterrupt};
 use esp_hal::{handler, ram, Blocking};
 use heapless::spsc::{Consumer, Producer, Queue};
 
@@ -15,47 +18,48 @@ pub const RX_FIFO_THRESHOLD: u16 = 32;
 /// Number of UARTs supported
 const NUM_UARTS: usize = 2;
 
-/// Helper function to drain bytes from both UARTs in round-robin fashion
-/// Always drains all bytes to prevent interrupt re-triggering
-/// Panics if queue overflows - this indicates consumer is too slow
+const RX_CHUNK: usize = RX_FIFO_THRESHOLD as usize;
+
+/// Drains both UARTs round-robin until neither has data left, so the RX interrupt does not
+/// re-trigger.
+///
+/// Panics if a receive queue overflows: the consumer is too slow.
 #[ram]
 fn drain_uart_to_queue(cs: critical_section::CriticalSection<'_>) {
-    // Get references to both UARTs and producers
-    let mut uart0 = UARTS[0].borrow_ref_mut(cs);
-    let mut uart1 = UARTS[1].borrow_ref_mut(cs);
-    let mut producer0 = UART_PRODUCERS[0].borrow_ref_mut(cs);
-    let mut producer1 = UART_PRODUCERS[1].borrow_ref_mut(cs);
-
-    // Round-robin between both UARTs to ensure fairness
     let mut any_data = true;
     while any_data {
         any_data = false;
-
-        // Try to read from UART0 if it exists
-        if let (Some(uart), Some(producer)) = (uart0.as_mut(), producer0.as_mut()) {
-            let mut buf = [0u8; 1];
-            if let Ok(n) = uart.read_buffered(&mut buf) {
-                if n > 0 {
-                    producer
-                        .enqueue(buf[0])
-                        .expect("UART0 receive queue overflow - consumer too slow");
-                    any_data = true;
-                }
-            }
+        for uart_index in 0..NUM_UARTS {
+            any_data |= drain_chunk(cs, uart_index);
         }
+    }
+}
 
-        // Try to read from UART1 if it exists (upstream)
-        if let (Some(uart), Some(producer)) = (uart1.as_mut(), producer1.as_mut()) {
-            let mut buf = [0u8; 1];
-            if let Ok(n) = uart.read_buffered(&mut buf) {
-                if n > 0 {
-                    producer
-                        .enqueue(buf[0])
-                        .expect("UART1 receive queue overflow - consumer too slow");
-                    any_data = true;
-                }
+/// Returns whether the drain loop should poll this UART again.
+#[ram]
+fn drain_chunk(cs: critical_section::CriticalSection<'_>, uart_index: usize) -> bool {
+    let mut uart = UARTS[uart_index].borrow_ref_mut(cs);
+    let mut producer = UART_PRODUCERS[uart_index].borrow_ref_mut(cs);
+    let (Some(uart), Some(producer)) = (uart.as_mut(), producer.as_mut()) else {
+        return false;
+    };
+
+    let mut buf = [0u8; RX_CHUNK];
+    match uart.read_buffered(&mut buf) {
+        Ok(n) => {
+            for &byte in &buf[..n] {
+                producer
+                    .enqueue(byte)
+                    .unwrap_or_else(|_| panic!("UART{uart_index} receive queue overflow"));
             }
+            n > 0
         }
+        // esp-hal has already reset the RX FIFO, discarding what it held.
+        Err(RxError::FifoOverflowed) => {
+            RX_OVERFLOWED[uart_index].store(true, Ordering::Relaxed);
+            true
+        }
+        Err(_) => true,
     }
 }
 
@@ -76,6 +80,8 @@ static UART_PRODUCERS: [UartProducer; NUM_UARTS] = [
     Mutex::new(RefCell::new(None)),
     Mutex::new(RefCell::new(None)),
 ];
+
+static RX_OVERFLOWED: [AtomicBool; NUM_UARTS] = [AtomicBool::new(false), AtomicBool::new(false)];
 
 /// Global event queues for UARTs
 static mut UART_QUEUES: [Queue<u8, QUEUE_CAPACITY>; NUM_UARTS] = [Queue::new(), Queue::new()];
@@ -133,11 +139,7 @@ impl UartHandle {
                         // interrupts can run and the FIFO can drain.
                         break;
                     }
-                    let written = uart.write(&bytes[up_to..])?;
-                    if written == 0 {
-                        break;
-                    }
-                    up_to += written;
+                    up_to += uart.write(&bytes[up_to..])?;
                 }
                 Ok(())
             })?;
@@ -146,18 +148,30 @@ impl UartHandle {
         Ok(())
     }
 
-    pub fn flush_tx(&mut self) -> nb::Result<(), uart::TxError> {
-        critical_section::with(|cs| {
-            let uart_index = self.uart_index();
-            let mut uart_opt = UARTS[uart_index].borrow_ref_mut(cs);
+    /// Blocks until everything written has left the TX line.
+    ///
+    /// esp-hal's `Uart::flush` spins with the `Uart` borrowed, which here means inside the critical
+    /// section the RX interrupt needs. The same status registers are read directly instead: the
+    /// reads have no side effects, so they need no exclusion.
+    pub fn flush_tx(&mut self) {
+        while !self.tx_fifo_empty() {}
+        // The FSM is briefly idle after the last byte leaves the FIFO; esp-hal waits 10 µs too.
+        Delay::new().delay_micros(10);
+        while !self.tx_fsm_idle() {}
+    }
 
-            // Safe to unwrap: UartHandle is only created when UART exists
-            let uart = uart_opt.as_mut().unwrap();
-            match uart.flush() {
-                Ok(()) => Ok(()),
-                Err(e) => Err(nb::Error::Other(e)),
-            }
-        })
+    fn tx_fifo_empty(&self) -> bool {
+        match self.uart_num {
+            UartNum::Uart0 => UART0::regs().status().read().txfifo_cnt().bits() == 0,
+            UartNum::Uart1 => UART1::regs().status().read().txfifo_cnt().bits() == 0,
+        }
+    }
+
+    fn tx_fsm_idle(&self) -> bool {
+        match self.uart_num {
+            UartNum::Uart0 => UART0::regs().fsm_status().read().st_utx_out().bits() == 0,
+            UartNum::Uart1 => UART1::regs().fsm_status().read().st_utx_out().bits() == 0,
+        }
     }
 
     pub fn change_baud(&mut self, baudrate: u32) {
@@ -167,12 +181,7 @@ impl UartHandle {
 
             // Safe to unwrap: UartHandle is only created when UART exists
             let uart = uart_opt.as_mut().unwrap();
-            uart.apply_config(
-                &esp_hal::uart::Config::default()
-                    .with_baudrate(baudrate)
-                    .with_rx(RxConfig::default().with_fifo_full_threshold(RX_FIFO_THRESHOLD)),
-            )
-            .unwrap();
+            uart.apply_config(&uart_config(baudrate)).unwrap();
         })
     }
 
@@ -183,6 +192,25 @@ impl UartHandle {
             drain_uart_to_queue(cs);
         });
     }
+}
+
+/// Panics if either UART's RX FIFO has overflowed, which lost up to a FIFO's worth of received
+/// bytes. The ISR only latches the overflow because it must not panic; call this from task context.
+pub fn panic_on_rx_overflow() {
+    for (uart_index, overflowed) in RX_OVERFLOWED.iter().enumerate() {
+        if overflowed.load(Ordering::Relaxed) {
+            panic!("UART{uart_index} RX FIFO overflowed; received bytes were lost");
+        }
+    }
+}
+
+/// The configuration every device-to-device UART runs with, at `baudrate`.
+pub fn uart_config(baudrate: u32) -> uart::Config {
+    uart::Config::default().with_baudrate(baudrate).with_rx(
+        RxConfig::default()
+            .with_fifo_full_threshold(RX_FIFO_THRESHOLD)
+            .with_reported_errors(RxErrorKind::FifoOverflowed),
+    )
 }
 
 /// Register a UART for interrupt handling

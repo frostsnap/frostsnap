@@ -26,6 +26,7 @@ use rand_chacha::ChaCha20Rng;
 use rand_core::{RngCore, SeedableRng};
 
 use crate::efuse::EfuseController;
+use crate::uart_interrupt::uart_config;
 
 #[macro_export]
 macro_rules! init_display {
@@ -262,7 +263,7 @@ impl<'a> DevicePeripherals<'a> {
         // Initialize upstream UART only if upstream device is detected
         let uart_upstream = if upstream_detect.is_low() {
             Some(
-                Uart::new(peripherals.UART1, esp_hal::uart::Config::default())
+                Uart::new(peripherals.UART1, uart_config(frostsnap_comms::BAUDRATE))
                     .unwrap()
                     .with_rx(peripherals.GPIO18)
                     .with_tx(peripherals.GPIO19),
@@ -272,7 +273,7 @@ impl<'a> DevicePeripherals<'a> {
         };
 
         // Always initialize downstream UART
-        let uart_downstream = Uart::new(peripherals.UART0, esp_hal::uart::Config::default())
+        let uart_downstream = Uart::new(peripherals.UART0, uart_config(frostsnap_comms::BAUDRATE))
             .unwrap()
             .with_rx(peripherals.GPIO21)
             .with_tx(peripherals.GPIO20);

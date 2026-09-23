@@ -230,6 +230,9 @@ impl<'a> DeviceLoop<'a> {
 
     #[inline(never)]
     fn poll(&mut self) {
+        // Unconditional, so a port that is disconnected or idle and never read again still panics.
+        crate::uart_interrupt::panic_on_rx_overflow();
+
         if self.soft_reset {
             self.soft_reset = false;
             self.magic_bytes_timeout_counter = 0;
