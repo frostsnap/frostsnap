@@ -199,7 +199,16 @@ impl ChainClient {
     /// Track `keychain` through `next_index` plus lookahead. Re-calling with a larger
     /// `next_index` widens the live subscription window in place (bdk_electrum_streaming
     /// >= 0.5.3); equal or smaller is a no-op, so the window never narrows.
-    pub fn monitor_keychain(&self, keychain: KeychainId, next_index: u32) {
+    ///
+    /// `expected_spk_txids` are the `(spk, txid)` pairs the wallet already holds for this keychain.
+    /// Only these can be reported as evicted, so leaving any out means a tx dropped while we were
+    /// offline stays in the wallet forever.
+    pub fn monitor_keychain(
+        &self,
+        keychain: KeychainId,
+        next_index: u32,
+        expected_spk_txids: Vec<(bitcoin::ScriptBuf, bitcoin::Txid)>,
+    ) {
         self.start_client();
         let descriptor = descriptor_for_account_keychain(
             keychain,
@@ -207,7 +216,7 @@ impl ChainClient {
             bitcoin::NetworkKind::Main,
         );
         self.client
-            .track_descriptor(keychain, descriptor, next_index, [])
+            .track_descriptor(keychain, descriptor, next_index, expected_spk_txids)
             .expect("must track keychain");
     }
 
