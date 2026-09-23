@@ -48,7 +48,7 @@ just full-provision black
 ```
 
 This:
-1. Builds the bootloader via Nix (ESP-IDF v5.3.1, cached after first build)
+1. Builds the bootloader via Nix (ESP-IDF v5.5.4, cached after first build)
 2. Signs the bootloader with `secure-boot-key.pem` → `signed-bootloader.bin`
 3. Builds the frontier firmware and signs it → `dev-frontier.bin`
 4. Flashes bootloader + partition table to the device
@@ -63,9 +63,32 @@ embedded in the 4KB signature block appended during signing (see `secure_boot.rs
 the ROM hashes the public key from the signature block and burns that hash into eFuse. On subsequent
 boots, it re-hashes the key from the signature block and checks it against the eFuse digest. This
 means the eFuse stores only a hash, and the full public key travels with every signed binary.
-See: https://docs.espressif.com/projects/esp-idf/en/v5.3.1/esp32c3/security/secure-boot-v2.html
+See: https://docs.espressif.com/projects/esp-idf/en/v5.5.4/esp32c3/security/secure-boot-v2.html
 
-For production: `just env=prod full-provision black`
+**Bootloader versions.** A bootloader never changes after provisioning: OTA writes only `ota_0` and
+`ota_1`. The Nix flake builds ESP-IDF v5.5.4, but production devices run the committed
+`prod/signed-bootloader.bin`, which is **v5.1.6** (as is `device/bootloader-legacy.bin`). The flake
+cannot reproduce that binary, so bumping the flake is not a production change.
+
+For production, keep the committed v5.1.6 bootloader: skip the build and sign steps and flash it as
+is.
+
+```bash
+just env=prod build-firmware-signed
+just env=prod flash-bootloader
+just env=prod flash-firmware
+just env=prod provision black
+```
+
+`just env=prod full-provision black` instead rebuilds the bootloader from the flake and re-signs it
+with the offline prod key, **overwriting** `prod/signed-bootloader.bin` with v5.5.4. Only run it to
+deliberately move production to a new bootloader.
+
+A device provisioned with the v5.5.4 bootloader cannot boot firmware older than the esp-hal 1.2
+upgrade: v5.4+ rejects images without an app descriptor. The bootloader skips that slot ("OTA app
+partition slot N is not bootable") and boots the other one rather than boot-looping (confirmed on
+hardware), so `just flash` of an older commit onto such a device leaves it running whatever is in
+the other slot.
 
 ## 3. Reflash firmware only
 
@@ -76,7 +99,8 @@ just flash
 ```
 
 Builds and signs the frontier firmware, then flashes firmware + otadata. This does **not**
-write the bootloader — only `just full-provision` does that. Accidentally writing the wrong
+write the bootloader — only `just flash-bootloader` does that (run by `just full-provision` and
+by the production sequence in §2). Accidentally writing the wrong
 bootloader to a device with burned eFuses would make it unbootable.
 
 ## 4. Build the app
@@ -92,7 +116,7 @@ Compiles the Flutter app with the env's `public_key.hex` embedded and the signed
 | Task | Dev (default) | Prod |
 |------|--------------|------|
 | Generate keys | `just gen-keys` | `just env=prod gen-keys` |
-| Full provision | `just full-provision black` | `just env=prod full-provision black` |
+| Full provision | `just full-provision black` | Keep the committed bootloader: the four commands in §2 (`full-provision` would re-sign it) |
 | Flash firmware only | `just flash` | `just env=prod flash` |
 | Build app | `just build linux` | `just env=prod build linux` |
 | Run app | `just run` | `just env=prod run` |
@@ -106,8 +130,8 @@ For production runs with multiple devices:
 ```bash
 # First time setup (keys should already exist for production):
 # just env=prod gen-keys
-# just env=prod build-bootloader
-# just env=prod sign-bootloader
+# The committed prod/signed-bootloader.bin (v5.1.6) is used as is; do not rebuild or
+# re-sign it (see §2).
 
 cargo run -p frostsnap_factory -- batch \
     --color black \
