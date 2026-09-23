@@ -10,11 +10,8 @@
     flake-utils.lib.eachDefaultSystem (system: let
       pkgs = import nixpkgs { inherit system; };
       # Pin ESP-IDF to v5.5.4. v5.4+ enforces esp_app_desc_t efuse_blk_rev
-      # validation, rejecting images without a proper app descriptor.
-      # FIXME: our images currently lack one. esp_app_desc!() emits into
-      # .rodata_desc.appdesc but esp-hal 1.1's linker only KEEPs .flash.appdesc,
-      # so the descriptor is GC'd — a freshly-built v5.5.4 bootloader would reject
-      # them. Tracked for a follow-up.
+      # validation, rejecting images without a proper app descriptor; every
+      # firmware binary declares one with esp_app_desc!().
       esp-idf-riscv = (nixpkgs-esp-dev.packages.${system}.esp-idf-riscv).override {
         rev = "v5.5.4";
         sha256 = "sha256-rItbBrwItkfJf8tKImAQsiXDR95sr0LqaM51gDZG/nI=";
