@@ -53,8 +53,11 @@ pub struct Resources<'a> {
     /// OTA partitions for firmware updates
     pub ota: OtaPartitions<'a>,
 
-    /// User interface
-    pub ui: FrostyUi<'a>,
+    /// User interface. Boxed because it's ~2.3KB — by far the largest field —
+    /// and keeping it inline makes `Box::new(Self { .. })` in the init fns
+    /// materialize the whole struct on the stack, blowing their stack frames
+    /// past the CI stack-check limit.
+    pub ui: Box<FrostyUi<'a>>,
 
     // Runtime peripherals needed by esp32_run
     pub timer: &'a Timer<Timer0<TIMG0>, Blocking>,
@@ -133,7 +136,7 @@ impl<'a> Resources<'a> {
         let rng: ChaCha20Rng = hmac_keys.fixed_entropy.mix_in_rng(&mut initial_rng);
 
         // Create UI with display and touch receiver (using ui_timer)
-        let ui = FrostyUi::new(display, touch_receiver, ui_timer);
+        let ui = Box::new(FrostyUi::new(display, touch_receiver, ui_timer));
 
         // Extract factory data
         let factory = factory_data.into_factory_data();
@@ -211,7 +214,7 @@ impl<'a> Resources<'a> {
         let rng: ChaCha20Rng = hmac_keys.fixed_entropy.mix_in_rng(&mut initial_rng);
 
         // Create UI with display and touch receiver (using ui_timer)
-        let ui = FrostyUi::new(display, touch_receiver, ui_timer);
+        let ui = Box::new(FrostyUi::new(display, touch_receiver, ui_timer));
 
         // Create HardwareDs if factory data is present (dev devices might have it)
         let (ds, certificate) = if let Some(factory_data) = factory_data {
