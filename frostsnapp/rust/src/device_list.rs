@@ -98,7 +98,11 @@ impl DeviceList {
                         id,
                         recovery_mode: api::RecoveryMode::Off,
                         case_color: None,
-                        genuine: api::GenuineStatus::Unknown,
+                        genuine: api::GenuineStatus::Unattested {
+                            firmware_supports_check: FirmwareVersion::new(firmware_digest)
+                                .features()
+                                .genuine_check,
+                        },
                     },
                 );
             }
@@ -158,21 +162,12 @@ impl DeviceList {
                 }
             }
             DeviceChange::AppMessage(_) => { /* not relevant */ }
-            // Cosmetic identity, learned from an unverified certificate. Set
-            // whenever we hear it, independently of the verdict below.
-            DeviceChange::CaseColor { id, color } => {
-                if let Some(case_color) = api::CaseColor::from_comms(color) {
-                    self.update_device(id, |device| device.case_color = Some(case_color));
-                }
-            }
-            DeviceChange::GenuineCheck { id, outcome } => {
-                use frostsnap_coordinator::GenuineOutcome;
-                let status = match outcome {
-                    GenuineOutcome::Genuine(_) => api::GenuineStatus::Genuine,
-                    GenuineOutcome::Failed => api::GenuineStatus::Failed,
-                    GenuineOutcome::FirmwareTooOld => api::GenuineStatus::FirmwareTooOld,
-                };
-                self.update_device(id, |device| device.genuine = status);
+            DeviceChange::Genuine { id, status } => {
+                let (genuine, case_color) = api::GenuineStatus::from_coordinator(status);
+                self.update_device(id, |device| {
+                    device.genuine = genuine;
+                    device.case_color = case_color;
+                });
             }
         }
     }
@@ -181,11 +176,8 @@ impl DeviceList {
         self.connected.get(&id).cloned()
     }
 
-    /// Apply `f` to a connected device and emit a `GenuineCheck` change for it.
-    ///
-    /// A device that has announced but isn't in `devices` yet (it hasn't been named,
-    /// so it has no index) still gets the update stored — it will be carried into
-    /// the list when it is appended.
+    /// A device that isn't in `devices` yet (unnamed) is still updated, and carries the update
+    /// into the list when it is appended.
     fn update_device(&mut self, id: DeviceId, f: impl FnOnce(&mut api::ConnectedDevice)) {
         let index = self.index_of(id);
         let Some(connected) = self.connected.get_mut(&id) else {
@@ -201,17 +193,6 @@ impl DeviceList {
         }
     }
 
-    /// Seed a device's case colour from a persisted record at connect time, without
-    /// overwriting a colour already learned live on this connection.
-    pub fn set_case_color(&mut self, id: DeviceId, color: api::CaseColor) {
-        let already_known = self
-            .connected
-            .get(&id)
-            .is_none_or(|device| device.case_color.is_some());
-        if !already_known {
-            self.update_device(id, |device| device.case_color = Some(color));
-        }
-    }
     fn index_of(&self, id: DeviceId) -> Option<usize> {
         self.devices
             .iter()

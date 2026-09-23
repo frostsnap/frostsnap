@@ -227,7 +227,11 @@ pub enum CoordinatorSendBody {
     Cancel,
     Upgrade(CoordinatorUpgradeMessage),
     DataErase,
-    Challenge(Box<GenuineChallenge>),
+    /// Answered by firmware up to v0.4.0 with an RSA signature over the bare challenge, which a
+    /// relay can forward. Never sent, and ignored by current firmware.
+    _LegacyChallenge(Box<GenuineChallenge>),
+    RequestGenuineAttestation,
+    GenuineIdentityChallenge(Box<GenuineChallenge>),
 }
 
 impl From<CoordinatorSendBody> for WireCoordinatorSendBody {
@@ -449,22 +453,17 @@ pub enum DeviceSendBody {
     NeedName,
     _LegacyAckUpgradeMode, // Used by earliest devices
     Misc(CommsMisc),
-    /// Retired unbound genuine response (RSA over the bare challenge, no DeviceId
-    /// binding), superseded by [`Self::GenuineProof`] and never trusted (it's
-    /// relay-able). Kept only to decode pre-binding firmware; its wire position
-    /// must be preserved so it doesn't shift `GenuineProof`'s discriminant.
-    _LegacyGenuineProof {
+    _LegacySignedChallenge {
         signature: Box<[u8; 384]>,
         certificate: Box<Certificate>,
     },
-    /// Bound genuine proof responding to a [`CoordinatorSendBody::Challenge`].
-    /// `rsa_signature` is the hardware DS key over `SHA256(tag ‖ challenge ‖ device_id)`
-    /// (bound to this DeviceId, defeating relay/MITM); `identity_signature` is the
-    /// DeviceId key over the challenge (proof of possession).
-    GenuineProof {
-        rsa_signature: Box<[u8; 384]>,
-        identity_signature: Signature,
+    /// `ds_signature` is over [`genuine_certificate::attestation_message`] for the sender's id.
+    GenuineAttestation {
         certificate: Box<Certificate>,
+        ds_signature: Box<[u8; 384]>,
+    },
+    GenuineIdentityProof {
+        signature: Signature,
     },
 }
 
@@ -561,15 +560,9 @@ impl Gist for DeviceSendBody {
         match self {
             DeviceSendBody::Core(msg) => msg.gist(),
             DeviceSendBody::Debug { message } => format!("debug: {message}"),
-            DeviceSendBody::_LegacyGenuineProof { certificate, .. } => {
+            DeviceSendBody::GenuineAttestation { certificate, .. } => {
                 format!(
-                    "_LegacyGenuineProof(serial={})",
-                    certificate.unverified_raw_serial()
-                )
-            }
-            DeviceSendBody::GenuineProof { certificate, .. } => {
-                format!(
-                    "GenuineProof(serial={})",
+                    "GenuineAttestation(serial={})",
                     certificate.unverified_raw_serial()
                 )
             }

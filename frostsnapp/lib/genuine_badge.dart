@@ -11,69 +11,68 @@ import 'package:frostsnap/theme.dart';
 /// build would be a round-trip per device per frame.
 final bool genuineCheckEnabled = coord.genuineCheckEnabled();
 
-/// How a device's genuine-check result is rendered.
-///
-/// Note what this file does *not* import: `device_colors.dart`. The case colour
-/// arrives in an unverified certificate, so a device chooses it — and a device must
-/// not get to influence how its own authenticity is drawn. Tinting a "Genuine" pill
-/// with the case colour gave a red device a red badge (red being the universal
-/// error colour) and made a black device's badge invisible against the dark theme.
-/// The palette below is fixed and derived only from the status.
+enum GenuineLook { genuine, updateToVerify, unverified }
+
+/// Note what this file does *not* import: `device_colors.dart`. Tinting a "Genuine" pill with the
+/// case colour gave a red device a red badge (red being the universal error colour) and made a
+/// black device's badge invisible against the dark theme.
 extension GenuineStatusExt on GenuineStatus {
-  IconData get icon => switch (this) {
-    GenuineStatus.genuine => Icons.verified_rounded,
-    GenuineStatus.failed => Icons.gpp_bad_rounded,
-    GenuineStatus.firmwareTooOld => Icons.system_update_rounded,
-    GenuineStatus.unknown => Icons.gpp_maybe_rounded,
+  GenuineLook get look => switch (this) {
+    GenuineStatus_Genuine() => GenuineLook.genuine,
+    GenuineStatus_Attested(firmwareSupportsCheck: false) ||
+    GenuineStatus_Unattested(
+      firmwareSupportsCheck: false,
+    ) => GenuineLook.updateToVerify,
+    GenuineStatus_Attested() ||
+    GenuineStatus_Unattested() => GenuineLook.unverified,
   };
 
-  /// Caution amber rather than error red for a failure: a single dishonest device
-  /// cannot by itself compromise a multi-device wallet, so this is a "stop and look"
-  /// signal, not a catastrophe. Everything else is neutral, because "not verified"
-  /// is the ordinary state for dev units, third-party hardware and older firmware,
-  /// and dressing it as a warning would train people to ignore the badge.
+  IconData get icon => look.icon;
+  Color color(ColorScheme scheme) => look.color(scheme);
+  String get label => look.label;
+  (String, String) get explanation => look.explanation;
+}
+
+extension GenuineLookExt on GenuineLook {
+  IconData get icon => switch (this) {
+    GenuineLook.genuine => Icons.verified_rounded,
+    GenuineLook.updateToVerify => Icons.system_update_rounded,
+    GenuineLook.unverified => Icons.gpp_maybe_rounded,
+  };
+
+  /// Neutral unless genuine: "not verified" is the ordinary state for dev units, third-party
+  /// hardware and older firmware, and dressing it as a warning would train people to ignore the
+  /// badge.
   Color color(ColorScheme scheme) => switch (this) {
-    GenuineStatus.genuine => scheme.primary,
-    GenuineStatus.failed => cautionColor,
-    GenuineStatus.firmwareTooOld => scheme.onSurfaceVariant,
-    GenuineStatus.unknown => scheme.onSurfaceVariant,
+    GenuineLook.genuine => scheme.primary,
+    GenuineLook.updateToVerify => scheme.onSurfaceVariant,
+    GenuineLook.unverified => scheme.onSurfaceVariant,
   };
 
   String get label => switch (this) {
-    GenuineStatus.genuine => 'Genuine',
-    GenuineStatus.failed => 'Not genuine',
-    GenuineStatus.firmwareTooOld => 'Update to verify',
-    GenuineStatus.unknown => 'Unverified',
+    GenuineLook.genuine => 'Genuine',
+    GenuineLook.updateToVerify => 'Update to verify',
+    GenuineLook.unverified => 'Unverified',
   };
 
-  /// Title and body for the explainer dialog and the device-details row.
   (String, String) get explanation => switch (this) {
-    GenuineStatus.genuine => (
+    GenuineLook.genuine => (
       'Genuine device',
       'This device proved it is genuine Frostsnap hardware, using a key sealed '
           'into its chip at the factory.\n\n'
-          'The proof is tied to this device and to this connection, so it cannot '
-          'be copied from another device or replayed.',
+          'It proves this again every time you connect it.',
     ),
-    GenuineStatus.failed => (
-      'Not genuine',
-      'This device answered the authenticity challenge, but its proof did not '
-          'verify. It may be counterfeit, tampered with, or relaying another '
-          "device's answer.\n\n"
-          'A single device cannot move funds on its own, so this is not an '
-          'emergency — but be careful about relying on it, and get in touch if '
-          'you did not expect it.',
-    ),
-    GenuineStatus.firmwareTooOld => (
+    GenuineLook.updateToVerify => (
       'Update to verify',
       'This device is running firmware from before authenticity checks existed, '
           'so it cannot prove it is genuine — however sound the hardware is.\n\n'
           'Update its firmware and it will be checked automatically the next '
           'time you connect it.',
     ),
-    GenuineStatus.unknown => (
+    GenuineLook.unverified => (
       'Not verified',
-      'This device has not proved that it was made by Frostsnap.\n\n'
+      'This device has not proved that it was made by Frostsnap. The check runs '
+          'in the background whenever it is connected.\n\n'
           'That is expected for a development unit, third-party or open-source '
           'hardware, or a device with no factory certificate.\n\n'
           'Otherwise, treat it with caution.',

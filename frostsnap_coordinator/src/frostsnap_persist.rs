@@ -7,6 +7,10 @@ use crate::{
 };
 use anyhow::Context;
 use bdk_chain::rusqlite_impl::migrate_schema;
+use frostsnap_comms::genuine_certificate::{
+    verify_attestation, Certificate, CertificateBody, CERTIFICATE_BINCODE_CONFIG,
+};
+use frostsnap_core::schnorr_fun::fun::{marker::EvenY, Point};
 use frostsnap_core::{
     coordinator::{self, restoration::RestorationMutation},
     DeviceId,
@@ -257,83 +261,58 @@ impl Persist<rusqlite::Connection> for DeviceNames {
     }
 }
 
-/// What a device's verified certificate told us about it.
-///
-/// Display data, deliberately: it is what lets the app show a known device's colour
-/// and serial the moment it appears — and while it is disconnected — without
-/// spending a DS exponentiation. It is never evidence. A stored record does not
-/// suppress a challenge and does not by itself render a "genuine" verdict; see
-/// [`crate::genuine_check`] for why honouring a remembered verdict would be worse
-/// than having no check at all.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct GenuineRecord {
-    /// The case colour's name, via `CaseColor`'s `Display`. A colour this build has
-    /// no name for stores as "Unknown" and reads back as no colour — `FromStr`
-    /// rejects it — rather than being recorded as the wrong one. Nothing is lost by
-    /// that: a device is re-challenged on every connect, so a later build that does
-    /// know the colour learns it the next time the device is plugged in.
-    pub case_color: String,
-    pub serial: String,
-    pub revision: String,
+#[derive(Clone, Debug, PartialEq)]
+pub struct Attestation {
+    pub certificate: Certificate,
+    pub ds_signature: Box<[u8; 384]>,
 }
 
-/// Persisted [`GenuineRecord`]s keyed by [`DeviceId`].
-///
-/// Kept apart from `DeviceNames` on purpose: the check resolves before a device is
-/// named, and a device may never be named at all, so storing this alongside the name
-/// would drop the colour for exactly the devices the user most needs to tell apart.
+/// Attestations that verified against this build's factory key, keyed by the device they vouch
+/// for. Only verified entries exist in memory, so holding one is holding evidence.
 #[derive(Default)]
-pub struct GenuineDeviceInfo {
-    info: HashMap<DeviceId, GenuineRecord>,
-    /// `None` means "delete this row".
-    mutations: VecDeque<(DeviceId, Option<GenuineRecord>)>,
+pub struct GenuineCerts {
+    certs: HashMap<DeviceId, (Attestation, CertificateBody)>,
+    staged: VecDeque<(DeviceId, Attestation)>,
 }
 
-impl GenuineDeviceInfo {
-    pub fn set(&mut self, device_id: DeviceId, record: GenuineRecord) {
-        if self.info.get(&device_id) != Some(&record) {
-            self.info.insert(device_id, record.clone());
-            self.mutations.push_back((device_id, Some(record)));
-        }
+impl GenuineCerts {
+    pub fn get(&self, device_id: DeviceId) -> Option<&CertificateBody> {
+        self.certs.get(&device_id).map(|(_, body)| body)
     }
 
-    /// Forget a device, e.g. after it failed a live check or was erased. What we
-    /// stored describes hardware we can no longer vouch for, so it should stop
-    /// being shown rather than linger as a stale colour.
-    pub fn remove(&mut self, device_id: DeviceId) {
-        if self.info.remove(&device_id).is_some() {
-            self.mutations.push_back((device_id, None));
-        }
-    }
-
-    pub fn get(&self, device_id: DeviceId) -> Option<&GenuineRecord> {
-        self.info.get(&device_id)
+    pub(crate) fn insert(
+        &mut self,
+        device_id: DeviceId,
+        attestation: Attestation,
+        body: CertificateBody,
+    ) {
+        self.staged.push_back((device_id, attestation.clone()));
+        self.certs.insert(device_id, (attestation, body));
     }
 }
 
-impl TakeStaged<VecDeque<(DeviceId, Option<GenuineRecord>)>> for GenuineDeviceInfo {
-    fn take_staged_update(&mut self) -> Option<VecDeque<(DeviceId, Option<GenuineRecord>)>> {
-        if self.mutations.is_empty() {
+impl TakeStaged<VecDeque<(DeviceId, Attestation)>> for GenuineCerts {
+    fn take_staged_update(&mut self) -> Option<VecDeque<(DeviceId, Attestation)>> {
+        if self.staged.is_empty() {
             None
         } else {
-            Some(core::mem::take(&mut self.mutations))
+            Some(core::mem::take(&mut self.staged))
         }
     }
 }
 
-impl Persist<rusqlite::Connection> for GenuineDeviceInfo {
-    type Update = VecDeque<(DeviceId, Option<GenuineRecord>)>;
-    type LoadParams = ();
+impl Persist<rusqlite::Connection> for GenuineCerts {
+    type Update = VecDeque<(DeviceId, Attestation)>;
+    type LoadParams = Point<EvenY>;
 
     fn migrate(conn: &mut rusqlite::Connection) -> anyhow::Result<()> {
-        const SCHEMA_NAME: &str = "frostsnap_genuine_devices";
+        const SCHEMA_NAME: &str = "frostsnap_genuine_certs";
         const MIGRATIONS: &[&str] = &[
             // Version 0
-            "CREATE TABLE IF NOT EXISTS fs_genuine_devices ( \
+            "CREATE TABLE IF NOT EXISTS fs_genuine_certs ( \
                 id BLOB PRIMARY KEY, \
-                case_color TEXT NOT NULL, \
-                serial TEXT NOT NULL, \
-                revision TEXT NOT NULL \
+                certificate BLOB NOT NULL, \
+                ds_signature BLOB NOT NULL \
             )",
         ];
 
@@ -343,30 +322,51 @@ impl Persist<rusqlite::Connection> for GenuineDeviceInfo {
         Ok(())
     }
 
-    fn load(conn: &mut rusqlite::Connection, _params: Self::LoadParams) -> anyhow::Result<Self>
-    where
-        Self: Sized,
-    {
+    /// Rows are re-verified against `factory_key`. One that doesn't decode or verify (a database
+    /// from a build with another factory key, or corruption) is skipped: that device attests
+    /// again and its row is replaced.
+    fn load(conn: &mut rusqlite::Connection, factory_key: Point<EvenY>) -> anyhow::Result<Self> {
         let mut stmt =
-            conn.prepare("SELECT id, case_color, serial, revision FROM fs_genuine_devices")?;
-        let mut genuine = GenuineDeviceInfo::default();
-
-        let row_iter = stmt.query_map([], |row| {
-            let device_id = row.get::<_, DeviceId>(0)?;
-            let record = GenuineRecord {
-                case_color: row.get::<_, String>(1)?,
-                serial: row.get::<_, String>(2)?,
-                revision: row.get::<_, String>(3)?,
-            };
-            Ok((device_id, record))
+            conn.prepare("SELECT id, certificate, ds_signature FROM fs_genuine_certs")?;
+        let rows = stmt.query_map([], |row| {
+            Ok((
+                row.get::<_, DeviceId>(0).ok(),
+                row.get::<_, Vec<u8>>(1).ok(),
+                row.get::<_, Vec<u8>>(2).ok(),
+            ))
         })?;
 
-        for row in row_iter {
-            let (device_id, record) = row?;
-            genuine.info.insert(device_id, record);
+        let mut genuine_certs = GenuineCerts::default();
+        for row in rows {
+            let (Some(device_id), Some(certificate), Some(ds_signature)) = row? else {
+                event!(
+                    Level::WARN,
+                    "skipping a malformed stored genuine attestation"
+                );
+                continue;
+            };
+            let verified = decode_attestation(&certificate, ds_signature).and_then(|attestation| {
+                let body = verify_attestation(
+                    &attestation.certificate,
+                    factory_key,
+                    device_id,
+                    &attestation.ds_signature,
+                )
+                .ok()?;
+                Some((attestation, body))
+            });
+            match verified {
+                Some(entry) => {
+                    genuine_certs.certs.insert(device_id, entry);
+                }
+                None => event!(
+                    Level::WARN,
+                    device = device_id.to_string(),
+                    "skipping a stored genuine attestation that no longer verifies"
+                ),
+            }
         }
-
-        Ok(genuine)
+        Ok(genuine_certs)
     }
 
     fn persist_update(
@@ -374,85 +374,25 @@ impl Persist<rusqlite::Connection> for GenuineDeviceInfo {
         conn: &mut rusqlite::Connection,
         update: Self::Update,
     ) -> anyhow::Result<()> {
-        for (id, record) in update {
-            match record {
-                Some(record) => conn.execute(
-                    "INSERT OR REPLACE INTO fs_genuine_devices (id, case_color, serial, revision) \
-                     VALUES (?1, ?2, ?3, ?4)",
-                    params![id, record.case_color, record.serial, record.revision],
-                )?,
-                None => conn.execute(
-                    "DELETE FROM fs_genuine_devices WHERE id = ?1",
-                    params![id],
-                )?,
-            };
+        for (id, attestation) in update {
+            let certificate =
+                bincode::encode_to_vec(&attestation.certificate, CERTIFICATE_BINCODE_CONFIG)?;
+            conn.execute(
+                "INSERT OR REPLACE INTO fs_genuine_certs (id, certificate, ds_signature) \
+                 VALUES (?1, ?2, ?3)",
+                params![id, certificate, attestation.ds_signature.as_slice()],
+            )?;
         }
-
         Ok(())
     }
 }
 
-#[cfg(test)]
-mod genuine_device_info_test {
-    use super::*;
-    use crate::persist::Persist;
-    use tempfile::NamedTempFile;
-
-    fn record(color: &str) -> GenuineRecord {
-        GenuineRecord {
-            case_color: color.to_string(),
-            serial: "220825002".to_string(),
-            revision: "2.7-1625".to_string(),
-        }
-    }
-
-    fn device(byte: u8) -> DeviceId {
-        DeviceId([byte; 33])
-    }
-
-    #[test]
-    fn records_survive_a_reload_and_removal_is_persisted() -> anyhow::Result<()> {
-        let temp_file = NamedTempFile::new()?;
-        let mut conn = rusqlite::Connection::open(temp_file.path())?;
-        GenuineDeviceInfo::migrate(&mut conn)?;
-
-        let mut info = GenuineDeviceInfo::load(&mut conn, ())?;
-        info.set(device(1), record("Orange"));
-        info.set(device(2), record("Red"));
-        // Re-setting the same value shouldn't stage a redundant write.
-        info.set(device(1), record("Orange"));
-        let update = info.take_staged_update().expect("two devices staged");
-        assert_eq!(update.len(), 2);
-        info.persist_update(&mut conn, update)?;
-
-        let reloaded = GenuineDeviceInfo::load(&mut conn, ())?;
-        assert_eq!(reloaded.get(device(1)), Some(&record("Orange")));
-        assert_eq!(reloaded.get(device(2)), Some(&record("Red")));
-
-        // A device that fails a live check stops being vouched for, and that has to
-        // reach the database — otherwise it comes back on next launch.
-        let mut info = reloaded;
-        info.remove(device(1));
-        let update = info.take_staged_update().expect("removal staged");
-        info.persist_update(&mut conn, update)?;
-
-        let reloaded = GenuineDeviceInfo::load(&mut conn, ())?;
-        assert_eq!(reloaded.get(device(1)), None);
-        assert_eq!(reloaded.get(device(2)), Some(&record("Red")));
-
-        Ok(())
-    }
-
-    /// A colour this build has no name for must read back as no colour, never as
-    /// some other colour — colour is what the user matches against the object in
-    /// their hand.
-    #[test]
-    fn an_unrecognised_colour_reads_back_as_no_colour() {
-        use frostsnap_comms::genuine_certificate::CaseColor;
-        use std::str::FromStr;
-
-        let stored = CaseColor::Unused3.to_string();
-        assert!(CaseColor::from_str(&stored).is_err());
-        assert!(CaseColor::from_str(&CaseColor::Orange.to_string()).is_ok());
-    }
+fn decode_attestation(certificate: &[u8], ds_signature: Vec<u8>) -> Option<Attestation> {
+    let (certificate, _) =
+        bincode::decode_from_slice(certificate, CERTIFICATE_BINCODE_CONFIG).ok()?;
+    let ds_signature: Box<[u8; 384]> = ds_signature.into_boxed_slice().try_into().ok()?;
+    Some(Attestation {
+        certificate,
+        ds_signature,
+    })
 }

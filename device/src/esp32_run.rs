@@ -568,40 +568,34 @@ impl<'a> DeviceLoop<'a> {
                 CoordinatorSendBody::DataErase => self
                     .ui
                     .set_workflow(ui::Workflow::prompt(ui::Prompt::EraseDevice)),
-                CoordinatorSendBody::Challenge(challenge) => {
+                CoordinatorSendBody::_LegacyChallenge(_) => {}
+                CoordinatorSendBody::RequestGenuineAttestation => {
                     if let (Some(hw_rsa), Some(cert)) =
                         (self.hardware_rsa.as_mut(), self.certificate.as_ref())
                     {
-                        use frostsnap_core::schnorr_fun;
-                        // Genuine-hardware proof: DS (RSA) signature over
-                        // `tag ‖ challenge ‖ device_id` (see genuine_challenge_message).
-                        let bound_message =
-                            frostsnap_comms::genuine_certificate::genuine_challenge_message(
-                                **challenge,
-                                self.device_id,
-                            );
-                        let rsa_signature = hw_rsa.sign(&bound_message, self.sha256);
-
-                        // Identity proof: schnorr signature over the challenge with
-                        // our DeviceId key (proof of possession).
-                        let schnorr = schnorr_fun::new_with_deterministic_nonces::<
-                            frostsnap_core::sha2::Sha256,
-                        >();
-                        let identity_signature =
-                            frostsnap_comms::genuine_certificate::sign_identity_challenge(
-                                &schnorr,
-                                self.signer.keypair(),
-                                **challenge,
-                            );
-
+                        let message = frostsnap_comms::genuine_certificate::attestation_message(
+                            self.device_id,
+                        );
+                        let ds_signature = hw_rsa.sign(&message, self.sha256);
                         self.upstream_connection.send_to_coordinator([
-                            DeviceSendBody::GenuineProof {
-                                rsa_signature: Box::new(rsa_signature),
-                                identity_signature,
+                            DeviceSendBody::GenuineAttestation {
                                 certificate: Box::new(cert.clone()),
+                                ds_signature: Box::new(ds_signature),
                             },
                         ]);
                     }
+                }
+                CoordinatorSendBody::GenuineIdentityChallenge(challenge) => {
+                    let schnorr = frostsnap_core::schnorr_fun::new_with_deterministic_nonces::<
+                        frostsnap_core::sha2::Sha256,
+                    >();
+                    let signature = frostsnap_comms::genuine_certificate::sign_identity_challenge(
+                        &schnorr,
+                        self.signer.keypair(),
+                        **challenge,
+                    );
+                    self.upstream_connection
+                        .send_to_coordinator([DeviceSendBody::GenuineIdentityProof { signature }]);
                 }
             }
         }

@@ -35,47 +35,46 @@ void main() {
   group('GenuineStatus presentation', () {
     const scheme = ColorScheme.dark();
 
-    test('every status is distinguishable from every other', () {
-      // Two statuses that look and read alike are worse than no badge: the whole
-      // point is that "verified" and "we could not verify" are not confusable.
-      final labels = GenuineStatus.values.map((s) => s.label).toSet();
-      expect(labels, hasLength(GenuineStatus.values.length));
+    test('each state maps to the look the design note gives it', () {
+      expect(const GenuineStatus.genuine().look, GenuineLook.genuine);
+      for (final supported in [true, false]) {
+        final expected = supported
+            ? GenuineLook.unverified
+            : GenuineLook.updateToVerify;
+        expect(
+          GenuineStatus.unattested(firmwareSupportsCheck: supported).look,
+          expected,
+        );
+        expect(
+          GenuineStatus.attested(firmwareSupportsCheck: supported).look,
+          expected,
+        );
+      }
+    });
 
-      final byAppearance = GenuineStatus.values
-          .map((s) => '${s.icon.codePoint}/${s.color(scheme)}')
-          .toSet();
+    test('every look is distinguishable from every other', () {
+      final labels = GenuineLook.values.map((l) => l.label).toSet();
+      expect(labels, hasLength(GenuineLook.values.length));
+      final icons = GenuineLook.values.map((l) => l.icon).toSet();
+      expect(icons, hasLength(GenuineLook.values.length));
+    });
+
+    test('only genuine is coloured', () {
       expect(
-        byAppearance.length,
-        greaterThan(1),
-        reason: 'statuses must not all render identically',
+        GenuineLook.genuine.color(scheme),
+        isNot(GenuineLook.unverified.color(scheme)),
+      );
+      expect(
+        GenuineLook.updateToVerify.color(scheme),
+        GenuineLook.unverified.color(scheme),
       );
     });
 
-    test('genuine and unknown never render the same', () {
-      expect(
-        GenuineStatus.genuine.label,
-        isNot(GenuineStatus.unknown.label),
-      );
-      expect(
-        GenuineStatus.genuine.color(scheme),
-        isNot(GenuineStatus.unknown.color(scheme)),
-      );
-      expect(GenuineStatus.genuine.icon, isNot(GenuineStatus.unknown.icon));
-    });
-
-    test('a failed check is not dressed up as merely unchecked', () {
-      expect(
-        GenuineStatus.failed.color(scheme),
-        isNot(GenuineStatus.unknown.color(scheme)),
-      );
-      expect(GenuineStatus.failed.icon, isNot(GenuineStatus.unknown.icon));
-    });
-
-    test('every status explains itself', () {
-      for (final status in GenuineStatus.values) {
-        final (title, body) = status.explanation;
-        expect(title, isNotEmpty, reason: '$status has no title');
-        expect(body, isNotEmpty, reason: '$status has no explanation');
+    test('every look explains itself', () {
+      for (final look in GenuineLook.values) {
+        final (title, body) = look.explanation;
+        expect(title, isNotEmpty, reason: '$look has no title');
+        expect(body, isNotEmpty, reason: '$look has no explanation');
       }
     });
   });

@@ -16,11 +16,8 @@ pub enum DeviceListChangeKind {
     GenuineCheck,
 }
 
-/// The colour of a device's case, as claimed by its certificate.
-///
-/// Cosmetic identity — it is how someone tells their own devices apart — and
-/// deliberately not a trust signal: it is read from the certificate before, and
-/// regardless of, verification. Never render it in a way that implies a verdict.
+/// The case colour from a verified certificate. A certificate on file does not make the device in
+/// front of the user genuine; only [`GenuineStatus::Genuine`] does.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CaseColor {
     Black,
@@ -31,10 +28,8 @@ pub enum CaseColor {
 }
 
 impl CaseColor {
-    /// `None` for a colour this build has no name for, which is how a device from a
-    /// newer production run reads. Showing no colour is right there; picking a
-    /// wrong one would be worse than picking none, because colour is what the user
-    /// matches against the object in their hand.
+    /// `None` for a colour this build has no name for: no colour beats the wrong one, since the
+    /// user matches it against the device in their hand.
     #[frb(ignore)]
     pub fn from_comms(
         color: frostsnap_coordinator::frostsnap_comms::genuine_certificate::CaseColor,
@@ -51,28 +46,49 @@ impl CaseColor {
     }
 }
 
-/// Whether a connected device has proved it is genuine Frostsnap hardware.
-///
-/// Always the result for *this* connection. A device that passed in the past is not
-/// carried over — a DeviceId is public and self-asserted, so a remembered verdict
-/// would be worth nothing.
+/// See `docs/genuine-check-design.md`. A failed proof is never shown.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum GenuineStatus {
-    /// Not verified. Covers a build with no genuine key compiled in, a check still
-    /// in flight, and — the common case — a device that simply never answers: no
-    /// certificate provisioned, third-party hardware, or firmware predating the
-    /// challenge message. Benign in almost every case, and never something to act on.
-    Unknown,
-    /// Produced a valid proof bound to this connection's device id.
+    Unattested {
+        firmware_supports_check: bool,
+    },
+    Attested {
+        firmware_supports_check: bool,
+    },
+    /// Proven for this connection.
     Genuine,
-    /// Answered, but the proof did not verify: counterfeit, tampered, or a relay
-    /// attempt.
-    Failed,
-    /// Answered with the retired unbound proof. Its firmware predates the identity
-    /// binding, so it cannot prove genuineness however sound the hardware is.
-    /// Distinct from [`Self::Failed`] because it is fixed by upgrading, not by
-    /// suspecting the device.
-    FirmwareTooOld,
+}
+
+impl GenuineStatus {
+    #[frb(ignore)]
+    pub fn from_coordinator(
+        status: frostsnap_coordinator::genuine_check::GenuineStatus,
+    ) -> (Self, Option<CaseColor>) {
+        use frostsnap_coordinator::genuine_check::GenuineStatus as S;
+        match status {
+            S::Unattested {
+                firmware_supports_check,
+            } => (
+                GenuineStatus::Unattested {
+                    firmware_supports_check,
+                },
+                None,
+            ),
+            S::Attested {
+                certificate,
+                firmware_supports_check,
+            } => (
+                GenuineStatus::Attested {
+                    firmware_supports_check,
+                },
+                CaseColor::from_comms(certificate.case_color()),
+            ),
+            S::Genuine { certificate } => (
+                GenuineStatus::Genuine,
+                CaseColor::from_comms(certificate.case_color()),
+            ),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
