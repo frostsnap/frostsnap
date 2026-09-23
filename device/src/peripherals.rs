@@ -30,8 +30,7 @@ use crate::uart_interrupt::uart_config;
 
 #[macro_export]
 macro_rules! init_display {
-    (peripherals: $peripherals:expr, delay: $delay:expr) => {{
-        use alloc::boxed::Box;
+    (peripherals: $peripherals:expr, delay: $delay:expr, buffer: $buffer:expr) => {{
         use esp_hal::{
             gpio::{Level, Output, OutputConfig},
             spi::{
@@ -53,11 +52,10 @@ macro_rules! init_display {
         .with_mosi($peripherals.GPIO7);
 
         let spi_device = embedded_hal_bus::spi::ExclusiveDevice::new_no_delay(spi, NoCs).unwrap();
-        let buffer: &'static mut [u8] = Box::leak(Box::new([0u8; 512]));
         let di = SpiInterface::new(
             spi_device,
             Output::new($peripherals.GPIO9, Level::Low, OutputConfig::default()),
-            buffer,
+            $buffer,
         );
 
         let display = mipidsi::Builder::new(ST7789, di)
@@ -232,7 +230,11 @@ impl<'a> DevicePeripherals<'a> {
             })
             .unwrap();
 
-        let mut display = init_display!(peripherals: peripherals, delay: &mut delay);
+        let mut display = init_display!(
+            peripherals: peripherals,
+            delay: &mut delay,
+            buffer: Box::leak(Box::new([0u8; 512]))
+        );
 
         // Initialize I2C for touch sensor
         let i2c = I2c::new(

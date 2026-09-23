@@ -25,15 +25,17 @@ pub fn handle_panic(info: &core::panic::PanicInfo) -> ! {
 
     let peripherals = unsafe { Peripherals::steal() };
 
-    let mut bl = Output::new(
-        unsafe { esp_hal::peripherals::GPIO1::steal() },
-        Level::Low,
-        OutputConfig::default(),
-    );
+    let mut bl = Output::new(peripherals.GPIO1, Level::Low, OutputConfig::default());
 
     let mut delay = Delay::new();
 
-    let mut display = init_display!(peripherals: peripherals, delay: &mut delay);
+    // A panic may come from the allocator itself, so nothing on this path may allocate.
+    let mut display_buffer = [0u8; 64];
+    let mut display = init_display!(
+        peripherals: peripherals,
+        delay: &mut delay,
+        buffer: &mut display_buffer
+    );
     let display_size = display.bounding_box().size;
 
     let _ = display.clear(Rgb565::CSS_DARK_BLUE);
