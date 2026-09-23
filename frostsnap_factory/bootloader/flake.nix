@@ -9,11 +9,12 @@
   outputs = { self, nixpkgs, nixpkgs-esp-dev, flake-utils }:
     flake-utils.lib.eachDefaultSystem (system: let
       pkgs = import nixpkgs { inherit system; };
-      # Override to ESP-IDF v5.3.1 — v5.4+ added esp_app_desc_t efuse_blk_rev validation
-      # that rejects bare-metal esp-hal images missing a proper app descriptor.
+      # Pin ESP-IDF to v5.5.4. v5.4+ enforces esp_app_desc_t efuse_blk_rev
+      # validation, rejecting images without a proper app descriptor; every
+      # firmware binary declares one with esp_app_desc!().
       esp-idf-riscv = (nixpkgs-esp-dev.packages.${system}.esp-idf-riscv).override {
-        rev = "v5.3.1";
-        sha256 = "sha256-hcE4Tr5PTRQjfiRYgvLB1+8sR7KQQ1TnQJqViodGdBw=";
+        rev = "v5.5.4";
+        sha256 = "sha256-rItbBrwItkfJf8tKImAQsiXDR95sr0LqaM51gDZG/nI=";
       };
 
       buildBootloader = { variant ? "dev" }: pkgs.stdenv.mkDerivation {
