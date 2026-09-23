@@ -4,7 +4,7 @@ use alloc::boxed::Box;
 use alloc::{vec, vec::Vec};
 use crc::Crc;
 use embedded_storage::nor_flash::NorFlashErrorKind;
-use esp_hal::efuse::Efuse;
+use esp_hal::efuse as hal_efuse;
 use esp_hal::rsa::{operand_sizes::Op3072, Rsa, RsaModularExponentiation};
 use esp_hal::sha::{Sha, Sha256};
 use esp_hal::Blocking;
@@ -78,9 +78,7 @@ fn verify_rsa_pss_signature(
     sha: &mut Sha,
 ) -> Result<bool, &'static str> {
     const KEY_SIZE_BYTES: usize = 384;
-
-    // Wait for RSA peripheral to be ready
-    block!(rsa.ready()).map_err(|_| "RSA peripheral not ready")?;
+    // `Rsa::new` already blocks until the peripheral is ready; no explicit wait needed here.
 
     // Convert signature block data to u32 arrays in ESP32-C3 native little-endian format
     // All inputs should be little-endian byte arrays
@@ -232,9 +230,9 @@ fn compute_sha256_hardware(sha: &mut Sha, data: &[u8]) -> [u8; 32] {
 // Find secure boot key digest from eFuse by checking KEY_PURPOSE fields
 fn find_secure_boot_key() -> Option<[u8; 32]> {
     use esp_hal::efuse::{
-        KEY0, KEY1, KEY2, KEY3, KEY4, KEY5, KEY_PURPOSE_0, KEY_PURPOSE_1, KEY_PURPOSE_2,
-        KEY_PURPOSE_3, KEY_PURPOSE_4, KEY_PURPOSE_5, SECURE_BOOT_KEY_REVOKE0,
-        SECURE_BOOT_KEY_REVOKE1, SECURE_BOOT_KEY_REVOKE2,
+        BLOCK_KEY0, BLOCK_KEY1, BLOCK_KEY2, BLOCK_KEY3, BLOCK_KEY4, BLOCK_KEY5, KEY_PURPOSE_0,
+        KEY_PURPOSE_1, KEY_PURPOSE_2, KEY_PURPOSE_3, KEY_PURPOSE_4, KEY_PURPOSE_5,
+        SECURE_BOOT_KEY_REVOKE0, SECURE_BOOT_KEY_REVOKE1, SECURE_BOOT_KEY_REVOKE2,
     };
     // Key purpose values and their revoke fields (from ESP32-C3 TRM Table 4.3-1 & 4.3-2)
     let secure_boot_digests = [
@@ -251,22 +249,21 @@ fn find_secure_boot_key() -> Option<[u8; 32]> {
         KEY_PURPOSE_4,
         KEY_PURPOSE_5,
     ];
-    let key_data_fields = [KEY0, KEY1, KEY2, KEY3, KEY4, KEY5];
+    let key_data_fields = [
+        BLOCK_KEY0, BLOCK_KEY1, BLOCK_KEY2, BLOCK_KEY3, BLOCK_KEY4, BLOCK_KEY5,
+    ];
 
     // Search through all key blocks
     for (i, &purpose_field) in key_purpose_fields.iter().enumerate() {
-        let purpose: u8 = Efuse::read_field_le(purpose_field);
+        let purpose: u8 = hal_efuse::read_field_le(purpose_field);
 
-        // Find matching secure boot digest revoke field
         if let Some((_, revoke_field)) = secure_boot_digests
             .iter()
             .find(|(purpose_val, _)| *purpose_val == purpose)
         {
-            // Check if this key is revoked
-            let is_revoked = Efuse::read_bit(*revoke_field);
+            let is_revoked = hal_efuse::read_bit(*revoke_field);
             if !is_revoked {
-                // Read the key data (32 bytes)
-                let key_data: [u8; 32] = Efuse::read_field_le(key_data_fields[i]);
+                let key_data: [u8; 32] = hal_efuse::read_field_le(key_data_fields[i]);
                 return Some(key_data);
             }
         }

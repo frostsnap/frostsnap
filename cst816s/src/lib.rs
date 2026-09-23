@@ -30,17 +30,17 @@ impl<I2C> CST816S<I2C, esp_hal::gpio::Input<'static>, esp_hal::gpio::Output<'sta
     /// The interrupt pin will be automatically configured with Pull::Up
     pub fn new_esp32(
         i2c: I2C,
-        interrupt_pin: impl esp_hal::peripheral::Peripheral<P = impl esp_hal::gpio::InputPin> + 'static,
-        reset_pin: impl esp_hal::peripheral::Peripheral<P = impl esp_hal::gpio::OutputPin> + 'static,
+        interrupt_pin: impl esp_hal::gpio::InputPin + 'static,
+        reset_pin: impl esp_hal::gpio::OutputPin + 'static,
     ) -> Self {
-        use esp_hal::gpio::{Input, Level, Output, Pull};
+        use esp_hal::gpio::{Input, InputConfig, Level, Output, OutputConfig, Pull};
 
-        let pin_int = Input::new(interrupt_pin, Pull::Up);
+        let pin_int = Input::new(interrupt_pin, InputConfig::default().with_pull(Pull::Up));
 
         Self {
             i2c,
             pin_int,
-            pin_rst: Output::new(reset_pin, Level::Low),
+            pin_rst: Output::new(reset_pin, Level::Low, OutputConfig::default()),
             blob_buf: [0u8; BLOB_BUF_LEN],
         }
     }
@@ -237,9 +237,9 @@ impl core::convert::From<u8> for TouchGesture {
 /// Global interrupt handling support for ESP32C3
 pub mod interrupt {
     use super::*;
-    use esp_hal::InterruptConfigurable;
     use esp_hal::gpio::Input;
-    use esp_hal::macros::handler;
+    use esp_hal::handler;
+    use esp_hal::interrupt::InterruptConfigurable;
     use heapless::spsc::{Consumer, Producer, Queue};
 
     /// Default queue capacity for touch events

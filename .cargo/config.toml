@@ -1,0 +1,4 @@
+[env]
+# esp_app_desc!() embeds the build date; match the nix shell so builds outside it are reproducible.
+# [env] does not override a variable already set, so nix's own value still wins there.
+SOURCE_DATE_EPOCH = "1704067200"
