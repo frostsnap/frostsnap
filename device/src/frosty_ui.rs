@@ -307,20 +307,16 @@ impl<'a> UserInteraction for FrostyUi<'a> {
                 widget: sign_prompt,
                 phase,
             } => {
-                if sign_prompt.is_confirmed() {
-                    if let Some(phase_data) = phase.take() {
-                        return Some(UiEvent::SigningConfirm { phase: phase_data });
-                    }
+                if let Some(phase_data) = phase.take_if(|_| sign_prompt.is_confirmed()) {
+                    return Some(UiEvent::SigningConfirm { phase: phase_data });
                 }
                 if phase.is_none() && sign_prompt.is_finished() {
                     self.go_to_default();
                 }
             }
             WidgetTree::SignTestPrompt { widget, phase } => {
-                if widget.is_confirmed() {
-                    if let Some(phase_data) = phase.take() {
-                        return Some(UiEvent::SigningConfirm { phase: phase_data });
-                    }
+                if let Some(phase_data) = phase.take_if(|_| widget.is_confirmed()) {
+                    return Some(UiEvent::SigningConfirm { phase: phase_data });
                 }
                 if phase.is_none() && widget.is_finished() {
                     self.go_to_default();
