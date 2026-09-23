@@ -13,7 +13,6 @@ use frostsnap_coordinator::bitcoin::wallet::Transaction as WalletTransaction;
 pub use frostsnap_coordinator::frostsnap_core::{self, MasterAppkey};
 use frostsnap_core::bitcoin_transaction::{ScopedTo, TransactionTemplate};
 use frostsnap_core::message::EncodedSignature;
-use tracing::{event, Level};
 
 use std::collections::HashMap;
 use std::ops::Deref;
@@ -147,29 +146,6 @@ impl BitcoinNetworkExt for BitcoinNetwork {
     #[frb(sync)]
     fn supported_networks() -> Vec<BitcoinNetwork> {
         SUPPORTED_NETWORKS.into_iter().collect()
-    }
-}
-
-#[frb(sync)]
-pub fn validate_amount(address: &str, value: u64) -> Option<String> {
-    let Ok(address) = bitcoin::Address::from_str(address) else {
-        return None;
-    };
-    let dust_value = address
-        .assume_checked()
-        .script_pubkey()
-        .minimal_non_dust()
-        .to_sat();
-    if value < dust_value {
-        event!(
-            Level::DEBUG,
-            value = value,
-            dust_value = dust_value,
-            "address validation rejected"
-        );
-        Some(format!("Too small to send. Must be at least {dust_value}"))
-    } else {
-        None
     }
 }
 
