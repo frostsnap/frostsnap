@@ -7,7 +7,7 @@ use esp_hal::{
     delay::Delay,
     gpio::{Input, InputConfig, Io, Output, Pull},
     hmac::Hmac,
-    i2c::master::{Config as I2cConfig, I2c},
+    i2c::master::{BusTimeout, Config as I2cConfig, I2c},
     ledc::{
         channel::{self, ChannelIFace},
         timer::{self as timerledc, LSClockSource, TimerIFace},
@@ -237,7 +237,11 @@ impl<'a> DevicePeripherals<'a> {
         // Initialize I2C for touch sensor
         let i2c = I2c::new(
             peripherals.I2C0,
-            I2cConfig::default().with_frequency(Rate::from_khz(400)),
+            // esp-hal 0.22's default, which shipped firmware ran with; 1.2 defaults to no bus
+            // timeout, and this read happens in the GPIO ISR with interrupts masked.
+            I2cConfig::default()
+                .with_frequency(Rate::from_khz(400))
+                .with_timeout(BusTimeout::BusCycles(10)),
         )
         .unwrap()
         .with_sda(peripherals.GPIO4)
