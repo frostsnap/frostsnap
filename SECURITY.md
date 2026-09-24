@@ -93,7 +93,7 @@ credit you when we publish, unless you would prefer we did not.
 
 Anything that breaks the security model. Concretely, that model is:
 
-1. **A remote attacker gets nothing, even if every device is corrupt — provided the coordinator app is
+1. **A remote attacker gets nothing, even if every device is corrupt, provided the coordinator app is
    honest.** "Remote" means they never physically hold a device or a backup: their only view of the wallet is
    what reaches the chain and the network requests the wallet software makes. So malicious firmware would
    have to smuggle key material out through a signature, a nonce, or some other message that ends up
@@ -104,21 +104,65 @@ Anything that breaks the security model. Concretely, that model is:
    their hands, a backup in their hands, or malicious firmware on a device they never touch. A device that is
    both malicious *and* in their hands is still one share. While that count is **fewer than the signing
    threshold**, no funds should be lost; at or above it those shares can simply sign, and there is nothing
-   left to break.
+   left to break. Restoring a wallet rests on the same count: it rebuilds only from the shares you present, so
+   knowing your own wallet's configuration, its threshold and how many devices it has, is what catches a restore that
+   comes back smaller or different from what you set up.
 3. **A corrupt coordinator app should not cost you funds while fewer than the threshold of devices are
-   corrupt**, provided you verify what you are approving on the device's own screen.
+   corrupt**, provided you check the device's own screen rather than the app's. That means:
+   - **At key generation:** the threshold and number of devices the device shows, and that the security
+     check code is **identical on every device**.
+   - **At signing:** every destination and amount the device lists, and the fee. The device itemises what
+     leaves the wallet; on an ordinary send a single change output back to you is deliberately not listed.
+
+   The security of the system and the process depends on you verifying checks like these. If an attack works
+   only because you skipped one, that is not a break in the model: the check was what would have caught it. An
+   attack that survives all of these checks is exactly what we want to hear about, and so is any way to make
+   them stronger or harder to skip.
 
 Once an attacker controls the threshold, they can sign whatever they like, so there is nothing left for us
 to guarantee.
 
 An attack that breaks any of the three cases above is what we want to hear about.
 
+### Dependencies
+
+Frostsnap's security rests heavily on libraries maintained outside this repository, in particular
+`schnorr_fun`, `secp256kfun` and `vrf_fun`. **A flaw in one of those that breaks the model above is in
+scope here, and is eligible for the bounty on the same terms as a flaw in Frostsnap itself.**
+
+Report it to [security@frostsnap.com](mailto:security@frostsnap.com) **before** raising it upstream, since
+those projects are public and an issue or pull request there discloses it immediately to everyone, before
+a fix exists. We will coordinate the upstream fix and the disclosure with you and with the library's maintainers.
+
+### Out of scope
+
+None of these break the model above, so they are not eligible for the bounty, though we are still glad to
+hear about them:
+
+- Crashes, panics, hangs, and local denial of service, such as a connected app crashing the device or a
+  device crashing the app
+- Anything that only stops a transaction from being signed, since a corrupt device or coordinator can
+  always simply refuse
+- Resource exhaustion and memory usage
+- Privacy and metadata leakage, including address clustering and network-level observation
+- Timing variation and side channels in code that never touches secret material
+- Missing hardening, unused attack surface, or dependency advisories with no path to funds moving
+- Griefing that strands funds without moving them to an attacker, such as a corrupt coordinator parking
+  change at a derivation index your wallet will not immediately rescan; the funds stay yours and remain
+  recoverable
+
+If you are unsure, send it anyway. We would much rather read a short report we can dismiss than miss a real
+one.
+
+If you leveraged AI in your research, please stress-test its findings before sending to us: have it argue
+both sides and try to break its own claims about the system.
+
 ## Bounty
 
 We pay **1,000,000 satoshi** for an attack that genuinely breaks the model above.
 
 Eligibility is judged when your report reaches us. It must be the **first private report** of something we
-do not already know about and have not already fixed — that includes a duplicate of an earlier private
+do not already know about and have not already fixed. That includes a duplicate of an earlier private
 report, and anything already visible in an issue or pull request. It stays eligible only while you follow the
 coordinated disclosure above: publishing before we have agreed a timeline forfeits it.
 
@@ -134,4 +178,4 @@ Corrupt devices can always refuse to sign, and can always hand out backup words 
 share they claim to. Unless backups are verified on independent devices, neither is preventable: nothing in
 the protocol can compel a device to cooperate or to tell the truth about a secret only it holds. A set of
 corrupt devices can therefore hold a wallet to ransom, and that is a known limitation of the model rather
-than a break of it — so it is not eligible for the bounty.
+than a break of it, so it is not eligible for the bounty.
