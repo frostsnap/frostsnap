@@ -198,11 +198,10 @@ impl ChainClient {
 
     /// Track `keychain` through `next_index` plus lookahead. Re-calling with a larger
     /// `next_index` widens the live subscription window in place (bdk_electrum_streaming
-    /// >= 0.5.3); equal or smaller is a no-op, so the window never narrows.
+    /// >= 0.5.3); a smaller one never narrows it.
     ///
-    /// `expected_spk_txids` are the `(spk, txid)` pairs the wallet already holds for this keychain.
-    /// Only these can be reported as evicted, so leaving any out means a tx dropped while we were
-    /// offline stays in the wallet forever.
+    /// `expected_spk_txids` are added to the `(spk, txid)` pairs the chain source expects under
+    /// this keychain, whatever `next_index` is. Only expected txids can be reported as evicted.
     pub fn monitor_keychain(
         &self,
         keychain: KeychainId,
