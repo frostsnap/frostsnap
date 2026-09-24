@@ -37,8 +37,6 @@ impl<'a> Partitions<'a> {
         let mut self_ = Self::new(flash);
         // Boxed: ~3KB, too big for the stack of a boot-time function.
         let mut pt_mem = alloc::boxed::Box::new([0u8; partitions::PARTITION_TABLE_MAX_LEN]);
-        // Partition table offset in .cargo/config.toml env
-        // ESP_BOOTLOADER_ESP_IDF_CONFIG_PARTITION_TABLE_OFFSET = "0xD000"
         let pt = partitions::read_partition_table(&mut *flash.borrow_mut(), &mut *pt_mem)
             .expect("unable to read partition table");
 
