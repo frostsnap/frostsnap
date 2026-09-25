@@ -305,7 +305,10 @@ impl BackupModel {
             let words_array: [&'static str; NUM_WORDS] = *words;
 
             // Try to create ShareBackup from the entered words
-            let success = ShareBackup::from_words(share_index, words_array).ok();
+            // `#0` bare-secret backups are not yet supported on the device.
+            let success = ShareBackup::from_words(share_index, words_array)
+                .ok()
+                .filter(|backup| !backup.is_bare_secret());
 
             ViewState {
                 row: NUM_WORDS, // Last word row

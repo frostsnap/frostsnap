@@ -1,10 +1,13 @@
 use core::{convert::TryInto, str::FromStr};
 use frost_backup::*;
 use schnorr_fun::frost::SharedKey;
-use secp256kfun::{marker::*, Scalar};
+use secp256kfun::{g, marker::*, Scalar, G};
 
 mod common;
-use common::{INVALID_SHARE_CHECKSUM, TEST_SHARES_1_OF_1, TEST_SHARES_2_OF_3, TEST_SHARES_3_OF_5};
+use common::{
+    INVALID_SHARE_CHECKSUM, TEST_BARE_SECRET, TEST_SHARES_1_OF_1, TEST_SHARES_2_OF_3,
+    TEST_SHARES_3_OF_5,
+};
 
 /// Iterator that generates all combinations of k elements from n elements
 struct Combinations {
@@ -112,7 +115,10 @@ fn test_specification_2_of_3() {
     let mut first_polynomial = None;
 
     for combo in Combinations::new(3, 2) {
-        let images: Vec<_> = combo.iter().map(|&i| shares[i].share_image()).collect();
+        let images: Vec<_> = combo
+            .iter()
+            .map(|&i| shares[i].share_image().unwrap())
+            .collect();
         let shared_key = SharedKey::from_share_images(images);
 
         // Verify all combinations produce the same polynomial
@@ -168,7 +174,10 @@ fn test_specification_3_of_5() {
     let mut first_polynomial = None;
 
     for combo in Combinations::new(5, 3) {
-        let images: Vec<_> = combo.iter().map(|&i| shares[i].share_image()).collect();
+        let images: Vec<_> = combo
+            .iter()
+            .map(|&i| shares[i].share_image().unwrap())
+            .collect();
         let shared_key = SharedKey::from_share_images(images);
 
         // Verify all combinations produce the same polynomial
@@ -213,6 +222,52 @@ fn test_specification_roundtrip() {
         TryInto::<u32>::try_into(reparsed.index()).unwrap()
     );
     assert_eq!(share.to_words(), reparsed.to_words());
+}
+
+/// A `#0` backup encodes the secret itself and round-trips through the text format
+#[test]
+fn test_specification_bare_secret_roundtrip() {
+    let secret = Scalar::<Secret, Zero>::from_str(
+        "0101010101010101010101010101010101010101010101010101010101010101",
+    )
+    .unwrap();
+    let backup = ShareBackup::from_bare_secret(secret);
+    assert!(backup.is_bare_secret());
+    assert!(backup.share_image().is_none());
+
+    let formatted = backup.to_string();
+    assert_eq!(formatted, TEST_BARE_SECRET);
+
+    // Strict recovery accepts a lone #0
+    let recovered = recovery::recover_secret(&[backup.clone()], Fingerprint::default())
+        .expect("Recovery should succeed");
+    assert_eq!(recovered.secret, secret);
+    let parsed: ShareBackup = formatted.parse().expect("#0 backup should parse");
+    assert_eq!(parsed, backup);
+
+    assert_eq!(parsed.clone().extract_bare_secret().unwrap(), secret);
+
+    // A #0 backup is not a share, even against its own commitment
+    let shared_key = SharedKey::from_poly(vec![g!(secret * G).normalize()]);
+    assert!(matches!(
+        parsed.extract_secret(&shared_key),
+        Err(ShareBackupError::BareSecret)
+    ));
+
+    // and a share is not a bare secret
+    let share: ShareBackup = TEST_SHARES_1_OF_1[0].parse().unwrap();
+    assert!(matches!(
+        share.extract_bare_secret(),
+        Err(ShareBackupError::NotBareSecret)
+    ));
+}
+
+/// The encoded scalar must be less than the group order; it is rejected, not reduced
+#[test]
+fn test_specification_scalar_below_group_order() {
+    // All-ones scalar (every word is ZOO, index 2047) is >= n
+    let result = ShareBackup::from_words(1, ["ZOO"; 25]);
+    assert!(matches!(result, Err(ShareBackupError::InvalidScalar)));
 }
 
 /// Test that checksums are actually verified

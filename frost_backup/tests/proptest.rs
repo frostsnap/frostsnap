@@ -44,9 +44,10 @@ proptest! {
         // Verify we got the right number of shares
         prop_assert_eq!(shares.len(), n_parties);
 
-        // Verify share indices are sequential from 1
+        // Verify share indices are sequential from 1 (threshold 1 emits #0 bare secrets)
         for (i, share) in shares.iter().enumerate() {
-            prop_assert_eq!(TryInto::<u32>::try_into(share.index()).unwrap(), (i + 1) as u32);
+            let expected = if threshold == 1 { 0 } else { (i + 1) as u32 };
+            prop_assert_eq!(TryInto::<u32>::try_into(share.index()).unwrap(), expected);
         }
 
         // Test encoding and decoding of each share
@@ -142,7 +143,7 @@ proptest! {
         // Get share images from valid shares
         let valid_images: Vec<ShareImage> = valid_shares
             .iter()
-            .map(|s| s.share_image())
+            .map(|s| s.share_image().unwrap())
             .collect();
 
         // Generate bogus share images

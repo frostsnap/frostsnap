@@ -28,9 +28,12 @@ impl State {
                 // No-op: cleanup happens automatically when SaveShare mutation is applied
             }
             Save2(saved_backup) => {
-                let backup_share_image = saved_backup.share_backup.share_image();
-                self.saved_backups
-                    .insert(backup_share_image, saved_backup.clone());
+                // `#0` bare-secret backups have no share image and are not yet
+                // supported on the device.
+                if let Some(backup_share_image) = saved_backup.share_backup.share_image() {
+                    self.saved_backups
+                        .insert(backup_share_image, saved_backup.clone());
+                }
             }
         }
         Some(mutation)
@@ -342,7 +345,10 @@ impl<S: Debug + NonceStreamSlot> FrostSigner<S> {
         let mut ret = vec![];
         let enter_physical_id = phase.enter_physical_id;
 
-        let share_image = share_backup.share_image();
+        let Some(share_image) = share_backup.share_image() else {
+            // `#0` bare-secret backups are not yet supported on the device.
+            return ret;
+        };
         self.restoration
             .tmp_loaded_backups
             .insert(share_image, share_backup);

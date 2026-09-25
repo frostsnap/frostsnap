@@ -180,7 +180,10 @@ impl WidgetTree {
         rand_seed: u32,
     ) -> Self {
         let word_indices = backup.to_word_indices();
-        let share_index = backup.index();
+        let share_index = backup
+            .index()
+            .non_zero()
+            .expect("device only checks shares, not #0 bare secrets");
         let display_share_index: u16 = share_index
             .try_into()
             .expect("Share index should fit in u16");
