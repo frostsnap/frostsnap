@@ -30,7 +30,21 @@ runs:
       run: gem install cocoapods
     - name: Build macOS App
       shell: bash
+      # The committed target is 12.0 because current Xcode refuses anything lower;
+      # CI's Xcode still accepts 10.15, so releases keep supporting macOS 10.15 and 11.
+      # Flutter hands FLUTTER_XCODE_* to xcodebuild as build settings, which reach
+      # every pod target and the cargokit script phase that builds the Rust library.
+      env:
+        FLUTTER_XCODE_MACOSX_DEPLOYMENT_TARGET: "10.15"
       run: just env=${{ inputs.env }} build macos --release
+    - name: Check the shipped minimum macOS
+      shell: bash
+      # Only the x86_64 slice can go below 11.0, the first arm64 macOS.
+      run: |
+        app=frostsnapp/build/macos/Build/Products/Release/Frostsnap.app
+        for bin in "$app/Contents/MacOS/Frostsnap" "$app/Contents/Frameworks/rust_lib_frostsnapp.framework/rust_lib_frostsnapp"; do
+          vtool -arch x86_64 -show-build "$bin" | grep -Eq 'minos +10\.15$' || { echo "$bin does not target macOS 10.15" >&2; exit 1; }
+        done
     - name: Verify no checked-out files drifted during build
       shell: bash
       run: git diff --exit-code
