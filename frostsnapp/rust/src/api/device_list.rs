@@ -12,6 +12,83 @@ pub enum DeviceListChangeKind {
     Removed,
     Named,
     RecoveryMode,
+    /// The device's genuine status or case colour changed.
+    GenuineCheck,
+}
+
+/// The case colour from a verified certificate. A certificate on file does not make the device in
+/// front of the user genuine; only [`GenuineStatus::Genuine`] does.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CaseColor {
+    Black,
+    Orange,
+    Silver,
+    Blue,
+    Red,
+}
+
+impl CaseColor {
+    /// `None` for a colour this build has no name for: no colour beats the wrong one, since the
+    /// user matches it against the device in their hand.
+    #[frb(ignore)]
+    pub fn from_comms(
+        color: frostsnap_coordinator::frostsnap_comms::genuine_certificate::CaseColor,
+    ) -> Option<Self> {
+        use frostsnap_coordinator::frostsnap_comms::genuine_certificate::CaseColor as C;
+        Some(match color {
+            C::Black => CaseColor::Black,
+            C::Orange => CaseColor::Orange,
+            C::Silver => CaseColor::Silver,
+            C::Blue => CaseColor::Blue,
+            C::Red => CaseColor::Red,
+            _ => return None,
+        })
+    }
+}
+
+/// See `docs/genuine-check-design.md`. A failed proof is never shown.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GenuineStatus {
+    Unattested {
+        firmware_supports_check: bool,
+    },
+    Attested {
+        firmware_supports_check: bool,
+    },
+    /// Proven for this connection.
+    Genuine,
+}
+
+impl GenuineStatus {
+    #[frb(ignore)]
+    pub fn from_coordinator(
+        status: frostsnap_coordinator::genuine_check::GenuineStatus,
+    ) -> (Self, Option<CaseColor>) {
+        use frostsnap_coordinator::genuine_check::GenuineStatus as S;
+        match status {
+            S::Unattested {
+                firmware_supports_check,
+            } => (
+                GenuineStatus::Unattested {
+                    firmware_supports_check,
+                },
+                None,
+            ),
+            S::Attested {
+                certificate,
+                firmware_supports_check,
+            } => (
+                GenuineStatus::Attested {
+                    firmware_supports_check,
+                },
+                CaseColor::from_comms(certificate.case_color()),
+            ),
+            S::Genuine { certificate } => (
+                GenuineStatus::Genuine,
+                CaseColor::from_comms(certificate.case_color()),
+            ),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -61,6 +138,10 @@ pub struct ConnectedDevice {
     pub latest_firmware: Option<FirmwareVersion>,
     pub id: DeviceId,
     pub recovery_mode: RecoveryMode,
+    /// `None` until we learn it, or when the device claims a colour this build
+    /// doesn't know.
+    pub case_color: Option<CaseColor>,
+    pub genuine: GenuineStatus,
 }
 
 impl ConnectedDevice {

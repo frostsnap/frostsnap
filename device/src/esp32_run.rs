@@ -568,18 +568,34 @@ impl<'a> DeviceLoop<'a> {
                 CoordinatorSendBody::DataErase => self
                     .ui
                     .set_workflow(ui::Workflow::prompt(ui::Prompt::EraseDevice)),
-                CoordinatorSendBody::Challenge(challenge) => {
+                CoordinatorSendBody::_LegacyChallenge(_) => {}
+                CoordinatorSendBody::RequestGenuineAttestation => {
                     if let (Some(hw_rsa), Some(cert)) =
                         (self.hardware_rsa.as_mut(), self.certificate.as_ref())
                     {
-                        let signature = hw_rsa.sign(&challenge.0, self.sha256);
+                        let message = frostsnap_comms::genuine_certificate::attestation_message(
+                            self.device_id,
+                        );
+                        let ds_signature = hw_rsa.sign(&message, self.sha256);
                         self.upstream_connection.send_to_coordinator([
-                            DeviceSendBody::SignedChallenge {
-                                signature: Box::new(signature),
+                            DeviceSendBody::GenuineAttestation {
                                 certificate: Box::new(cert.clone()),
+                                ds_signature: Box::new(ds_signature),
                             },
                         ]);
                     }
+                }
+                CoordinatorSendBody::GenuineIdentityChallenge(challenge) => {
+                    let schnorr = frostsnap_core::schnorr_fun::new_with_deterministic_nonces::<
+                        frostsnap_core::sha2::Sha256,
+                    >();
+                    let signature = frostsnap_comms::genuine_certificate::sign_identity_challenge(
+                        &schnorr,
+                        self.signer.keypair(),
+                        **challenge,
+                    );
+                    self.upstream_connection
+                        .send_to_coordinator([DeviceSendBody::GenuineIdentityProof { signature }]);
                 }
             }
         }

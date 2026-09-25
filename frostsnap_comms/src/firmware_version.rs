@@ -55,10 +55,12 @@ impl VersionNumber {
     pub fn features(&self) -> FirmwareFeatures {
         const V0_0_1: VersionNumber = VersionNumber::new(0, 0, 1);
         const V0_3_0: VersionNumber = VersionNumber::new(0, 3, 0);
+        const V0_4_0: VersionNumber = VersionNumber::new(0, 4, 0);
 
         FirmwareFeatures {
             upgrade_digest_no_sig: *self > V0_0_1,
             check_backup: *self >= V0_3_0,
+            genuine_check: *self > V0_4_0,
         }
     }
 }
@@ -69,6 +71,8 @@ pub struct FirmwareFeatures {
     pub upgrade_digest_no_sig: bool,
     /// Device supports the check backup quiz workflow
     pub check_backup: bool,
+    /// Device answers `RequestGenuineAttestation` and `GenuineIdentityChallenge`
+    pub genuine_check: bool,
 }
 
 impl FirmwareFeatures {
@@ -76,6 +80,7 @@ impl FirmwareFeatures {
         Self {
             upgrade_digest_no_sig: true,
             check_backup: true,
+            genuine_check: true,
         }
     }
 }
@@ -150,6 +155,14 @@ mod test {
         assert!(VersionNumber::new(0, 2, 0)
             .versions_before()
             .all(|(_, v)| *v < VersionNumber::new(0, 2, 0)));
+    }
+
+    #[test]
+    fn genuine_check_starts_after_v0_4_0() {
+        assert!(!VersionNumber::new(0, 4, 0).features().genuine_check);
+        assert!(!VersionNumber::new(0, 3, 0).features().genuine_check);
+        assert!(VersionNumber::new(0, 4, 1).features().genuine_check);
+        assert!(VersionNumber::new(0, 5, 0).features().genuine_check);
     }
 
     #[test]

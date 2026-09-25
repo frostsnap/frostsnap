@@ -22,6 +22,7 @@ pub use fixed_string::{
     DeviceName, FixedString, StringTooLong, DEVICE_NAME_MAX_LENGTH, KEY_NAME_MAX_LENGTH,
 };
 
+use frostsnap_core::schnorr_fun::Signature;
 use genuine_certificate::Certificate;
 
 /// We choose this baudrate because esp32c3 freezes interrupts during flash
@@ -226,7 +227,11 @@ pub enum CoordinatorSendBody {
     Cancel,
     Upgrade(CoordinatorUpgradeMessage),
     DataErase,
-    Challenge(Box<GenuineChallenge>),
+    /// Answered by firmware up to v0.4.0 with an RSA signature over the bare challenge, which a
+    /// relay can forward. Never sent, and ignored by current firmware.
+    _LegacyChallenge(Box<GenuineChallenge>),
+    RequestGenuineAttestation,
+    GenuineIdentityChallenge(Box<GenuineChallenge>),
 }
 
 impl From<CoordinatorSendBody> for WireCoordinatorSendBody {
@@ -448,9 +453,17 @@ pub enum DeviceSendBody {
     NeedName,
     _LegacyAckUpgradeMode, // Used by earliest devices
     Misc(CommsMisc),
-    SignedChallenge {
+    _LegacySignedChallenge {
         signature: Box<[u8; 384]>,
         certificate: Box<Certificate>,
+    },
+    /// `ds_signature` is over [`genuine_certificate::attestation_message`] for the sender's id.
+    GenuineAttestation {
+        certificate: Box<Certificate>,
+        ds_signature: Box<[u8; 384]>,
+    },
+    GenuineIdentityProof {
+        signature: Signature,
     },
 }
 
@@ -547,6 +560,12 @@ impl Gist for DeviceSendBody {
         match self {
             DeviceSendBody::Core(msg) => msg.gist(),
             DeviceSendBody::Debug { message } => format!("debug: {message}"),
+            DeviceSendBody::GenuineAttestation { certificate, .. } => {
+                format!(
+                    "GenuineAttestation(serial={})",
+                    certificate.unverified_raw_serial()
+                )
+            }
             _ => format!("{self:?}"),
         }
     }

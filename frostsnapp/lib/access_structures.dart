@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:frostsnap/backup_workflow.dart';
+import 'package:frostsnap/device_colors.dart';
 import 'package:frostsnap/global.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/coordinator.dart';
@@ -96,6 +97,7 @@ class _DeviceChip extends StatelessWidget {
       deviceId: deviceId,
     );
     final theme = Theme.of(context);
+    final accent = caseAccentColor(deviceId);
 
     return Chip(
       label: DeviceWithShareIndex(
@@ -103,6 +105,9 @@ class _DeviceChip extends StatelessWidget {
         deviceName: deviceName,
       ),
       backgroundColor: theme.colorScheme.surfaceContainer,
+      side: accent == null
+          ? null
+          : BorderSide(color: accent.withValues(alpha: 0.5)),
       deleteIcon: const Icon(Icons.close, size: 18),
       onDeleted: () => _showDeleteDialog(context, deviceName),
     );

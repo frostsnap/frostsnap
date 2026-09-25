@@ -7,6 +7,10 @@ use crate::{
 };
 use anyhow::Context;
 use bdk_chain::rusqlite_impl::migrate_schema;
+use frostsnap_comms::genuine_certificate::{
+    verify_attestation, Certificate, CertificateBody, CERTIFICATE_BINCODE_CONFIG,
+};
+use frostsnap_core::schnorr_fun::fun::{marker::EvenY, Point};
 use frostsnap_core::{
     coordinator::{self, restoration::RestorationMutation},
     DeviceId,
@@ -255,4 +259,140 @@ impl Persist<rusqlite::Connection> for DeviceNames {
 
         Ok(())
     }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Attestation {
+    pub certificate: Certificate,
+    pub ds_signature: Box<[u8; 384]>,
+}
+
+/// Attestations that verified against this build's factory key, keyed by the device they vouch
+/// for. Only verified entries exist in memory, so holding one is holding evidence.
+#[derive(Default)]
+pub struct GenuineCerts {
+    certs: HashMap<DeviceId, (Attestation, CertificateBody)>,
+    staged: VecDeque<(DeviceId, Attestation)>,
+}
+
+impl GenuineCerts {
+    pub fn get(&self, device_id: DeviceId) -> Option<&CertificateBody> {
+        self.certs.get(&device_id).map(|(_, body)| body)
+    }
+
+    pub(crate) fn insert(
+        &mut self,
+        device_id: DeviceId,
+        attestation: Attestation,
+        body: CertificateBody,
+    ) {
+        self.staged.push_back((device_id, attestation.clone()));
+        self.certs.insert(device_id, (attestation, body));
+    }
+}
+
+impl TakeStaged<VecDeque<(DeviceId, Attestation)>> for GenuineCerts {
+    fn take_staged_update(&mut self) -> Option<VecDeque<(DeviceId, Attestation)>> {
+        if self.staged.is_empty() {
+            None
+        } else {
+            Some(core::mem::take(&mut self.staged))
+        }
+    }
+}
+
+impl Persist<rusqlite::Connection> for GenuineCerts {
+    type Update = VecDeque<(DeviceId, Attestation)>;
+    type LoadParams = Point<EvenY>;
+
+    fn migrate(conn: &mut rusqlite::Connection) -> anyhow::Result<()> {
+        const SCHEMA_NAME: &str = "frostsnap_genuine_certs";
+        const MIGRATIONS: &[&str] = &[
+            // Version 0
+            "CREATE TABLE IF NOT EXISTS fs_genuine_certs ( \
+                id BLOB PRIMARY KEY, \
+                certificate BLOB NOT NULL, \
+                ds_signature BLOB NOT NULL \
+            )",
+        ];
+
+        let db_tx = conn.transaction()?;
+        migrate_schema(&db_tx, SCHEMA_NAME, MIGRATIONS)?;
+        db_tx.commit()?;
+        Ok(())
+    }
+
+    /// Rows are re-verified against `factory_key`. One that doesn't decode or verify (a database
+    /// from a build with another factory key, or corruption) is skipped: that device attests
+    /// again and its row is replaced.
+    fn load(conn: &mut rusqlite::Connection, factory_key: Point<EvenY>) -> anyhow::Result<Self> {
+        let mut stmt =
+            conn.prepare("SELECT id, certificate, ds_signature FROM fs_genuine_certs")?;
+        let rows = stmt.query_map([], |row| {
+            Ok((
+                row.get::<_, DeviceId>(0).ok(),
+                row.get::<_, Vec<u8>>(1).ok(),
+                row.get::<_, Vec<u8>>(2).ok(),
+            ))
+        })?;
+
+        let mut genuine_certs = GenuineCerts::default();
+        for row in rows {
+            let (Some(device_id), Some(certificate), Some(ds_signature)) = row? else {
+                event!(
+                    Level::WARN,
+                    "skipping a malformed stored genuine attestation"
+                );
+                continue;
+            };
+            let verified = decode_attestation(&certificate, ds_signature).and_then(|attestation| {
+                let body = verify_attestation(
+                    &attestation.certificate,
+                    factory_key,
+                    device_id,
+                    &attestation.ds_signature,
+                )
+                .ok()?;
+                Some((attestation, body))
+            });
+            match verified {
+                Some(entry) => {
+                    genuine_certs.certs.insert(device_id, entry);
+                }
+                None => event!(
+                    Level::WARN,
+                    device = device_id.to_string(),
+                    "skipping a stored genuine attestation that no longer verifies"
+                ),
+            }
+        }
+        Ok(genuine_certs)
+    }
+
+    fn persist_update(
+        &self,
+        conn: &mut rusqlite::Connection,
+        update: Self::Update,
+    ) -> anyhow::Result<()> {
+        for (id, attestation) in update {
+            let certificate =
+                bincode::encode_to_vec(&attestation.certificate, CERTIFICATE_BINCODE_CONFIG)?;
+            conn.execute(
+                "INSERT OR REPLACE INTO fs_genuine_certs (id, certificate, ds_signature) \
+                 VALUES (?1, ?2, ?3)",
+                params![id, certificate, attestation.ds_signature.as_slice()],
+            )?;
+        }
+        Ok(())
+    }
+}
+
+fn decode_attestation(certificate: &[u8], ds_signature: Vec<u8>) -> Option<Attestation> {
+    let (certificate, _) =
+        bincode::decode_from_slice(certificate, CERTIFICATE_BINCODE_CONFIG).ok()?;
+    let ds_signature: Box<[u8; 384]> = ds_signature.into_boxed_slice().try_into().ok()?;
+    Some(Attestation {
+        certificate,
+        ds_signature,
+    })
 }

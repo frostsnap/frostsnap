@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:frostsnap/contexts.dart';
 import 'package:frostsnap/device.dart';
 import 'package:frostsnap/device_action_upgrade.dart';
+import 'package:frostsnap/device_colors.dart';
+import 'package:frostsnap/genuine_badge.dart';
 import 'package:frostsnap/src/rust/api/device_list.dart';
 import 'package:frostsnap/theme.dart';
 import 'package:frostsnap/wallet_device_list.dart';
@@ -56,16 +58,24 @@ class _DeviceListPageState extends State<DeviceListPage> {
     final hasWallet = walletName != null;
     final hasKey = device.name != null;
 
-    return Card.filled(
+    return DeviceGlowCard(
       margin: EdgeInsets.symmetric(vertical: 8),
-      color: theme.colorScheme.surfaceContainerHigh,
-      clipBehavior: Clip.hardEdge,
+      caseColor: device.caseColor,
       child: ListTile(
-        title: Text(
-          device.name ?? 'Unnamed',
-          style: monospaceTextStyle.copyWith(
-            color: hasKey ? null : theme.disabledColor,
-          ),
+        title: Row(
+          spacing: 8,
+          children: [
+            Flexible(
+              child: Text(
+                device.name ?? 'Unnamed',
+                overflow: TextOverflow.ellipsis,
+                style: monospaceTextStyle.copyWith(
+                  color: hasKey ? null : theme.disabledColor,
+                ),
+              ),
+            ),
+            GenuineBadge(status: device.genuine),
+          ],
         ),
         subtitle: Text(
           device.name == null

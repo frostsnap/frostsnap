@@ -3,8 +3,10 @@ use frostsnap_comms::{
     CoordinatorSendBody, CoordinatorSendMessage, DeviceSendBody, Downstream, GenuineChallenge,
     ReceiveSerial, Sha256Digest, MAGIC_BYTES_PERIOD,
 };
+use frostsnap_coordinator::frostsnap_persist::Attestation;
 use frostsnap_coordinator::{DesktopSerial, FramedSerialPort, Serial};
 use frostsnap_core::schnorr_fun::fun::{marker::EvenY, Point};
+use frostsnap_core::schnorr_fun::Signature;
 use std::time::Instant;
 
 use crate::{USB_PID, USB_VID};
@@ -17,6 +19,7 @@ pub enum GenuineCheckState {
     ProcessingChallenge {
         firmware_digest: Sha256Digest,
         challenge: GenuineChallenge,
+        attested: Option<CertificateBody>,
     },
     Complete {
         firmware_digest: Sha256Digest,
@@ -81,17 +84,11 @@ pub fn poll_genuine_check(
                         );
 
                         let challenge = GenuineChallenge::random(&mut rand::thread_rng());
-
-                        port.queue_send(
-                            CoordinatorSendMessage::to(
-                                msg.from,
-                                CoordinatorSendBody::Challenge(Box::new(challenge)),
-                            )
-                            .into(),
-                        );
+                        queue_genuine_requests(port, msg.from, challenge);
                         *state = GenuineCheckState::ProcessingChallenge {
                             firmware_digest,
                             challenge,
+                            attested: None,
                         };
                     }
                 }
@@ -105,45 +102,51 @@ pub fn poll_genuine_check(
         GenuineCheckState::ProcessingChallenge {
             challenge,
             firmware_digest,
+            attested,
         } => {
             match port.try_read_message() {
-                Ok(Some(ReceiveSerial::Message(msg))) => {
-                    if let Ok(DeviceSendBody::SignedChallenge {
-                        signature,
+                Ok(Some(ReceiveSerial::Message(msg))) => match msg.body.decode() {
+                    Ok(DeviceSendBody::GenuineAttestation {
                         certificate,
-                    }) = msg.body.decode()
-                    {
-                        let certificate_body = match genuine_certificate::verify_certificate(
+                        ds_signature,
+                    }) => {
+                        match genuine_certificate::verify_attestation(
                             &certificate,
                             genuine_key,
+                            msg.from,
+                            &ds_signature,
                         ) {
-                            Some(body) => body,
-                            None => {
-                                return GenuineCheckPollResult::Failed(
-                                    Some(certificate.unverified_raw_serial()),
-                                    "genuine check failed to verify!".to_string(),
-                                );
-                            }
-                        };
-                        let serial = certificate_body.raw_serial();
-
-                        match verify_challenge_signature(&certificate_body, *challenge, &signature)
-                        {
-                            Ok(_) => {
-                                *state = GenuineCheckState::Complete {
-                                    firmware_digest: *firmware_digest,
-                                    serial: serial.to_string(),
-                                };
-                            }
+                            Ok(body) => *attested = Some(body),
                             Err(e) => {
                                 return GenuineCheckPollResult::Failed(
-                                    Some(serial.clone()),
+                                    Some(certificate.unverified_raw_serial()),
                                     format!("Device failed genuine check: {e}"),
                                 );
                             }
                         }
                     }
-                }
+                    Ok(DeviceSendBody::GenuineIdentityProof { signature }) => {
+                        let Some(body) = attested.take() else {
+                            return GenuineCheckPollResult::Failed(
+                                None,
+                                "identity proof arrived before the attestation".to_string(),
+                            );
+                        };
+                        if let Err(e) =
+                            genuine_certificate::verify_identity(msg.from, *challenge, &signature)
+                        {
+                            return GenuineCheckPollResult::Failed(
+                                Some(body.raw_serial()),
+                                format!("Device failed genuine check: {e}"),
+                            );
+                        }
+                        *state = GenuineCheckState::Complete {
+                            firmware_digest: *firmware_digest,
+                            serial: body.raw_serial(),
+                        };
+                    }
+                    _ => {}
+                },
                 Ok(_) => {}
                 Err(e) => {
                     return GenuineCheckPollResult::Failed(None, format!("Read error: {e}"));
@@ -213,50 +216,63 @@ fn wait_for_announce(
     }
 }
 
-type SignedChallengeResponse = (
-    frostsnap_comms::genuine_certificate::Certificate,
-    Box<[u8; 384]>,
-);
-
-fn wait_for_signed_challenge(
+fn queue_genuine_requests(
     port: &mut FramedSerialPort<Downstream>,
-) -> Result<SignedChallengeResponse, Box<dyn std::error::Error>> {
+    device_id: frostsnap_core::DeviceId,
+    challenge: GenuineChallenge,
+) {
+    port.queue_send(
+        CoordinatorSendMessage::to(device_id, CoordinatorSendBody::RequestGenuineAttestation)
+            .into(),
+    );
+    port.queue_send(
+        CoordinatorSendMessage::to(
+            device_id,
+            CoordinatorSendBody::GenuineIdentityChallenge(Box::new(challenge)),
+        )
+        .into(),
+    );
+}
+
+fn wait_for_genuine_responses(
+    port: &mut FramedSerialPort<Downstream>,
+) -> Result<(Attestation, Signature), Box<dyn std::error::Error>> {
+    let mut attestation = None;
     loop {
         port.poll_send()?;
         match port.try_read_message() {
-            Ok(Some(ReceiveSerial::Message(msg))) => {
-                if let Ok(DeviceSendBody::SignedChallenge {
-                    signature,
+            Ok(Some(ReceiveSerial::Message(msg))) => match msg.body.decode() {
+                Ok(DeviceSendBody::GenuineAttestation {
                     certificate,
-                }) = msg.body.decode()
-                {
-                    return Ok((*certificate, signature));
+                    ds_signature,
+                }) => {
+                    attestation = Some(Attestation {
+                        certificate: *certificate,
+                        ds_signature,
+                    });
                 }
-            }
+                Ok(DeviceSendBody::GenuineIdentityProof { signature }) => {
+                    let attestation =
+                        attestation.ok_or("identity proof arrived before the attestation")?;
+                    return Ok((attestation, signature));
+                }
+                _ => {}
+            },
             Ok(_) => {}
             Err(e) => return Err(format!("Read error: {e}").into()),
         }
     }
 }
 
-fn try_verify_certificate<'a>(
+fn find_factory_key<'a>(
     certificate: &frostsnap_comms::genuine_certificate::Certificate,
     known_keys: &[(&'a str, Point<EvenY>)],
-) -> Result<(&'a str, CertificateBody), Box<dyn std::error::Error>> {
-    for (env, key) in known_keys {
-        if let Some(body) = genuine_certificate::verify_certificate(certificate, *key) {
-            return Ok((env, body));
-        }
-    }
-    Err("Certificate not signed by any known genuine key".into())
-}
-
-pub fn verify_challenge_signature(
-    certificate_body: &CertificateBody,
-    challenge: GenuineChallenge,
-    signature: &[u8; 384],
-) -> Result<(), Box<dyn std::error::Error>> {
-    genuine_certificate::verify_challenge(certificate_body, challenge, signature)
+) -> Result<(&'a str, Point<EvenY>), Box<dyn std::error::Error>> {
+    known_keys
+        .iter()
+        .find(|(_, key)| genuine_certificate::verify_certificate(certificate, *key).is_some())
+        .copied()
+        .ok_or_else(|| "Certificate not signed by any known genuine key".into())
 }
 
 pub struct GenuineCheckResult {
@@ -293,22 +309,22 @@ pub fn run_genuine_check(
     println!("Waiting for device announce...");
     let (device_id, firmware_digest) = wait_for_announce(&mut port)?;
 
-    println!("Sending challenge...");
+    println!("Sending genuine check requests...");
     let challenge = GenuineChallenge::random(&mut rand::thread_rng());
     port.queue_send(CoordinatorSendMessage::to(device_id, CoordinatorSendBody::AnnounceAck).into());
-    port.queue_send(
-        CoordinatorSendMessage::to(
-            device_id,
-            CoordinatorSendBody::Challenge(Box::new(challenge)),
-        )
-        .into(),
-    );
+    queue_genuine_requests(&mut port, device_id, challenge);
 
-    println!("Waiting for signed challenge...");
-    let (certificate, signature) = wait_for_signed_challenge(&mut port)?;
+    println!("Waiting for genuine check responses...");
+    let (attestation, identity_signature) = wait_for_genuine_responses(&mut port)?;
 
-    let (env_name, certificate_body) = try_verify_certificate(&certificate, known_keys)?;
-    verify_challenge_signature(&certificate_body, challenge, &signature)?;
+    let (env_name, factory_key) = find_factory_key(&attestation.certificate, known_keys)?;
+    let certificate_body = genuine_certificate::verify_attestation(
+        &attestation.certificate,
+        factory_key,
+        device_id,
+        &attestation.ds_signature,
+    )?;
+    genuine_certificate::verify_identity(device_id, challenge, &identity_signature)?;
 
     let CertificateBody::Frontier {
         case_color,
