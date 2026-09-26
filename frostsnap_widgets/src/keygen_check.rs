@@ -65,7 +65,7 @@ impl KeygenCheck {
                 Gray4TextStyle::new(FONT_CONFIRM_TEXT, PALETTE.text_secondary),
             ),
             Text::new(
-                "on every device".to_string(),
+                format!("on all {} devices", t_of_n.1),
                 Gray4TextStyle::new(FONT_CONFIRM_TEXT, PALETTE.text_secondary),
             ),
         ))
