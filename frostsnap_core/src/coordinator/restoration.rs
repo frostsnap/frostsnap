@@ -22,6 +22,23 @@ impl RestorationState {
         self.access_structure.needs_to_consolidate()
     }
 
+    /// Where `share_image` sits in this restoration, held by `device_ids`.
+    pub(crate) fn share_location(
+        &self,
+        share_image: ShareImage,
+        device_ids: Vec<DeviceId>,
+    ) -> ShareLocation {
+        ShareLocation {
+            device_ids,
+            share_index: share_image.index,
+            key_name: self.key_name.clone(),
+            key_purpose: self.key_purpose,
+            key_state: KeyLocationState::Restoring {
+                restoration_id: self.restoration_id,
+            },
+        }
+    }
+
     /// Prepare for saving a physical backup - returns the HeldShare2 to store
     fn prepare_save_physical_backup(
         &self,
@@ -555,10 +572,24 @@ impl FrostCoordinator {
         // structure ref check will catch it immediately or the fingerprint check will
         // exclude it from the restoration later.
 
-        // Use find_share to check if share exists elsewhere
-        if let Some(location) =
-            self.find_share(recover_share.held_share.share_image, encryption_key)
+        // Check if the share exists elsewhere. When this restoration already knows its
+        // wallet and the share names the same one, identity is settled: another restoration
+        // claiming that wallet (a duplicate from before that was prevented) must not stop
+        // this one continuing, so only a restoration actually holding the share counts.
+        let share_image = recover_share.held_share.share_image;
+        let share_ref = recover_share.held_share.access_structure_ref;
+        let found = if share_ref.is_some()
+            && share_ref == restoration.access_structure.access_structure_ref()
         {
+            self.locate_in_restorations(share_image)
+        } else {
+            // A complete wallet that cannot be unlocked is not held against the share:
+            // nothing in this flow can unlock it, and a share that does turn out to be its
+            // merges into it when the restoration finishes.
+            self.find_share(share_image, share_ref, encryption_key)
+                .found()
+        };
+        if let Some(location) = found {
             match location.key_state {
                 KeyLocationState::Restoring {
                     restoration_id: found_id,
@@ -603,8 +634,15 @@ impl FrostCoordinator {
             .get(&restoration_id)
             .ok_or(RestorePhysicalBackupError::UnknownRestorationId)?;
 
-        // Use find_share to check if share exists elsewhere
-        if let Some(location) = self.find_share(phase.backup.share_image, encryption_key) {
+        // Check if the share exists elsewhere. A physical backup carries no
+        // access_structure_ref, so this can only recognise the share by its image. A complete
+        // wallet that cannot be unlocked is not held against it: nothing in this flow can
+        // unlock it, and a share that does turn out to be its merges into it when the
+        // restoration finishes.
+        if let Some(location) = self
+            .find_share(phase.backup.share_image, None, encryption_key)
+            .found()
+        {
             match location.key_state {
                 KeyLocationState::Restoring {
                     restoration_id: found_id,
@@ -810,9 +848,22 @@ impl FrostCoordinator {
             .purpose
             .ok_or(StartRestorationFromShareError::MissingMetadata)?;
 
-        assert!(!self.restoration.restorations.contains_key(&restoration_id));
-        if let Some(access_structure_ref) = held_share.access_structure_ref {
-            assert!(self.get_access_structure(access_structure_ref).is_none());
+        if self.restoration.restorations.contains_key(&restoration_id) {
+            return Err(StartRestorationFromShareError::RestorationIdInUse);
+        }
+
+        // A wallet must not be restored twice: neither while it is already complete nor
+        // while another restoration of it is in progress. The device's ref names the wallet
+        // before the other restoration can recognise this share image, and a restoration may
+        // already hold this very share; neither needs a key. (A complete wallet that a share
+        // *without* a ref belongs to can only be recognised with the key — `find_share`,
+        // which the app consults before calling this.)
+        if let Some(location) =
+            self.locate_without_key(held_share.share_image, held_share.access_structure_ref)
+        {
+            return Err(StartRestorationFromShareError::ShareBelongsElsewhere {
+                location: Box::new(location),
+            });
         }
 
         self.mutate(Mutation::Restoration(
@@ -1496,6 +1547,10 @@ impl std::error::Error for RecoverShareError {}
 pub enum StartRestorationFromShareError {
     /// The share is missing required metadata (key_name or purpose)
     MissingMetadata,
+    /// The share's wallet already exists here, complete or being restored.
+    ShareBelongsElsewhere { location: Box<ShareLocation> },
+    /// A restoration with this id already exists.
+    RestorationIdInUse,
 }
 
 impl fmt::Display for StartRestorationFromShareError {
@@ -1503,6 +1558,24 @@ impl fmt::Display for StartRestorationFromShareError {
         match self {
             StartRestorationFromShareError::MissingMetadata => {
                 write!(f, "This key share doesn't have required metadata. It may have been created from a newer version of the app. Try upgrading the app.")
+            }
+            StartRestorationFromShareError::ShareBelongsElsewhere { location } => {
+                let noun = location.key_purpose.key_type_noun();
+                match location.key_state {
+                    KeyLocationState::Complete { .. } => write!(
+                        f,
+                        "This key share belongs to existing {noun} '{}'. Add it to that {noun} instead of starting a new restoration.",
+                        location.key_name
+                    ),
+                    KeyLocationState::Restoring { .. } => write!(
+                        f,
+                        "The {noun} '{}' is already being restored. Continue that restoration instead of starting a new one.",
+                        location.key_name
+                    ),
+                }
+            }
+            StartRestorationFromShareError::RestorationIdInUse => {
+                write!(f, "A restoration with this id already exists")
             }
         }
     }

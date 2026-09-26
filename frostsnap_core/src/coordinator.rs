@@ -90,6 +90,31 @@ pub enum KeyLocationState {
     },
 }
 
+/// The outcome of [`FrostCoordinator::find_share`].
+#[derive(Debug, Clone, PartialEq)]
+pub enum ShareSearch {
+    Found(ShareLocation),
+    /// The share is in no wallet or restoration this coordinator could check.
+    NotFound,
+    /// The share is in no restoration and in no complete wallet that could be checked, but
+    /// these complete wallets could not be unlocked with the key given, so they could not
+    /// be ruled out.
+    CouldNotCheck {
+        locked_key_names: Vec<String>,
+    },
+}
+
+impl ShareSearch {
+    /// The location if the share was found. A wallet that could not be checked counts as
+    /// not found here, so only use this where that is acceptable.
+    pub fn found(self) -> Option<ShareLocation> {
+        match self {
+            ShareSearch::Found(location) => Some(location),
+            ShareSearch::NotFound | ShareSearch::CouldNotCheck { .. } => None,
+        }
+    }
+}
+
 impl CompleteKey {
     pub fn coord_share_decryption_contrib(
         &self,
@@ -511,81 +536,145 @@ impl FrostCoordinator {
         complete_wallet_shares.chain(restoration_shares)
     }
 
+    fn complete_share_location(
+        &self,
+        access_structure: &CoordAccessStructure,
+        share_index: ShareIndex,
+    ) -> ShareLocation {
+        let access_structure_ref = access_structure.access_structure_ref();
+        let key = self
+            .keys
+            .get(&access_structure_ref.key_id)
+            .expect("must exist");
+        ShareLocation {
+            device_ids: access_structure
+                .share_index_to_devices()
+                .get(&share_index)
+                .cloned()
+                .unwrap_or_default(),
+            share_index,
+            key_name: key.key_name.clone(),
+            key_purpose: key.purpose,
+            key_state: KeyLocationState::Complete {
+                access_structure_ref,
+            },
+        }
+    }
+
+    /// A restoration that already holds the share: physically (a device entered it) ahead
+    /// of virtually (it holds enough shares to compute it). Needs no key.
+    fn locate_in_restorations(&self, share_image: ShareImage) -> Option<ShareLocation> {
+        let restorations = || self.restoration.restorations.values();
+        let physical = restorations().find_map(|restoration| {
+            restoration
+                .access_structure
+                .share_image_to_devices()
+                .get(&share_image)
+                .cloned()
+                .map(|device_ids| restoration.share_location(share_image, device_ids))
+        });
+        physical.or_else(|| {
+            restorations()
+                .find(|restoration| {
+                    restoration
+                        .access_structure
+                        .shared_key
+                        .as_ref()
+                        .is_some_and(|shared_key| {
+                            shared_key.share_image(share_image.index) == share_image
+                        })
+                })
+                .map(|restoration| restoration.share_location(share_image, Vec::new()))
+        })
+    }
+
+    /// Everything about a share's whereabouts that needs no key: the wallet or restoration
+    /// the device says it belongs to, and any restoration that already holds the share.
+    pub(crate) fn locate_without_key(
+        &self,
+        share_image: ShareImage,
+        access_structure_ref: Option<AccessStructureRef>,
+    ) -> Option<ShareLocation> {
+        if let Some(access_structure) = access_structure_ref
+            .and_then(|access_structure_ref| self.get_access_structure(access_structure_ref))
+        {
+            return Some(self.complete_share_location(&access_structure, share_image.index));
+        }
+
+        // A restoration already holding this very share is named ahead of one that merely
+        // claims the same wallet, so a duplicate is reported where it actually is.
+        if let Some(location) = self.locate_in_restorations(share_image) {
+            return Some(location);
+        }
+
+        let access_structure_ref = access_structure_ref?;
+        self.restoration
+            .restorations
+            .values()
+            .find(|restoration| {
+                restoration.access_structure.access_structure_ref() == Some(access_structure_ref)
+            })
+            .map(|restoration| restoration.share_location(share_image, Vec::new()))
+    }
+
+    /// Look for a share on this coordinator: in a complete wallet first, then in a
+    /// restoration in progress.
+    ///
+    /// `access_structure_ref` is the wallet the share's device says it belongs to (devices
+    /// send one; a physical backup has none). It names the wallet without decrypting
+    /// anything and before a restoration holds enough shares to recognise the share image,
+    /// and it decides membership of complete wallets outright: a device derives it from the
+    /// same polynomial the coordinator does, so a wallet the ref misses cannot match by
+    /// image either. Without it a complete wallet can only be searched by recomputing the
+    /// share image from its root key, which needs `encryption_key`; if the share is then
+    /// found nowhere, a wallet that key could not unlock is reported as
+    /// [`ShareSearch::CouldNotCheck`] rather than silently treated as not holding it.
     pub fn find_share(
         &self,
         share_image: ShareImage,
+        access_structure_ref: Option<AccessStructureRef>,
         encryption_key: SymmetricKey,
-    ) -> Option<ShareLocation> {
-        // Check complete wallets first (they have priority)
-        let found = self.iter_access_structures().find(|access_structure| {
-            let access_structure_ref = access_structure.access_structure_ref();
-            let Some(root_shared_key) = self.root_shared_key(access_structure_ref, encryption_key)
-            else {
-                return false;
+    ) -> ShareSearch {
+        if access_structure_ref.is_some() {
+            return match self.locate_without_key(share_image, access_structure_ref) {
+                Some(location) => ShareSearch::Found(location),
+                None => ShareSearch::NotFound,
             };
-
-            let computed_share_image = root_shared_key.share_image(share_image.index);
-            computed_share_image == share_image
-        });
-
-        if let Some(access_structure) = found {
-            let access_structure_ref = access_structure.access_structure_ref();
-            let device_ids = access_structure
-                .share_index_to_devices()
-                .get(&share_image.index)
-                .cloned()
-                .unwrap_or_default();
-            let key = self
-                .keys
-                .get(&access_structure_ref.key_id)
-                .expect("must exist");
-
-            return Some(ShareLocation {
-                device_ids,
-                share_index: share_image.index,
-                key_name: key.key_name.clone(),
-                key_purpose: key.purpose,
-                key_state: KeyLocationState::Complete {
-                    access_structure_ref,
-                },
-            });
         }
 
-        // Check restorations
-        for restoration in self.restoration.restorations.values() {
-            let share_image_to_devices = restoration.access_structure.share_image_to_devices();
-
-            // Check physical shares
-            if let Some(device_ids) = share_image_to_devices.get(&share_image) {
-                return Some(ShareLocation {
-                    device_ids: device_ids.clone(),
-                    share_index: share_image.index,
-                    key_name: restoration.key_name.clone(),
-                    key_purpose: restoration.key_purpose,
-                    key_state: KeyLocationState::Restoring {
-                        restoration_id: restoration.restoration_id,
-                    },
-                });
-            }
-
-            // Check virtual shares (via cached SharedKey)
-            if let Some(shared_key) = &restoration.access_structure.shared_key {
-                let computed_share_image = shared_key.share_image(share_image.index);
-                if computed_share_image == share_image {
-                    return Some(ShareLocation {
-                        device_ids: Vec::new(),
-                        share_index: share_image.index,
-                        key_name: restoration.key_name.clone(),
-                        key_purpose: restoration.key_purpose,
-                        key_state: KeyLocationState::Restoring {
-                            restoration_id: restoration.restoration_id,
-                        },
-                    });
+        // Complete wallets first (they have priority), by recomputing the share image.
+        let mut locked_key_names: Vec<String> = Vec::new();
+        for access_structure in self.iter_access_structures() {
+            let access_structure_ref = access_structure.access_structure_ref();
+            match self.root_shared_key(access_structure_ref, encryption_key) {
+                Some(root_shared_key) => {
+                    if root_shared_key.share_image(share_image.index) == share_image {
+                        return ShareSearch::Found(
+                            self.complete_share_location(&access_structure, share_image.index),
+                        );
+                    }
+                }
+                None => {
+                    let key = self
+                        .keys
+                        .get(&access_structure_ref.key_id)
+                        .expect("must exist");
+                    if !locked_key_names.contains(&key.key_name) {
+                        locked_key_names.push(key.key_name.clone());
+                    }
                 }
             }
         }
 
-        None
+        if let Some(location) = self.locate_in_restorations(share_image) {
+            return ShareSearch::Found(location);
+        }
+
+        if locked_key_names.is_empty() {
+            ShareSearch::NotFound
+        } else {
+            ShareSearch::CouldNotCheck { locked_key_names }
+        }
     }
 
     pub fn get_frost_key(&self, key_id: KeyId) -> Option<&CoordFrostKey> {
