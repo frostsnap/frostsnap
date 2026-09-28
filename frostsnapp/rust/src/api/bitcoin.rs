@@ -13,7 +13,6 @@ use frostsnap_coordinator::bitcoin::wallet::Transaction as WalletTransaction;
 pub use frostsnap_coordinator::frostsnap_core::{self, MasterAppkey};
 use frostsnap_core::bitcoin_transaction::{ScopedTo, TransactionTemplate};
 use frostsnap_core::message::EncodedSignature;
-use tracing::{event, Level};
 
 use std::collections::HashMap;
 use std::ops::Deref;
@@ -72,9 +71,6 @@ pub trait BitcoinNetworkExt {
 
     #[frb(ignore)]
     fn bdk_file(&self, app_dir: impl AsRef<Path>) -> PathBuf;
-
-    #[frb(sync)]
-    fn validate_amount(&self, address: &str, value: u64) -> Option<String>;
 
     #[frb(sync)]
     fn supported_networks() -> Vec<BitcoinNetwork>;
@@ -150,31 +146,6 @@ impl BitcoinNetworkExt for BitcoinNetwork {
     #[frb(sync)]
     fn supported_networks() -> Vec<BitcoinNetwork> {
         SUPPORTED_NETWORKS.into_iter().collect()
-    }
-
-    // FIXME: doesn't need to be on the network. Can get the script pubkey without the network.
-    #[frb(sync)]
-    fn validate_amount(&self, address: &str, value: u64) -> Option<String> {
-        match bitcoin::Address::from_str(address) {
-            Ok(address) => match address.require_network(*self) {
-                Ok(address) => {
-                    let dust_value = address.script_pubkey().minimal_non_dust().to_sat();
-                    if value < dust_value {
-                        event!(
-                            Level::DEBUG,
-                            value = value,
-                            dust_value = dust_value,
-                            "address validation rejected"
-                        );
-                        Some(format!("Too small to send. Must be at least {dust_value}"))
-                    } else {
-                        None
-                    }
-                }
-                Err(_e) => None,
-            },
-            Err(_e) => None,
-        }
     }
 }
 
