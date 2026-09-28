@@ -32,7 +32,6 @@ class _RecoveryFlowWithDiscoveryState extends State<RecoveryFlowWithDiscovery> {
         if (didPop) return;
         if (_targetDevice != null) {
           setState(() {
-            _targetDevice?.dispose();
             _targetDevice = null;
             _recoverShare = null;
           });

@@ -1,6 +1,11 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:frostsnap/global.dart';
+import 'package:frostsnap/copy_feedback.dart';
+import 'package:frostsnap/device_action_fullscreen_dialog.dart';
+import 'package:frostsnap/device_action_upgrade.dart'
+    show DeviceActionUpgradeController;
+import 'package:frostsnap/fullscreen_dialog_scaffold.dart';
+import 'package:frostsnap/nonce_replenish.dart';
 import 'package:frostsnap/restoration/candidate_ready_view.dart';
 import 'package:frostsnap/restoration/enter_backup_view.dart';
 import 'package:frostsnap/restoration/enter_device_name_view.dart';
@@ -8,23 +13,14 @@ import 'package:frostsnap/restoration/enter_threshold_view.dart';
 import 'package:frostsnap/restoration/enter_wallet_name_view.dart';
 import 'package:frostsnap/restoration/error_view.dart';
 import 'package:frostsnap/restoration/firmware_upgrade_view.dart';
-import 'package:frostsnap/restoration/nonce_generation_page.dart';
 import 'package:frostsnap/restoration/physical_backup_success_view.dart';
+import 'package:frostsnap/restoration/recovery_flow_controller.dart';
 import 'package:frostsnap/restoration/start_restoration_info_view.dart';
 import 'package:frostsnap/restoration/state.dart';
-import 'package:frostsnap/restoration/wait_reconnect_device_view.dart';
 import 'package:frostsnap/restoration/target_device.dart';
-import 'package:frostsnap/secure_key_provider.dart';
-import 'package:frostsnap/src/rust/api.dart';
+import 'package:frostsnap/restoration/wait_reconnect_device_view.dart';
 import 'package:frostsnap/src/rust/api/recovery.dart';
-import 'package:frostsnap/stream_ext.dart';
 import 'package:frostsnap/wallet_key_mismatch.dart';
-import 'package:frostsnap/maybe_fullscreen_dialog.dart';
-import 'package:frostsnap/theme.dart';
-
-mixin TitledWidget on Widget {
-  String get titleText;
-}
 
 class WalletRecoveryFlow extends StatefulWidget {
   final RecoveryContext recoveryContext;
@@ -43,575 +39,489 @@ class WalletRecoveryFlow extends StatefulWidget {
 }
 
 class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
-  late RecoveryContext recoveryContext;
-  late RecoveryFlowState flowState;
-
-  final prevStates = List<RecoveryFlowStage>.empty(growable: true);
-  bool isAnimationForward = true;
-
-  void pushPrevState() {
-    isAnimationForward = true;
-    prevStates.add(flowState.stage);
-  }
-
-  bool tryPopPrevState(BuildContext context) {
-    if (prevStates.isNotEmpty) {
-      setState(() {
-        isAnimationForward = false;
-        flowState.stage = prevStates.removeLast();
-      });
-      return true;
-    }
-    return false;
-  }
-
-  void popOnError({
-    required String errorTitle,
-    required String errorMessage,
-    bool isException = false,
-  }) {
-    setState(() {
-      isAnimationForward = false;
-      RecoveryFlowStage returnStage;
-      if (prevStates.isNotEmpty) {
-        returnStage = prevStates.removeLast();
-      } else {
-        returnStage = flowState.stage;
-      }
-      flowState.stage = RecoveryFlowStage.error(
-        title: errorTitle,
-        message: errorMessage,
-        isWarning: !isException,
-        returnStage: returnStage,
-      );
-    });
-  }
-
-  @override
-  void dispose() {
-    flowState.dispose();
-    super.dispose();
-  }
-
-  Future<void> _completeDeviceShareEnrollment(RecoverShare candidate) async {
-    try {
-      RestorationId? restorationId;
-
-      switch (recoveryContext) {
-        case ContinuingRestorationContext(:final restorationId):
-          // Continuing establishes the finished key rather than decrypting
-          // existing data, so it uses the establish surface.
-          final encryptionKey = await SecureKeyProvider.getEncryptionKey();
-          await coord.continueRestoringWalletFromDeviceShare(
-            restorationId: restorationId,
-            recoverShare: candidate,
-            encryptionKey: encryptionKey,
-          );
-        case AddingToWalletContext(:final accessStructureRef):
-          // Recovers a share INTO an existing wallet, decrypting its data, so it
-          // needs the existing key; a wrong/unavailable key routes to recovery.
-          final encryptionKey = await existingWalletKey(
-            context: mounted ? context : null,
-            accessStructureRef: accessStructureRef,
-            action: 'recover this key into the wallet',
-          );
-          if (encryptionKey == null) {
-            if (mounted) Navigator.pop(context);
-            return;
-          }
-          await coord.recoverShare(
-            accessStructureRef: accessStructureRef,
-            recoverShare: candidate,
-            encryptionKey: encryptionKey,
-          );
-        case NewRestorationContext():
-          restorationId = await coord.startRestoringWalletFromDeviceShare(
-            recoverShare: candidate,
-          );
-      }
-
-      if (mounted) {
-        Navigator.pop(context, restorationId);
-      }
-    } catch (e, stackTrace) {
-      if (mounted) {
-        popOnError(
-          errorTitle: 'Unexpected error',
-          errorMessage: '$e\n\nStack trace:\n$stackTrace',
-          isException: true,
-        );
-      }
-    }
-  }
+  late final RecoveryFlowController _ctrl;
 
   @override
   void initState() {
     super.initState();
-    recoveryContext = widget.recoveryContext;
-
-    // Determine initial stage based on whether we have a share or blank device
-    final initialStage = widget.recoverShare != null
-        ? RecoveryFlowStage.candidateReady(candidate: widget.recoverShare!)
-        : RecoveryFlowStage.startRestorationWithPhysicalBackup();
-
-    flowState = RecoveryFlowState(
+    final recoverShare = widget.recoverShare;
+    _ctrl = RecoveryFlowController(
+      recoveryContext: widget.recoveryContext,
       targetDevice: widget.targetDevice,
-      stage: initialStage,
+      initialStage: recoverShare != null
+          ? RecoveryFlowStage.candidateReady(candidate: recoverShare)
+          : const RecoveryFlowStage.startRestorationWithPhysicalBackup(),
+      existingWalletKey: (accessStructureRef, action) => existingWalletKey(
+        context: mounted ? context : null,
+        accessStructureRef: accessStructureRef,
+        action: action,
+      ),
     );
   }
 
   @override
-  Widget build(BuildContext context) {
-    TitledWidget child;
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
 
-    switch (flowState.stage) {
-      case CandidateReadyStage(:final candidate):
-        child = CandidateReadyView(
-          candidate: candidate,
-          continuing: switch (recoveryContext) {
-            ContinuingRestorationContext(:final restorationId) => restorationId,
-            _ => null,
-          },
-          existing: switch (recoveryContext) {
-            AddingToWalletContext(:final accessStructureRef) =>
-              accessStructureRef,
-            _ => null,
-          },
-          onConfirm: () {
-            setState(() {
-              pushPrevState();
-              flowState.stage = RecoveryFlowStage.generatingNonces(
-                nextStage: RecoveryFlowStage.completingDeviceShareEnrollment(
-                  candidate: candidate,
+  @override
+  Widget build(BuildContext context) => RecoveryFlowSteps(controller: _ctrl);
+}
+
+class RecoveryFlowSteps extends StatefulWidget {
+  final RecoveryFlowController controller;
+
+  const RecoveryFlowSteps({super.key, required this.controller});
+
+  @override
+  State<RecoveryFlowSteps> createState() => _RecoveryFlowStepsState();
+}
+
+class _RecoveryFlowStepsState extends State<RecoveryFlowSteps> {
+  RecoveryFlowController get _ctrl => widget.controller;
+
+  final _walletNameKey = GlobalKey<EnterWalletNameViewState>();
+  final _thresholdKey = GlobalKey<EnterThresholdViewState>();
+  final _deviceNameKey = GlobalKey<EnterDeviceNameViewState>();
+  bool _canSubmitWalletName = false;
+  bool _canSubmitDeviceName = false;
+
+  FullscreenActionDialogController<void>? _backupPrompt;
+  DeviceActionUpgradeController? _firmwareUpgrader;
+  bool _completingBackupEntry = false;
+  bool _popped = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl.addListener(_onCtrlChanged);
+    _syncStageResources();
+  }
+
+  @override
+  void dispose() {
+    _ctrl.removeListener(_onCtrlChanged);
+    _disposeBackupPrompt();
+    _firmwareUpgrader?.dispose();
+    super.dispose();
+  }
+
+  void _onCtrlChanged() {
+    if (!mounted || _popped) return;
+    setState(() {});
+    _syncStageResources();
+
+    if (_ctrl.pendingBackupEntry != null && !_completingBackupEntry) {
+      _completingBackupEntry = true;
+      unawaited(_completeBackupEntry());
+    }
+
+    final outcome = _ctrl.outcome;
+    if (outcome != null) {
+      _popped = true;
+      _disposeBackupPrompt();
+      Navigator.of(context).pop(switch (outcome) {
+        RecoveryFlowFinished(:final restorationId) => restorationId,
+        RecoveryFlowDismissed() => null,
+      });
+    }
+  }
+
+  // Keyed on stage type, not stage identity, so a notify within one stage
+  // keeps them.
+  void _syncStageResources() {
+    final stage = _ctrl.stage;
+    if (stage is EnterBackupStage && _ctrl.outcome == null) {
+      _backupPrompt ??= _buildBackupPrompt(stage.deviceName);
+    } else {
+      _disposeBackupPrompt();
+    }
+    if (stage is FirmwareUpgradeStage) {
+      _firmwareUpgrader ??= DeviceActionUpgradeController();
+    } else {
+      _firmwareUpgrader?.dispose();
+      _firmwareUpgrader = null;
+    }
+  }
+
+  Future<void> _completeBackupEntry() async {
+    await _backupPrompt?.clearAllActionsNeeded();
+    _disposeBackupPrompt();
+    if (mounted) await _ctrl.completeBackupEntry();
+    _completingBackupEntry = false;
+  }
+
+  void _disposeBackupPrompt() {
+    final prompt = _backupPrompt;
+    _backupPrompt = null;
+    prompt?.dispose();
+  }
+
+  FullscreenActionDialogController<void> _buildBackupPrompt(String deviceName) {
+    late final FullscreenActionDialogController<void> prompt;
+    prompt = FullscreenActionDialogController<void>(
+      context: context,
+      devices: [_ctrl.targetDevice.id],
+      title: 'Enter Physical Backup',
+      body: (context) {
+        final theme = Theme.of(context);
+        return Card.filled(
+          margin: EdgeInsets.zero,
+          color: theme.colorScheme.surfaceContainerHigh,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'On your device $deviceName',
+                  style: theme.textTheme.titleMedium,
                 ),
-              );
-            });
-          },
-        );
-        break;
-
-      case FirmwareUpgradeStage():
-        child = FirmwareUpgradeView(
-          key: ValueKey("firmware-upgrade"),
-          targetDevice: flowState.targetDevice,
-          onComplete: () {
-            setState(() {
-              flowState.stage = switch (recoveryContext) {
-                NewRestorationContext() =>
-                  const RecoveryFlowStage.enterRestorationDetails(),
-                _ => const RecoveryFlowStage.enterDeviceName(),
-              };
-            });
-          },
-          onCancel: () {
-            Navigator.pop(context);
-          },
-          onDisconnected: () {
-            setState(() {
-              flowState.stage = RecoveryFlowStage.waitReconnectDevice(
-                nextStage: const RecoveryFlowStage.firmwareUpgrade(),
-              );
-            });
-          },
-        );
-        break;
-
-      case EnterDeviceNameStage():
-        child = EnterDeviceNameView(
-          targetDevice: flowState.targetDevice,
-          onDisconnected: () {
-            setState(() {
-              flowState.stage = RecoveryFlowStage.waitReconnectDevice(
-                nextStage: const RecoveryFlowStage.enterDeviceName(),
-              );
-            });
-          },
-          onDeviceName: (deviceName) {
-            final nonceRequest = coord.createNonceRequest(
-              devices: [flowState.targetDevice.id],
-            );
-
-            if (nonceRequest.someNoncesRequested()) {
-              setState(() {
-                pushPrevState();
-                flowState.stage = RecoveryFlowStage.generatingNonces(
-                  nextStage: RecoveryFlowStage.enterBackup(
-                    deviceName: deviceName,
+                const SizedBox(height: 12),
+                Text.rich(
+                  TextSpan(
+                    children: [
+                      TextSpan(
+                        text: '1. Enter the Key Number. ',
+                        style: theme.textTheme.bodyMedium,
+                      ),
+                      TextSpan(
+                        text:
+                            '\nYou can find this on the inside of your backup card, labeled "Key Number".',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
                   ),
-                );
-              });
-            } else {
-              setState(() {
-                pushPrevState();
-                flowState.stage = RecoveryFlowStage.enterBackup(
-                  deviceName: deviceName,
-                );
-              });
-            }
-          },
-        );
-
-      case GeneratingNoncesStage(:final nextStage):
-        final nonceRequest = coord.createNonceRequest(
-          devices: [flowState.targetDevice.id],
-        );
-        final stream = coord
-            .replenishNonces(
-              nonceRequest: nonceRequest,
-              devices: [flowState.targetDevice.id],
-            )
-            .toBehaviorSubject();
-
-        child = NonceGenerationPage(
-          stream: stream,
-          deviceName: coord.getDeviceName(id: flowState.targetDevice.id),
-          onDisconnected: flowState.targetDevice.onDisconnected(),
-          onComplete: () async {
-            setState(() {
-              flowState.stage = nextStage;
-            });
-          },
-          onCancel: () {
-            coord.cancelProtocol();
-            tryPopPrevState(context);
-          },
-          onDeviceDisconnected: () {
-            setState(() {
-              flowState.stage = RecoveryFlowStage.waitReconnectDevice(
-                nextStage: RecoveryFlowStage.generatingNonces(
-                  nextStage: nextStage,
                 ),
-              );
-            });
-          },
-          onError: (error) {
-            popOnError(
-              errorTitle: 'Nonce Generation Failed',
-              errorMessage: error,
-            );
-          },
-        );
-        break;
-
-      case CompletingDeviceShareEnrollmentStage(:final candidate):
-        _completeDeviceShareEnrollment(candidate);
-        child = const _LoadingView(title: 'Completing enrollment...');
-        break;
-
-      case EnterBackupStage(:final deviceName):
-        final stream = coord.tellDeviceToEnterPhysicalBackup(
-          deviceId: flowState.targetDevice.id,
-        );
-        child = EnterBackupView(
-          stream: stream,
-          targetDevice: flowState.targetDevice,
-          deviceName: coord.getDeviceName(id: flowState.targetDevice.id),
-          onCancel: () {
-            tryPopPrevState(context);
-          },
-          onFinished: (backupPhase) async {
-            try {
-              switch (recoveryContext) {
-                case AddingToWalletContext(:final accessStructureRef):
-                  final encryptionKey = await existingWalletKey(
-                    context: mounted ? context : null,
-                    accessStructureRef: accessStructureRef,
-                    action: 'add this backup to the wallet',
-                  );
-                  if (encryptionKey == null) {
-                    if (mounted) Navigator.pop(context);
-                    return;
-                  }
-                  final isValid = await coord.checkPhysicalBackup(
-                    accessStructureRef: accessStructureRef,
-                    phase: backupPhase,
-                    encryptionKey: encryptionKey,
-                  );
-
-                  if (!isValid) {
-                    popOnError(
-                      errorTitle: 'Cannot add backup',
-                      errorMessage:
-                          'The backup is not compatible with this wallet',
-                    );
-                    return;
-                  }
-
-                  await coord.tellDeviceToConsolidatePhysicalBackup(
-                    accessStructureRef: accessStructureRef,
-                    phase: backupPhase,
-                    encryptionKey: encryptionKey,
-                    deviceName: deviceName,
-                  );
-                  if (mounted) {
-                    Navigator.pop(context);
-                  }
-
-                case NewRestorationContext(
-                  :final walletName,
-                  :final network,
-                  :final threshold,
-                ):
-                  final restorationId = await coord.startRestoringWallet(
-                    name: walletName!,
-                    threshold: threshold,
-                    network: network!,
-                  );
-
-                  final encryptionKey =
-                      await SecureKeyProvider.getEncryptionKey();
-                  final error = await coord.checkPhysicalBackupForRestoration(
-                    restorationId: restorationId,
-                    phase: backupPhase,
-                    encryptionKey: encryptionKey,
-                  );
-
-                  if (error != null) {
-                    await coord.cancelRestoration(restorationId: restorationId);
-                    popOnError(
-                      errorTitle: 'Cannot add backup',
-                      errorMessage: error.toString(),
-                    );
-                    return;
-                  }
-
-                  await coord.tellDeviceToSavePhysicalBackup(
-                    phase: backupPhase,
-                    restorationId: restorationId,
-                    deviceName: deviceName,
-                  );
-                  setState(() {
-                    recoveryContext = (recoveryContext as NewRestorationContext)
-                        .copyWith(restorationId: restorationId);
-                    flowState.stage = RecoveryFlowStage.physicalBackupSuccess(
-                      deviceName: deviceName,
-                    );
-                  });
-
-                case ContinuingRestorationContext(:final restorationId):
-                  final encryptionKey =
-                      await SecureKeyProvider.getEncryptionKey();
-                  final error = await coord.checkPhysicalBackupForRestoration(
-                    restorationId: restorationId,
-                    phase: backupPhase,
-                    encryptionKey: encryptionKey,
-                  );
-
-                  if (error != null) {
-                    popOnError(
-                      errorTitle: 'Cannot add backup',
-                      errorMessage: error.toString(),
-                    );
-                    return;
-                  }
-
-                  await coord.tellDeviceToSavePhysicalBackup(
-                    phase: backupPhase,
-                    restorationId: restorationId,
-                    deviceName: deviceName,
-                  );
-                  setState(() {
-                    flowState.stage = RecoveryFlowStage.physicalBackupSuccess(
-                      deviceName: deviceName,
-                    );
-                  });
-              }
-            } catch (e, stackTrace) {
-              popOnError(
-                errorTitle: 'Failed to save backup',
-                errorMessage: '$e\n\nStack trace:\n$stackTrace',
-                isException: true,
-              );
-            }
-          },
-          onError: (e) {
-            popOnError(errorTitle: 'Backup Entry Failed', errorMessage: e);
-          },
-        );
-        break;
-      case StartRestorationWithPhysicalBackupStage():
-        child = StartRestorationInfoView(
-          recoveryContext: recoveryContext,
-          onContinue: () {
-            setState(() {
-              pushPrevState();
-              if (flowState.targetDevice.needsFirmwareUpgrade()) {
-                flowState.stage = RecoveryFlowStage.firmwareUpgrade();
-              } else {
-                switch (recoveryContext) {
-                  case NewRestorationContext():
-                    flowState.stage =
-                        RecoveryFlowStage.enterRestorationDetails();
-                    break;
-                  default:
-                    flowState.stage = RecoveryFlowStage.enterDeviceName();
-                }
-              }
-            });
-          },
-        );
-        break;
-
-      case WaitReconnectDeviceStage(:final nextStage):
-        child = WaitReconnectDeviceView(
-          targetDevice: flowState.targetDevice,
-          onReconnected: () {
-            setState(() {
-              flowState.stage = nextStage;
-            });
-          },
-          onCancel: () {
-            Navigator.pop(context);
-          },
-        );
-        break;
-
-      case EnterRestorationDetailsStage():
-        child = EnterWalletNameView(
-          initialWalletName: null,
-          initialBitcoinNetwork: null,
-          onWalletNameEntered: (walletName, bitcoinNetwork) {
-            setState(() {
-              pushPrevState();
-              if (recoveryContext case NewRestorationContext()) {
-                recoveryContext = RecoveryContext.newRestoration(
-                  walletName: walletName,
-                  network: bitcoinNetwork,
-                  threshold: null,
-                );
-              }
-              flowState.stage = RecoveryFlowStage.enterThreshold(
-                walletName: walletName,
-                network: bitcoinNetwork,
-              );
-            });
-          },
-        );
-        break;
-
-      case EnterThresholdStage(:final walletName, :final network):
-        child = EnterThresholdView(
-          walletName: walletName,
-          network: network,
-          initialThreshold: null,
-          onThresholdEntered: (threshold) {
-            setState(() {
-              pushPrevState();
-              if (recoveryContext case NewRestorationContext(
-                :final walletName,
-                :final network,
-              )) {
-                recoveryContext = RecoveryContext.newRestoration(
-                  walletName: walletName,
-                  network: network,
-                  threshold: threshold,
-                );
-              }
-              flowState.stage = const RecoveryFlowStage.enterDeviceName();
-            });
-          },
-        );
-        break;
-      case PhysicalBackupSuccessStage(:final deviceName):
-        final restorationId = switch (recoveryContext) {
-          NewRestorationContext(:final restorationId) => restorationId,
-          ContinuingRestorationContext(:final restorationId) => restorationId,
-          _ => null,
-        };
-        child = PhysicalBackupSuccessView(
-          deviceName: deviceName,
-          onClose: () {
-            Navigator.pop(context, restorationId);
-          },
-        );
-        break;
-
-      case ErrorStage(
-        :final title,
-        :final message,
-        :final isWarning,
-        :final returnStage,
-      ):
-        child = ErrorView(
-          title: title,
-          message: message,
-          isWarning: isWarning,
-          onRetry: () {
-            setState(() {
-              isAnimationForward = true;
-              flowState.stage = returnStage;
-            });
-          },
-        );
-        break;
-    }
-
-    final switcher = AnimatedSwitcher(
-      duration: Durations.medium4,
-      reverseDuration: Duration.zero,
-      transitionBuilder: (child, animation) {
-        final curvedAnimation = CurvedAnimation(
-          parent: animation,
-          curve: Curves.easeInOutCubicEmphasized,
-        );
-        return SlideTransition(
-          position: Tween<Offset>(
-            begin: isAnimationForward
-                ? const Offset(1, 0)
-                : const Offset(-1, 0),
-            end: Offset.zero,
-          ).animate(curvedAnimation),
-          child: FadeTransition(opacity: animation, child: child),
+                const SizedBox(height: 8),
+                Text(
+                  '2. Enter all 25 seed words in order.',
+                  style: theme.textTheme.bodyMedium,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'The app will continue automatically once complete.',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
         );
       },
-      child: child,
+      actionButtons: [
+        OutlinedButton(
+          child: const Text('Cancel'),
+          onPressed: () async {
+            await prompt.clearAllActionsNeeded();
+            _ctrl.back();
+          },
+        ),
+        const DeviceActionHint(
+          label: 'Enter on device',
+          icon: Icons.keyboard_rounded,
+        ),
+      ],
     );
+    return prompt;
+  }
 
-    final scopedSwitcher = PopScope(
+  Future<void> _runFirmwareUpgrade() async {
+    final upgrader = _firmwareUpgrader;
+    if (upgrader == null) return;
+    _ctrl.firmwareUpgradeStarted();
+    final success = await upgrader.run(context);
+    if (!mounted) return;
+    _ctrl.firmwareUpgradeFinished(success: success);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return PopScope(
       canPop: false,
-      onPopInvokedWithResult: (didPop, result) {
-        if (didPop) return;
-        goBackOrClose(context);
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _ctrl.back();
       },
-      child: switcher,
-    );
-
-    // 📱 MaybeFullscreenDialog uses Dialog.fullscreen on compact (mobile), which
-    // provides its own navigation chrome - adding TopBar would be redundant.
-    final windowSize = WindowSizeContext.of(context);
-    if (windowSize == WindowSizeClass.compact) {
-      return scopedSwitcher;
-    }
-
-    final header = TopBar(
-      title: Text(child.titleText),
-      leadingButton: IconButton(
-        icon: Icon(Icons.arrow_back_rounded),
-        onPressed: () => goBackOrClose(context),
-        tooltip: 'Back',
-      ),
-    );
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [header, scopedSwitcher],
+      child: _buildStep(),
     );
   }
 
-  void goBackOrClose(BuildContext context) {
-    if (!tryPopPrevState(context)) Navigator.pop(context);
+  MultiStepDialogScaffold _buildStep() {
+    return switch (_ctrl.stage) {
+      CandidateReadyStage(:final candidate) => _candidateReadyStep(candidate),
+      StartRestorationWithPhysicalBackupStage() => _startRestorationStep(),
+      FirmwareUpgradeStage() => _firmwareUpgradeStep(),
+      EnterRestorationDetailsStage() => _walletNameStep(),
+      EnterThresholdStage() => _thresholdStep(),
+      EnterDeviceNameStage() => _deviceNameStep(),
+      GeneratingNoncesStage() => _generatingNoncesStep(),
+      CompletingDeviceShareEnrollmentStage() => _step(
+        stepKey: 'completingDeviceShareEnrollment',
+        title: 'Completing enrollment...',
+        body: const _Spinner(),
+      ),
+      EnterBackupStage(:final deviceName) => _step(
+        stepKey: 'enterBackup',
+        title: 'Enter backup on device',
+        body: EnterBackupView(deviceName: deviceName),
+      ),
+      WaitReconnectDeviceStage() => _step(
+        stepKey: 'waitReconnect',
+        title: 'Device Disconnected',
+        body: const WaitReconnectDeviceView(),
+        footer: Align(
+          child: OutlinedButton(
+            onPressed: _ctrl.dismiss,
+            child: const Text('Cancel'),
+          ),
+        ),
+      ),
+      PhysicalBackupSuccessStage(:final deviceName) => _step(
+        stepKey: 'physicalBackupSuccess',
+        title: '',
+        body: PhysicalBackupSuccessView(deviceName: deviceName),
+        footer: Align(
+          alignment: Alignment.centerRight,
+          child: FilledButton.icon(
+            icon: const Icon(Icons.arrow_forward),
+            label: const Text('Close'),
+            onPressed: _ctrl.finish,
+          ),
+        ),
+      ),
+      ErrorStage(:final title, :final message, :final isWarning) => _errorStep(
+        title,
+        message,
+        isWarning,
+      ),
+    };
+  }
+
+  MultiStepDialogScaffold _step({
+    required String stepKey,
+    required String title,
+    required Widget body,
+    bool canGoBack = false,
+    Widget? footer,
+  }) {
+    return MultiStepDialogScaffold(
+      stepKey: stepKey,
+      title: Text(title),
+      leading: canGoBack
+          ? IconButton(
+              icon: const Icon(Icons.arrow_back_rounded),
+              onPressed: _ctrl.back,
+              tooltip: 'Back',
+            )
+          : null,
+      forward: _ctrl.isAnimationForward,
+      duration: Durations.medium4,
+      reverseDuration: Duration.zero,
+      body: SliverToBoxAdapter(child: body),
+      footer: footer,
+    );
+  }
+
+  Widget _primaryButton(String label, VoidCallback? onPressed) => Align(
+    alignment: Alignment.centerRight,
+    child: FilledButton(onPressed: onPressed, child: Text(label)),
+  );
+
+  MultiStepDialogScaffold _candidateReadyStep(RecoverShare candidate) {
+    final addingToExisting = _ctrl.recoveryContext is! NewRestorationContext;
+    return _step(
+      stepKey: 'candidateReady',
+      title: 'Restore with existing key',
+      canGoBack: true,
+      body: CandidateReadyView(
+        candidate: candidate,
+        addingToExisting: addingToExisting,
+      ),
+      footer: _primaryButton(
+        addingToExisting ? 'Add to wallet' : 'Restore',
+        _ctrl.confirmCandidate,
+      ),
+    );
+  }
+
+  MultiStepDialogScaffold _startRestorationStep() {
+    return _step(
+      stepKey: 'startRestorationWithPhysicalBackup',
+      title: 'Found blank device for backup entry',
+      canGoBack: true,
+      body: StartRestorationInfoView(recoveryContext: _ctrl.recoveryContext),
+      footer: _primaryButton(switch (_ctrl.recoveryContext) {
+        NewRestorationContext() => 'Begin restoration',
+        _ => 'Next',
+      }, _ctrl.confirmStartRestoration),
+    );
+  }
+
+  MultiStepDialogScaffold _firmwareUpgradeStep() {
+    final upgrading = _ctrl.firmwareUpgrading;
+    return _step(
+      stepKey: 'firmwareUpgrade',
+      title: 'Firmware Upgrade Required',
+      body: const FirmwareUpgradeView(),
+      footer: Row(
+        children: [
+          TextButton(
+            onPressed: upgrading ? null : _ctrl.dismiss,
+            child: const Text('Cancel'),
+          ),
+          const Spacer(),
+          FilledButton(
+            onPressed: upgrading ? null : _runFirmwareUpgrade,
+            child: Text(upgrading ? 'Upgrading...' : 'Upgrade Now'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  MultiStepDialogScaffold _walletNameStep() {
+    final (initialName, initialNetwork) = switch (_ctrl.recoveryContext) {
+      NewRestorationContext(:final walletName, :final network) => (
+        walletName,
+        network,
+      ),
+      _ => (null, null),
+    };
+    return _step(
+      stepKey: 'enterRestorationDetails',
+      title: 'Wallet name',
+      canGoBack: true,
+      body: EnterWalletNameView(
+        key: _walletNameKey,
+        initialWalletName: initialName,
+        initialBitcoinNetwork: initialNetwork,
+        onChanged: (canSubmit) =>
+            setState(() => _canSubmitWalletName = canSubmit),
+        onSubmit: _ctrl.submitWalletName,
+      ),
+      footer: _primaryButton(
+        'Continue',
+        _canSubmitWalletName
+            ? () => _walletNameKey.currentState?.submit()
+            : null,
+      ),
+    );
+  }
+
+  MultiStepDialogScaffold _thresholdStep() {
+    final initialThreshold = switch (_ctrl.recoveryContext) {
+      NewRestorationContext(:final threshold) => threshold,
+      _ => null,
+    };
+    return _step(
+      stepKey: 'enterThreshold',
+      title: 'Wallet Threshold (Optional)',
+      canGoBack: true,
+      body: EnterThresholdView(
+        key: _thresholdKey,
+        initialThreshold: initialThreshold,
+        onSubmit: _ctrl.submitThreshold,
+      ),
+      footer: _primaryButton(
+        'Continue',
+        () => _thresholdKey.currentState?.submit(),
+      ),
+    );
+  }
+
+  MultiStepDialogScaffold _deviceNameStep() {
+    return _step(
+      stepKey: 'enterDeviceName',
+      title: 'Device name',
+      canGoBack: true,
+      body: EnterDeviceNameView(
+        key: _deviceNameKey,
+        deviceId: _ctrl.targetDevice.id,
+        onChanged: (canSubmit) =>
+            setState(() => _canSubmitDeviceName = canSubmit),
+        onSubmit: _ctrl.submitDeviceName,
+      ),
+      footer: _primaryButton(
+        'Continue',
+        _canSubmitDeviceName
+            ? () => _deviceNameKey.currentState?.submit()
+            : null,
+      ),
+    );
+  }
+
+  MultiStepDialogScaffold _generatingNoncesStep() {
+    final stream = _ctrl.nonceStream;
+    return _step(
+      stepKey: 'generatingNonces',
+      title: 'Preparing Device',
+      body: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 32),
+        child: stream == null
+            ? const Center(child: CircularProgressIndicator())
+            : NonceReplenishIndicator(
+                stream: stream,
+                onTerminal: _ctrl.onNonceTerminal,
+              ),
+      ),
+      footer: Align(
+        alignment: Alignment.centerRight,
+        child: TextButton(onPressed: _ctrl.back, child: const Text('Cancel')),
+      ),
+    );
+  }
+
+  MultiStepDialogScaffold _errorStep(
+    String title,
+    String message,
+    bool isWarning,
+  ) {
+    final theme = Theme.of(context);
+    return _step(
+      stepKey: 'error',
+      title: isWarning ? 'Warning' : 'Error',
+      canGoBack: true,
+      body: ErrorView(title: title, message: message, isWarning: isWarning),
+      footer: Row(
+        children: [
+          if (!isWarning)
+            CopyTapTarget(
+              data: message,
+              builder: (ctx, onCopy, checked) => OutlinedButton.icon(
+                icon: CopyIcon(checked: checked),
+                label: const Text('Copy Error'),
+                onPressed: onCopy,
+              ),
+            ),
+          const Spacer(),
+          FilledButton.icon(
+            icon: const Icon(Icons.refresh),
+            label: const Text('Try Again'),
+            onPressed: _ctrl.retryFromError,
+            style: isWarning
+                ? null
+                : FilledButton.styleFrom(
+                    backgroundColor: theme.colorScheme.error,
+                    foregroundColor: theme.colorScheme.onError,
+                  ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
-class _LoadingView extends StatelessWidget with TitledWidget {
-  final String title;
-
-  const _LoadingView({required this.title});
+class _Spinner extends StatelessWidget {
+  const _Spinner();
 
   @override
-  String get titleText => title;
-
-  @override
-  Widget build(BuildContext context) {
-    return const Center(child: CircularProgressIndicator());
-  }
+  Widget build(BuildContext context) => const Padding(
+    padding: EdgeInsets.symmetric(vertical: 32),
+    child: Center(child: CircularProgressIndicator()),
+  );
 }
