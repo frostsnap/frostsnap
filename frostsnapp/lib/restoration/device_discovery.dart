@@ -1,14 +1,13 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:frostsnap/animated_gradient_card.dart';
+import 'package:frostsnap/fullscreen_dialog_scaffold.dart';
 import 'package:frostsnap/global.dart';
-import 'package:frostsnap/maybe_fullscreen_dialog.dart';
 import 'package:frostsnap/restoration/recovery_flow.dart';
 import 'package:frostsnap/restoration/state.dart';
 import 'package:frostsnap/restoration/target_device.dart';
 import 'package:frostsnap/secure_key_provider.dart';
 import 'package:frostsnap/src/rust/api/recovery.dart';
-import 'package:frostsnap/theme.dart';
 import 'package:frostsnap/wallet_key_mismatch.dart';
 
 class RecoveryFlowWithDiscovery extends StatefulWidget {
@@ -204,9 +203,7 @@ class _DeviceDiscoveryWidgetState extends State<DeviceDiscoveryWidget> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final windowSize = WindowSizeContext.of(context);
-
-    final header = TopBarSliver(
+    return FullscreenDialogScaffold(
       title: Text(
         _errorMessage != null ? 'Incompatible Device' : 'Restore from device',
       ),
@@ -215,27 +212,7 @@ class _DeviceDiscoveryWidgetState extends State<DeviceDiscoveryWidget> {
         onPressed: () => Navigator.of(context).pop(),
         tooltip: 'Cancel',
       ),
-    );
-
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Flexible(
-          child: CustomScrollView(
-            shrinkWrap: windowSize != WindowSizeClass.compact,
-            slivers: [
-              header,
-              SliverPadding(
-                padding: const EdgeInsets.all(16.0),
-                sliver: SliverToBoxAdapter(
-                  child: Center(child: _buildContent(theme)),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
+      body: SliverToBoxAdapter(child: Center(child: _buildContent(theme))),
     );
   }
 
