@@ -22,7 +22,7 @@ pub fn derive_kind(input: TokenStream) -> TokenStream {
     let match_arms = data_enum.variants.into_iter().map(|variant| {
         let variant_ident = variant.ident;
         // Check if the variant has the attribute `#[delegate_kind]`
-        let has_delegate = variant.attrs.iter().any(|attr| attr.path.is_ident("delegate_kind"));
+        let has_delegate = variant.attrs.iter().any(|attr| attr.path().is_ident("delegate_kind"));
 
         if has_delegate {
             // Ensure it's a newtype variant (tuple variant with exactly one field)
@@ -111,9 +111,11 @@ pub fn derive_widget(input: TokenStream) -> TokenStream {
 fn get_crate_path(attrs: &[syn::Attribute]) -> proc_macro2::TokenStream {
     // Check if there's a #[widget_crate(path)] attribute
     for attr in attrs {
-        if attr.path.is_ident("widget_crate")
-            && let Ok(syn::Meta::List(meta_list)) = attr.parse_meta()
-            && let Some(syn::NestedMeta::Meta(syn::Meta::Path(path))) = meta_list.nested.first()
+        if attr.path().is_ident("widget_crate")
+            && let Ok(paths) = attr.parse_args_with(
+                syn::punctuated::Punctuated::<syn::Path, syn::Token![,]>::parse_terminated,
+            )
+            && let Some(path) = paths.first()
         {
             return quote!(#path);
         }
@@ -315,9 +317,11 @@ fn find_delegate_field_with_type(
 ) -> Option<(proc_macro2::TokenStream, syn::Type)> {
     // First check if the struct has #[widget_delegate(field_name)]
     for attr in struct_attrs {
-        if attr.path.is_ident("widget_delegate")
-            && let Ok(syn::Meta::List(meta_list)) = attr.parse_meta()
-            && let Some(syn::NestedMeta::Meta(syn::Meta::Path(path))) = meta_list.nested.first()
+        if attr.path().is_ident("widget_delegate")
+            && let Ok(paths) = attr.parse_args_with(
+                syn::punctuated::Punctuated::<syn::Path, syn::Token![,]>::parse_terminated,
+            )
+            && let Some(path) = paths.first()
             && let Some(ident) = path.get_ident()
         {
             // Find the field with this name to get its type
@@ -336,7 +340,7 @@ fn find_delegate_field_with_type(
             // Check if any field has #[widget_delegate] attribute
             for field in &fields.named {
                 for attr in &field.attrs {
-                    if attr.path.is_ident("widget_delegate")
+                    if attr.path().is_ident("widget_delegate")
                         && let Some(field_name) = &field.ident
                     {
                         return Some((quote!(#field_name), field.ty.clone()));
@@ -398,7 +402,7 @@ fn generate_match_arms(
                     // Check if any field has #[widget_delegate] attribute
                     let delegate_field = fields.named.iter().find_map(|field| {
                         for attr in &field.attrs {
-                            if attr.path.is_ident("widget_delegate") {
+                            if attr.path().is_ident("widget_delegate") {
                                 return field.ident.as_ref();
                             }
                         }

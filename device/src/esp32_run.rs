@@ -36,8 +36,8 @@ use frostsnap_comms::Downstream;
 use rand_chacha::ChaCha20Rng;
 
 type EspSerial<'a, D> = SerialInterface<'a, D>;
-type EspMutationLog<'a> = MutationLog<'a, esp_storage::FlashStorage>;
-type EspSigner<'a> = FrostSigner<NonceAbSlot<'a, esp_storage::FlashStorage>>;
+type EspMutationLog<'a> = MutationLog<'a, esp_storage::FlashStorage<'static>>;
+type EspSigner<'a> = FrostSigner<NonceAbSlot<'a, esp_storage::FlashStorage<'static>>>;
 
 /// Max consecutive magic-bytes frames tolerated after we've replied to the
 /// coord but before it ack's. Absorbs the coord's `awaiting_magic` retry loop,

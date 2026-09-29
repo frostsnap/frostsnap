@@ -18,7 +18,7 @@ pub struct FactoryData {
 
 impl VersionedFactoryData {
     pub fn read<'a>(
-        partition: FlashPartition<'a, FlashStorage>,
+        partition: FlashPartition<'a, FlashStorage<'static>>,
     ) -> Result<Self, bincode::error::DecodeError> {
         bincode::decode_from_reader::<VersionedFactoryData, _, _>(
             partition.bincode_reader(),

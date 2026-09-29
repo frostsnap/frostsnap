@@ -5,9 +5,7 @@
 
 extern crate alloc;
 
-use core::cell::RefCell;
 use esp_hal::main;
-use esp_storage::FlashStorage;
 use frostsnap_device::{esp32_run, peripherals::DevicePeripherals, resources::Resources};
 
 esp_bootloader_esp_idf::esp_app_desc!();
@@ -21,9 +19,6 @@ fn main() -> ! {
     let peripherals =
         esp_hal::init(esp_hal::Config::default().with_cpu_clock(esp_hal::clock::CpuClock::max()));
 
-    // Initialize flash storage (must stay alive for partition references)
-    let flash = RefCell::new(FlashStorage::new());
-
     // Initialize all device peripherals with initial RNG
     let device = DevicePeripherals::init(peripherals);
 
@@ -33,7 +28,7 @@ fn main() -> ! {
         frostsnap_device::factory::run_dev_provisioning(device);
     } else {
         // Device is already provisioned - proceed with normal boot
-        let resources = alloc::boxed::Box::leak(Resources::init_dev(device, &flash));
+        let resources = alloc::boxed::Box::leak(Resources::init_dev(device));
         esp32_run::run(resources);
     }
 }
