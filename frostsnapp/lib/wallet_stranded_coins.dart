@@ -1,3 +1,4 @@
+import 'package:frostsnap/id_ext.dart';
 import 'package:frostsnap/src/rust/api/broadcast.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -374,9 +375,14 @@ class _ConsolidatePageState extends State<ConsolidatePage> {
         ),
       );
     } else {
-      final threshold = state.accessStruct()!.threshold();
+      final accessStruct = state.accessStruct()!;
+      final threshold = accessStruct.threshold();
       final selected = state.selectedSigners();
       final remaining = threshold - selected.length;
+      final signers = state.availableSigners().sortByKeyShareIndex(
+        accessStruct,
+        (signer) => signer.$1,
+      );
       body = Card.outlined(
         color: cardColor,
         shape: cardShape(context),
@@ -390,7 +396,7 @@ class _ConsolidatePageState extends State<ConsolidatePage> {
               trailing: Text('$threshold required'),
             ),
             Column(
-              children: state.availableSigners().map((device) {
+              children: signers.map((device) {
                 final (id, name) = device;
                 final nonces = coord.noncesAvailable(id: id);
                 final isSelected = state.isSignerSelected(dId: id);
