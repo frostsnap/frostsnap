@@ -1,6 +1,7 @@
 use crate::ota::OtaPartitions;
 use core::cell::RefCell;
 use embedded_storage::nor_flash::NorFlash;
+use esp_bootloader_esp_idf::partitions;
 use esp_hal::sha::Sha;
 use esp_storage::FlashStorage;
 use frostsnap_comms::firmware_reader::FirmwareSizeError;
@@ -8,6 +9,10 @@ use frostsnap_comms::Sha256Digest;
 use frostsnap_embedded::FlashPartition;
 
 pub type EspFlashPartition<'a> = FlashPartition<'a, FlashStorage>;
+
+/// Rows of the partition table to read: ours is 5 partitions plus its MD5 row, and master read the
+/// same 10-row window. A table that outgrows it fails `read_partition_table`, panicking at boot.
+const PARTITION_TABLE_READ_LEN: usize = 10 * 32;
 
 #[derive(Clone)]
 pub struct Partitions<'a> {
@@ -29,42 +34,40 @@ impl<'a> Partitions<'a> {
         }
     }
 
+    /// Never inlined: merged into the legacy `init_dev` it makes that the firmware's largest frame,
+    /// just under the CI stack-check limit.
+    #[inline(never)]
     pub fn load(flash: &'a RefCell<FlashStorage>) -> Self {
-        let table = esp_partition_table::PartitionTable::new(0xd000, 10 * 32);
-
         let mut self_ = Self::new(flash);
-        for row in table.iter_storage(&mut *flash.borrow_mut(), false) {
-            let row = match row {
-                Ok(row) => row,
-                Err(_) => panic!("unable to read row of partition table"),
-            };
-            assert_eq!(row.offset % FlashStorage::ERASE_SIZE as u32, 0);
-            match row.name() {
+        let mut pt_mem = [0u8; PARTITION_TABLE_READ_LEN];
+        let pt = partitions::read_partition_table(&mut *flash.borrow_mut(), &mut pt_mem)
+            .expect("unable to read partition table");
+
+        for i in 0..pt.len() {
+            let row = pt
+                .get_partition(i)
+                .expect("partition table index should be valid");
+            assert_eq!(row.offset() % FlashStorage::ERASE_SIZE as u32, 0);
+            match row.label_as_str() {
                 "factory_cert" => {
                     self_
                         .factory_cert
-                        .set_offset_and_size(row.offset, row.size as u32);
+                        .set_offset_and_size(row.offset(), row.len());
                 }
                 "otadata" => {
                     self_
                         .ota
                         .otadata
-                        .set_offset_and_size(row.offset, row.size as u32);
+                        .set_offset_and_size(row.offset(), row.len());
                 }
                 "ota_0" => {
-                    self_
-                        .ota
-                        .ota_0
-                        .set_offset_and_size(row.offset, row.size as u32);
+                    self_.ota.ota_0.set_offset_and_size(row.offset(), row.len());
                 }
                 "ota_1" => {
-                    self_
-                        .ota
-                        .ota_1
-                        .set_offset_and_size(row.offset, row.size as u32);
+                    self_.ota.ota_1.set_offset_and_size(row.offset(), row.len());
                 }
                 "nvs" => {
-                    self_.nvs.set_offset_and_size(row.offset, row.size as u32);
+                    self_.nvs.set_offset_and_size(row.offset(), row.len());
                 }
                 _ => { /*ignore*/ }
             }
