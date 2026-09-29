@@ -1,3 +1,4 @@
+import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:frostsnap/contexts.dart';
 import 'package:frostsnap/global.dart';
@@ -245,9 +246,10 @@ class WalletRecoveryPage extends StatelessWidget {
       ),
     );
 
+    final shares = status.shares.sortedBy((share) => share.index);
     var devicesColumn = Column(
       spacing: 8,
-      children: status.shares.map((share) {
+      children: shares.map((share) {
         final deleteButton = IconButton(
           icon: const Icon(Icons.remove_circle_outline),
           tooltip: 'Remove key',
