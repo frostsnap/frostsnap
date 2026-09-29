@@ -1,6 +1,5 @@
 use crate::ota::OtaPartitions;
 use core::cell::RefCell;
-use embedded_storage::nor_flash::NorFlash;
 use esp_bootloader_esp_idf::partitions;
 use esp_hal::sha::Sha;
 use esp_storage::FlashStorage;
@@ -8,7 +7,7 @@ use frostsnap_comms::firmware_reader::FirmwareSizeError;
 use frostsnap_comms::Sha256Digest;
 use frostsnap_embedded::FlashPartition;
 
-pub type EspFlashPartition<'a> = FlashPartition<'a, FlashStorage>;
+pub type EspFlashPartition<'a> = FlashPartition<'a, FlashStorage<'static>>;
 
 /// Rows of the partition table to read: ours is 5 partitions plus its MD5 row, and master read the
 /// same 10-row window. A table that outgrows it fails `read_partition_table`, panicking at boot.
@@ -22,7 +21,7 @@ pub struct Partitions<'a> {
 }
 
 impl<'a> Partitions<'a> {
-    fn new(flash: &'a RefCell<FlashStorage>) -> Self {
+    fn new(flash: &'a RefCell<FlashStorage<'static>>) -> Self {
         Self {
             factory_cert: EspFlashPartition::new(flash, 0, 0, "factory_cert"),
             ota: OtaPartitions {
@@ -37,10 +36,10 @@ impl<'a> Partitions<'a> {
     /// Never inlined: merged into the legacy `init_dev` it makes that the firmware's largest frame,
     /// just under the CI stack-check limit.
     #[inline(never)]
-    pub fn load(flash: &'a RefCell<FlashStorage>) -> Self {
+    pub fn load(flash: &'a RefCell<FlashStorage<'static>>) -> Self {
         let mut self_ = Self::new(flash);
         let mut pt_mem = [0u8; PARTITION_TABLE_READ_LEN];
-        let pt = partitions::read_partition_table(&mut *flash.borrow_mut(), &mut pt_mem)
+        let pt = partitions::read_partition_table(&mut flash.borrow_mut(), &mut pt_mem)
             .expect("unable to read partition table");
 
         for i in 0..pt.len() {

@@ -84,15 +84,7 @@ impl<'a> Resources<'a> {
     }
     /// Initialize resources for production device
     /// Factory data is required for production devices
-    pub fn init_production(
-        peripherals: Box<DevicePeripherals<'a>>,
-        flash: &'a RefCell<FlashStorage>,
-    ) -> Box<Self> {
-        let (partitions, factory_data) = Self::read_flash_data(flash);
-
-        // Production devices must have factory data
-        let factory_data = factory_data.expect("Production device must have factory data");
-
+    pub fn init_production(peripherals: Box<DevicePeripherals<'a>>) -> Box<Self> {
         // Production devices must be provisioned at the factory
         if !peripherals.efuse.has_hmac_keys_initialized() {
             panic!("Production device must be provisioned at the factory!");
@@ -113,8 +105,12 @@ impl<'a> Resources<'a> {
             upstream_detect,
             downstream_detect,
             mut initial_rng,
+            flash,
             ..
         } = *peripherals;
+
+        let (partitions, factory_data) = Self::read_flash_data(flash);
+        let factory_data = factory_data.expect("Production device must have factory data");
 
         // Load existing keys using the moved hmac
         let mut hmac_keys = EfuseHmacKeys::load(&efuse, hmac.clone())
@@ -156,12 +152,7 @@ impl<'a> Resources<'a> {
 
     /// Initialize resources for development device
     /// Factory data is optional for dev devices
-    pub fn init_dev(
-        peripherals: Box<DevicePeripherals<'a>>,
-        flash: &'a RefCell<FlashStorage>,
-    ) -> Box<Self> {
-        let (partitions, factory_data) = Self::read_flash_data(flash);
-
+    pub fn init_dev(peripherals: Box<DevicePeripherals<'a>>) -> Box<Self> {
         // Dev devices must be provisioned before reaching this point
         if !peripherals.efuse.has_hmac_keys_initialized() {
             panic!("Dev device must be provisioned before initialization!");
@@ -182,8 +173,11 @@ impl<'a> Resources<'a> {
             upstream_detect,
             downstream_detect,
             mut initial_rng,
+            flash,
             ..
         } = *peripherals;
+
+        let (partitions, factory_data) = Self::read_flash_data(flash);
 
         // Load existing keys using the moved hmac
         let mut hmac_keys = EfuseHmacKeys::load(&efuse, hmac.clone())
@@ -228,10 +222,10 @@ impl<'a> Resources<'a> {
 
     /// Read flash partitions and data common to both dev and prod
     fn read_flash_data(
-        flash: &'a RefCell<FlashStorage>,
+        flash: FlashStorage<'static>,
     ) -> (Partitions<'a>, Option<VersionedFactoryData>) {
-        // Load all partitions
-        let partitions = Partitions::load(flash);
+        // Resources is leaked, so the partitions' flash lives as long as it does.
+        let partitions = Partitions::load(Box::leak(Box::new(RefCell::new(flash))));
 
         // Try to read factory data (may not exist on dev devices)
         let factory_data = VersionedFactoryData::read(partitions.factory_cert).ok();

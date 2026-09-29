@@ -20,6 +20,7 @@ use esp_hal::{
     usb::usb_serial_jtag::UsbSerialJtag,
     Blocking,
 };
+use esp_storage::FlashStorage;
 use frostsnap_cst816s::CST816S;
 use mipidsi::{interface::SpiInterface, models::ST7789};
 use rand_chacha::ChaCha20Rng;
@@ -146,6 +147,8 @@ pub struct DevicePeripherals<'a> {
 
     /// eFuse controller
     pub efuse: EfuseController,
+
+    pub flash: FlashStorage<'static>,
 
     /// Initial RNG seeded from hardware
     pub initial_rng: ChaCha20Rng,
@@ -299,6 +302,7 @@ impl<'a> DevicePeripherals<'a> {
             efuse,
             initial_rng,
             rsa: peripherals.RSA,
+            flash: FlashStorage::new(peripherals.FLASH),
         })
     }
 }

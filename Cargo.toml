@@ -62,8 +62,8 @@ frostsnap_desktop_camera = { path = "frostsnapp/desktop_camera" }
 frostsnap_secure_boot = { path = "frostsnap_secure_boot" }
 esp-hal = { version = "1.2.0", features = ["unstable"] }
 esp-alloc = "0.11"
-esp-bootloader-esp-idf = "0.5.0"
-esp-storage = "0.6"
+esp-bootloader-esp-idf = "0.6"
+esp-storage = "0.10"
 embedded-hal = "1.0"
 tracing = { version = "0.1", default-features = false }
 rusqlite = { version = "0.31.0", features = ["bundled"] }

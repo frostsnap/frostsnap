@@ -28,22 +28,19 @@ rand_core.workspace = true
 esp-alloc = { workspace = true, features = ["esp32c3"] }
 esp-bootloader-esp-idf = { workspace = true, features = ["esp32c3"] }
 nb = "1"
-embedded-hal-nb = "1"
 heapless = "0.8"
 critical-section = "1.2"
 embedded-hal-bus = "0.3"
 embedded-hal.workspace = true
 embedded-storage.workspace = true
-esp-storage = { workspace = true, features = ["esp32c3", "bytewise-read"] }
+esp-storage = { workspace = true, features = ["esp32c3", "bytewise-read", "embedded-storage"] }
 bincode = { workspace = true }
 mipidsi = { version = "0.10", features = ["batch"] }
 embedded-graphics = "0.8.1"
 rand_chacha = { workspace = true }
 frostsnap_cst816s = { workspace = true }
-embedded-iconoir = { version = "0.2.3", features = ["24px", "32px", "48px"] }
-fugit = "0.3.7"
 crc.workspace = true
-micromath = "*"
+micromath = "2"
 reed-solomon = "0.2.1"
 frostsnap_widgets = { workspace = true }
 frostsnap_macros = { path = "../macros" }

@@ -7,7 +7,6 @@ use embedded_graphics::{
     pixelcolor::Rgb565,
     prelude::*,
 };
-use esp_storage::FlashStorage;
 use frostsnap_comms::{factory::*, ReceiveSerial};
 use frostsnap_embedded::ABWRITE_BINCODE_CONFIG;
 use rand_core::{RngCore, SeedableRng};
@@ -133,6 +132,7 @@ pub fn run_factory_provisioning(
         mut touch_receiver,
         efuse,
         jtag,
+        flash,
         ..
     } = *peripherals;
 
@@ -142,7 +142,7 @@ pub fn run_factory_provisioning(
     // Initialize serial interface for factory communication
     let mut upstream = SerialInterface::<FactoryUpstream>::new_jtag(jtag);
     // Initialize flash and partitions
-    let flash = RefCell::new(FlashStorage::new());
+    let flash = RefCell::new(flash);
     let mut partitions = crate::partitions::Partitions::load(&flash);
 
     text_display!(
