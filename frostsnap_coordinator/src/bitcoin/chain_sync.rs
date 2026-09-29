@@ -439,11 +439,6 @@ impl ConnectionHandler {
         F: FnMut(MasterAppkey, Vec<crate::bitcoin::wallet::Transaction>) + Send,
     {
         for update in block_on_stream(update_recv) {
-            let master_appkeys = update
-                .last_active_indices
-                .keys()
-                .map(|(k, _)| *k)
-                .collect::<Vec<_>>();
             let mut wallet = super_wallet.lock().unwrap();
             let changed = match wallet.apply_update(update) {
                 Ok(changed) => changed,
@@ -453,7 +448,10 @@ impl ConnectionHandler {
                 }
             };
             if changed {
-                for master_appkey in master_appkeys {
+                // The update can't tell us whose txs changed: the chain source reports a spk's
+                // activity and its txs in separate updates. bdk's changeset should say which
+                // keychains it affected; until it does, we notify every wallet.
+                for master_appkey in wallet.master_appkeys() {
                     let txs = wallet.list_transactions(master_appkey);
                     action(master_appkey, txs);
                 }
