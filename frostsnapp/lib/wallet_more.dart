@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:frostsnap/address.dart';
+import 'package:frostsnap/ark.dart';
 import 'package:frostsnap/backup_workflow.dart';
 import 'package:frostsnap/contexts.dart';
 import 'package:frostsnap/copy_feedback.dart';
@@ -263,6 +264,27 @@ class _WalletMoreState extends State<WalletMore> {
       children: [
         makeTitle(context, title: Text('Sign')),
         signColumn,
+        if (isDeveloperMode &&
+            ArkService.supports(walletCtx.superWallet.network)) ...[
+          makeTitle(context, title: Text('Ark (beta)')),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: ListTile(
+              contentPadding: contentPadding,
+              tileColor: tileColor,
+              shape: tileShapeSingle,
+              title: Text('Move to Ark'),
+              subtitle: Text('Board coins into an Ark, signed by your devices'),
+              leading: Icon(Icons.login_rounded),
+              onTap: () => showBottomSheetOrDialog(
+                context,
+                title: Text('Ark (beta)'),
+                builder: (context, scrollController) =>
+                    walletCtx.wrap(ArkPage(scrollController: scrollController)),
+              ),
+            ),
+          ),
+        ],
         makeTitle(context, title: Text('Manage wallet')),
         manageColumn,
         SizedBox(height: 8),

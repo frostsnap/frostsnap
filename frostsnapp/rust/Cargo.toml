@@ -24,6 +24,11 @@ rand = "0.8"
 time = { version = "0.3.36", features = ["formatting"] }
 bip21 = {version = "0.5.0", default-features = false}
 futures.workspace = true
+# Ark boarding (beta, signet only) — see src/api/ark.rs
+bark-wallet = { version = "0.7.1", default-features = false, features = ["rand", "sqlite", "native", "tls-webpki-roots"] }
+tokio = { version = "1", features = ["rt-multi-thread"] }
+serde = { workspace = true }
+serde_json = "1"
 
 [build-dependencies]
 frostsnap_secure_boot.workspace = true
