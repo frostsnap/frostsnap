@@ -3,6 +3,7 @@ import 'package:frostsnap/contexts.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'package:frostsnap/global.dart';
+import 'package:frostsnap/id_ext.dart';
 import 'package:frostsnap/maybe_fullscreen_dialog.dart';
 import 'package:frostsnap/snackbar.dart';
 import 'package:frostsnap/src/rust/api.dart';
@@ -484,6 +485,10 @@ class _WalletSendPageState extends State<WalletSendPage> {
     final threshold = accessStruct.threshold();
     final selectedDevices = state.selectedSigners();
     final remaining = threshold - selectedDevices.length;
+    final signers = state.availableSigners().sortByKeyShareIndex(
+      accessStruct,
+      (signer) => signer.$1,
+    );
 
     final signersInputCard = Card.outlined(
       color: cardColor,
@@ -498,7 +503,7 @@ class _WalletSendPageState extends State<WalletSendPage> {
             trailing: Text('${threshold} required'),
           ),
           Column(
-            children: state.availableSigners().map((device) {
+            children: signers.map((device) {
               final (id, name) = device;
               final nonces = coord.noncesAvailable(id: id);
               final isSelected = state.isSignerSelected(dId: id);

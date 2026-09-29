@@ -652,6 +652,10 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
     final accessStruct = asRef != null
         ? coord.getAccessStructure(asRef: asRef)
         : null;
+    final neededFrom = (signingState?.neededFrom ?? []).sortByKeyShareIndex(
+      accessStruct,
+      (id) => id,
+    );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -674,7 +678,7 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
             ],
           ),
         ),
-        ...((signingState?.neededFrom) ?? []).map((deviceId) {
+        ...neededFrom.map((deviceId) {
           final deviceName = coord.getDeviceName(id: deviceId) ?? '<no-name>';
           final isConnected = connectedDevices.contains(deviceId);
           final shareIndex = accessStruct?.getDeviceShortShareIndex(
