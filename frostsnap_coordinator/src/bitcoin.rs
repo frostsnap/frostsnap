@@ -4,6 +4,8 @@ pub mod outgoing;
 pub mod psbt;
 pub mod send;
 pub mod status_tracker;
+#[cfg(test)]
+mod test_common;
 pub mod tofu;
 pub mod wallet;
 mod wallet_persist;
