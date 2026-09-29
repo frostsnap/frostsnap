@@ -8,6 +8,7 @@ crate-type = ["cdylib", "staticlib"]
 
 [dependencies]
 anyhow = "1"
+base64 = "0.22"
 frostsnap_coordinator = { workspace = true }
 frostsnap_core = { workspace = true }
 lazy_static = "1.4"
