@@ -663,16 +663,19 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
               upToDate: () => _deviceRow(
                 context: context,
                 title: _inlineNameField(context, device),
-                trailing: IconButton(
-                  icon: Icon(
-                    Icons.edit_rounded,
-                    color: cs.onSurfaceVariant,
-                    size: 20,
+                // The name field it focuses is itself a Tab stop.
+                trailing: ExcludeFocusTraversal(
+                  child: IconButton(
+                    icon: Icon(
+                      Icons.edit_rounded,
+                      color: cs.onSurfaceVariant,
+                      size: 20,
+                    ),
+                    tooltip: 'Edit device name',
+                    onPressed: () => _nameFocusNodes
+                        .putIfAbsent(device.id, () => FocusNode())
+                        .requestFocus(),
                   ),
-                  tooltip: 'Edit device name',
-                  onPressed: () => _nameFocusNodes
-                      .putIfAbsent(device.id, () => FocusNode())
-                      .requestFocus(),
                 ),
               ),
               canUpgrade: () => _deviceRow(
