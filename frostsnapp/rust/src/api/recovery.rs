@@ -10,6 +10,7 @@ pub use frostsnap_core::coordinator::restoration::{
     PhysicalBackupPhase, RecoverShare, RecoverShareError, RecoverShareErrorKind,
     RecoveringAccessStructure, RestorationShare, RestorationState, RestorationStatus,
     RestorePhysicalBackupError, RestoreRecoverShareError, ShareCompatibility, ShareCount,
+    StartRestorationFromShareError,
 };
 pub use frostsnap_core::coordinator::{KeyLocationState, ShareLocation};
 pub use frostsnap_core::{
@@ -17,7 +18,6 @@ pub use frostsnap_core::{
     schnorr_fun::frost::{Fingerprint, ShareImage, ShareIndex, SharedKey},
 };
 use frostsnap_core::{AccessStructureRef, DeviceId, RestorationId, SymmetricKey};
-use std::fmt;
 
 #[frb(mirror(WaitForSingleDeviceState), non_opaque)]
 pub enum _WaitForSingleDeviceState {
@@ -125,18 +125,23 @@ impl super::coordinator::Coordinator {
         &self,
         recover_share: &RecoverShare,
         encryption_key: SymmetricKey,
-    ) -> Option<StartRestorationError> {
-        // Use find_share to check if this share already exists
-        if let Some(location) = self
-            .0
+    ) -> Option<StartRestorationFromShareError> {
+        // A complete wallet that cannot be unlocked is not held against the share: nothing
+        // in this flow can unlock it, and a share that does turn out to be its merges into
+        // it when the restoration finishes.
+        self.0
             .inner()
-            .find_share(recover_share.held_share.share_image, encryption_key)
-        {
-            return Some(StartRestorationError::ShareBelongsElsewhere {
-                location: Box::new(location),
-            });
-        }
-        None
+            .find_share(
+                recover_share.held_share.share_image,
+                recover_share.held_share.access_structure_ref,
+                encryption_key,
+            )
+            .found()
+            .map(
+                |location| StartRestorationFromShareError::ShareBelongsElsewhere {
+                    location: Box::new(location),
+                },
+            )
     }
 
     pub fn check_physical_backup(
@@ -389,6 +394,13 @@ pub enum _RestorePhysicalBackupError {
     ShareBelongsElsewhere { location: Box<ShareLocation> },
 }
 
+#[frb(mirror(StartRestorationFromShareError))]
+pub enum _StartRestorationFromShareError {
+    MissingMetadata,
+    ShareBelongsElsewhere { location: Box<ShareLocation> },
+    RestorationIdInUse,
+}
+
 #[frb(mirror(RecoverShareError))]
 pub struct _RecoverShareError {
     pub key_purpose: KeyPurpose,
@@ -404,25 +416,8 @@ pub enum _RecoverShareErrorKind {
     DecryptionError,
 }
 
-#[derive(Debug, Clone)]
-pub enum StartRestorationError {
-    ShareBelongsElsewhere { location: Box<ShareLocation> },
-}
-
-impl fmt::Display for StartRestorationError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            StartRestorationError::ShareBelongsElsewhere { location } => {
-                write!(f, "This key share belongs to existing {} '{}' and cannot be used to start a new restoration", location.key_purpose.key_type_noun(), location.key_name)
-            }
-        }
-    }
-}
-
-impl std::error::Error for StartRestorationError {}
-
 #[frb(external)]
-impl StartRestorationError {
+impl StartRestorationFromShareError {
     #[frb(sync)]
     pub fn to_string(&self) -> String {}
 }
