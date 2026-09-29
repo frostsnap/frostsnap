@@ -14,7 +14,7 @@ use frostsnap_core::{
     MasterAppkey,
 };
 use std::{
-    collections::HashMap,
+    collections::{BTreeSet, HashMap},
     ops::RangeBounds,
     str::FromStr,
     sync::{Arc, Mutex},
@@ -412,6 +412,14 @@ impl CoordSuperWallet {
             })
         };
         found_address_derivation
+    }
+
+    pub(super) fn master_appkeys(&self) -> BTreeSet<MasterAppkey> {
+        self.tx_graph
+            .index
+            .keychains()
+            .map(|((master_appkey, _), _)| master_appkey)
+            .collect()
     }
 
     pub fn list_transactions(&mut self, master_appkey: MasterAppkey) -> Vec<Transaction> {
