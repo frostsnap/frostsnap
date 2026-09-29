@@ -1,3 +1,4 @@
+pub mod ark;
 pub mod backup_run;
 pub mod bitcoin;
 pub mod broadcast;

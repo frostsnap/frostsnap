@@ -11,6 +11,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
+import 'package:frostsnap/ark.dart';
 import 'package:frostsnap/contexts.dart';
 import 'package:frostsnap/copy_feedback.dart';
 import 'package:frostsnap/global.dart';
@@ -59,6 +60,7 @@ Future<void> main() async {
   try {
     final appDir = await getApplicationSupportDirectory();
     final appDirPath = appDir.path;
+    ArkService.appDir = appDirPath;
     if (Platform.isAndroid) {
       final (coord_, appCtx_, ffiserial) = await api.loadHostHandlesSerial(
         appDir: appDirPath,

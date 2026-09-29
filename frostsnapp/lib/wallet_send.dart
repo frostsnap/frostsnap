@@ -24,12 +24,16 @@ class WalletSendPage extends StatefulWidget {
   final MasterAppkey masterAppkey;
   final double initialFeerate;
   final ScrollController? scrollController;
+
+  /// Prefills the recipient, e.g. with an Ark board address.
+  final String? initialAddress;
   const WalletSendPage({
     super.key,
     required this.superWallet,
     required this.masterAppkey,
     this.initialFeerate = 3.0,
     this.scrollController,
+    this.initialAddress,
   });
 
   BuildTxState buildTx() {
@@ -82,6 +86,8 @@ class _WalletSendPageState extends State<WalletSendPage> {
     sub.start().listen((_) => mounted ? setState(() {}) : null);
 
     addrController = AddressInputController(state);
+    final initialAddress = widget.initialAddress;
+    if (initialAddress != null) addrController.controller.text = initialAddress;
     addrController.controller.addListener(_onRecipientTextChanged);
     amountController = AmountInputController(state: state);
   }

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:frostsnap/ark.dart';
 import 'package:frostsnap/backup_workflow.dart';
 import 'package:frostsnap/contexts.dart';
 import 'package:frostsnap/device_list.dart';
@@ -11,6 +12,7 @@ import 'package:frostsnap/maybe_fullscreen_dialog.dart';
 import 'package:frostsnap/nonce_replenish.dart';
 import 'package:frostsnap/restoration/wallet_recovery_page.dart';
 import 'package:frostsnap/src/rust/api.dart';
+import 'package:frostsnap/src/rust/api/ark.dart';
 import 'package:frostsnap/src/rust/api/backup_run.dart';
 import 'package:frostsnap/bitcoin_network_ext.dart';
 import 'package:frostsnap/src/rust/api/bitcoin.dart';
@@ -335,6 +337,9 @@ class _TxListState extends State<TxList> {
     final walletCtx = WalletContext.of(context);
     if (walletCtx == null) return SizedBox();
     final settingsCtx = SettingsContext.of(context)!;
+    final arkEnabled =
+        settingsCtx.settings.isInDeveloperMode() &&
+        ArkService.supports(walletCtx.superWallet.network);
     final fsCtx = FrostsnapContext.of(context)!;
     final frostKey = coord.getFrostKey(keyId: walletCtx.keyId);
 
@@ -376,10 +381,17 @@ class _TxListState extends State<TxList> {
             txStream: walletCtx.txStream,
             atTopNotifier: atTopNotifier,
             scrolledUnderElevation: scrolledUnderElevation,
-            expandedHeight: 144.0,
+            expandedHeight: arkEnabled ? 196.0 : 144.0,
             frostKey: frostKey,
+            arkBalance: arkEnabled
+                ? ArkService.balanceOf(walletCtx.superWallet.network)
+                : null,
           ),
         ),
+        if (arkEnabled)
+          SliverToBoxAdapter(
+            child: ArkBalanceDetails(txStream: walletCtx.txStream),
+          ),
         SliverToBoxAdapter(child: StrandedCoinsBanner()),
         StreamBuilder(
           stream: MergeStream<void>([
@@ -981,6 +993,9 @@ class UpdatingBalance extends StatefulWidget {
   final double? scrolledUnderElevation;
   final double expandedHeight;
 
+  /// When set, the headline is the total across on-chain and Ark, with the split beneath it.
+  final ValueNotifier<ArkBalance?>? arkBalance;
+
   const UpdatingBalance({
     super.key,
     required this.atTopNotifier,
@@ -988,6 +1003,7 @@ class UpdatingBalance extends StatefulWidget {
     this.frostKey,
     this.scrolledUnderElevation,
     this.expandedHeight = 180.0,
+    this.arkBalance,
   });
 
   @override
@@ -1003,6 +1019,7 @@ class _UpdatingBalanceState extends State<UpdatingBalance> {
   void initState() {
     super.initState();
     streamSub = widget.txStream.listen(onData);
+    widget.arkBalance?.addListener(onArk);
   }
 
   @override
@@ -1010,13 +1027,22 @@ class _UpdatingBalanceState extends State<UpdatingBalance> {
     // TODO; To make this more performant, we can check to see if the KeyId has changed.
     streamSub?.cancel();
     streamSub = widget.txStream.listen(onData);
+    if (oldWidget.arkBalance != widget.arkBalance) {
+      oldWidget.arkBalance?.removeListener(onArk);
+      widget.arkBalance?.addListener(onArk);
+    }
     super.didUpdateWidget(oldWidget);
   }
 
   @override
   void dispose() {
     streamSub?.cancel();
+    widget.arkBalance?.removeListener(onArk);
     super.dispose();
+  }
+
+  void onArk() {
+    if (mounted) setState(() {});
   }
 
   void onData(TxState txState) {
@@ -1033,6 +1059,9 @@ class _UpdatingBalanceState extends State<UpdatingBalance> {
     final frostKey = widget.frostKey;
     final theme = Theme.of(context);
     final settings = SettingsContext.of(context);
+    final ark = widget.arkBalance?.value;
+    final totalBalance = avaliableBalance + (ark?.spendableSat ?? 0);
+    final totalPending = pendingIncomingBalance + (ark?.pendingBoardSat ?? 0);
 
     final balanceTextStyle = theme.textTheme.headlineLarge;
     final pendingBalanceTextStyle = theme.textTheme.bodyLarge?.copyWith(
@@ -1078,7 +1107,7 @@ class _UpdatingBalanceState extends State<UpdatingBalance> {
                   InkWell(
                     borderRadius: BorderRadius.all(Radius.circular(8)),
                     child: SatoshiText(
-                      value: avaliableBalance,
+                      value: totalBalance,
                       style: atTop
                           ? balanceTextStyle
                           : theme.textTheme.headlineSmall,
@@ -1089,7 +1118,12 @@ class _UpdatingBalanceState extends State<UpdatingBalance> {
                       ss.setHideBalance(value: !ss.hideBalance());
                     },
                   ),
-                  if (pendingIncomingBalance > 0)
+                  if (ark != null && atTop)
+                    ArkBalanceSplit(
+                      onchain: avaliableBalance,
+                      ark: ark.spendableSat + ark.pendingBoardSat,
+                    ),
+                  if (totalPending > 0)
                     Row(
                       mainAxisSize: MainAxisSize.min,
                       mainAxisAlignment: MainAxisAlignment.end,
@@ -1101,7 +1135,7 @@ class _UpdatingBalanceState extends State<UpdatingBalance> {
                           color: theme.disabledColor,
                         ),
                         SatoshiText(
-                          value: pendingIncomingBalance,
+                          value: totalPending,
                           showSign: true,
                           style: pendingBalanceTextStyle,
                           disabledColor: theme.colorScheme.outlineVariant,
