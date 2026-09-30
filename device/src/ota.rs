@@ -14,6 +14,7 @@ use frostsnap_comms::{
     firmware_version, CommsMisc, DeviceSendBody, Sha256Digest, BAUDRATE,
     FIRMWARE_NEXT_CHUNK_READY_SIGNAL, FIRMWARE_UPGRADE_CHUNK_LEN,
 };
+use frostsnap_widgets::Frac;
 use nb::block;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -318,7 +319,7 @@ impl FirmwareUpgradeMode<'_> {
                         }
                         ui.set_workflow(ui::Workflow::FirmwareUpgrade(
                             ui::FirmwareUpgradeStatus::Erase {
-                                progress: *seq as f32 / last_sector_index as f32,
+                                progress: Frac::from_ratio(*seq, last_sector_index),
                             },
                         ));
 
@@ -439,7 +440,7 @@ impl FirmwareUpgradeMode<'_> {
                             partition.nor_write_sector(sector, &in_buf).unwrap();
                             ui.set_workflow(ui::Workflow::FirmwareUpgrade(
                                 ui::FirmwareUpgradeStatus::Download {
-                                    progress: byte_count as f32 / *size as f32,
+                                    progress: Frac::from_ratio(byte_count, *size),
                                 },
                             ));
                             ui.poll();
