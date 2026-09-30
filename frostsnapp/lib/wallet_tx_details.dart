@@ -10,7 +10,6 @@ import 'package:frostsnap/contexts.dart';
 import 'package:frostsnap/copy_feedback.dart';
 import 'package:frostsnap/device_action_fullscreen_dialog.dart';
 import 'package:frostsnap/global.dart';
-import 'package:frostsnap/id_ext.dart';
 import 'package:frostsnap/wallet_key_mismatch.dart';
 import 'package:frostsnap/psbt.dart';
 import 'package:frostsnap/snackbar.dart';
@@ -360,7 +359,7 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
   bool signingErrorHandled = false;
   SigningState? signingState;
   bool? broadcastDone;
-  Set<DeviceId> connectedDevices = deviceIdSet([]);
+  Set<DeviceId> connectedDevices = <DeviceId>{};
   Psbt? psbt;
 
   FullscreenActionDialogController<void>? actionDialogController;
@@ -685,7 +684,7 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
               : deviceName;
           final Widget trailing;
           if (signingState!.gotShares.any(
-            (gotSharesFrom) => deviceIdEquals(deviceId, gotSharesFrom),
+            (gotSharesFrom) => deviceId == gotSharesFrom,
           )) {
             trailing = AnimatedCheckCircle();
           } else {

@@ -45,7 +45,7 @@ class _DeviceDetailsState extends State<DeviceDetails> {
       DeviceListUpdate update,
     ) async {
       final device = update.state.devices.firstWhereOrNull(
-        (device) => deviceIdEquals(device.id, widget.deviceId),
+        (device) => device.id == widget.deviceId,
       );
       final wasConnected = _device != null;
       final nowDisconnected = device == null;
