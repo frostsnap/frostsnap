@@ -491,6 +491,9 @@ class WalletCreateController extends ChangeNotifier {
       // Skip nonce step on the way back since nonce generation is automatic
       // and shouldn't be re-shown. Clear the stream so it can be re-generated.
       prevStep = WalletCreateStep.devices;
+      if (_step == WalletCreateStep.nonceReplenish && _nonceStream != null) {
+        coord.cancelProtocol();
+      }
       _nonceStream = null;
       _hasAutoAdvanced = false;
     } else {
