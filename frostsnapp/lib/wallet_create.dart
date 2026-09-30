@@ -11,6 +11,7 @@ import 'package:frostsnap/secure_key_provider.dart';
 import 'package:frostsnap/settings.dart';
 import 'package:frostsnap/snackbar.dart';
 import 'package:frostsnap/threshold_selector.dart';
+import 'package:frostsnap/network_advanced_options.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/bitcoin_network_ext.dart';
 import 'package:frostsnap/src/rust/api/bitcoin.dart';
@@ -1331,7 +1332,13 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
             children: [
               if (SettingsContext.of(context)?.settings.isInDeveloperMode() ??
                   false)
-                buildAdvancedOptions(context),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                  child: NetworkAdvancedOptions(
+                    selected: _controller.form.network,
+                    onChanged: _controller.setNetwork,
+                  ),
+                ),
               Padding(
                 padding: EdgeInsets.all(
                   16,
@@ -1385,102 +1392,6 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
 
   void close(BuildContext context) {
     Navigator.pop(context, null);
-  }
-
-  bool _isAdvancedOptionsHidden = true;
-  StatefulBuilder buildAdvancedOptions(BuildContext context) {
-    final theme = Theme.of(context);
-    return StatefulBuilder(
-      builder: (context, setState) {
-        final mayHide = Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          spacing: 12,
-          children: [
-            Text(
-              'Network',
-              style: theme.textTheme.labelMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-            SegmentedButton<String>(
-              showSelectedIcon: false,
-              segments: BitcoinNetwork.supportedNetworks()
-                  .map(
-                    (network) => ButtonSegment(
-                      value: network.name(),
-                      label: Text(
-                        network.displayName,
-                        overflow: TextOverflow.fade,
-                        softWrap: false,
-                      ),
-                    ),
-                  )
-                  .toList(),
-              selected: {_controller.form.network.name()},
-              onSelectionChanged: (selectedSet) {
-                _isAdvancedOptionsHidden = true;
-                final selected = selectedSet.first;
-                _controller.setNetwork(
-                  BitcoinNetwork.fromString(string: selected)!,
-                );
-              },
-            ),
-            SizedBox(height: 8),
-          ],
-        );
-        return Padding(
-          padding: EdgeInsets.symmetric(horizontal: 16).copyWith(top: 12),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              AnimatedCrossFade(
-                firstChild: SizedBox(),
-                secondChild: mayHide,
-                crossFadeState: _isAdvancedOptionsHidden
-                    ? CrossFadeState.showFirst
-                    : CrossFadeState.showSecond,
-                duration: Durations.medium2,
-                sizeCurve: Curves.easeInOutCubicEmphasized,
-              ),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                spacing: 8,
-                children: [
-                  if (!_controller.form.network.isMainnet())
-                    InputChip(
-                      surfaceTintColor: theme.colorScheme.error,
-                      label: Text(_controller.form.network.displayName),
-                      deleteIcon: Icon(Icons.clear_rounded),
-                      onDeleted: () {
-                        _isAdvancedOptionsHidden = true;
-                        _controller.setNetwork(BitcoinNetwork.bitcoin);
-                      },
-                    ),
-                  TextButton.icon(
-                    onPressed: () => setState(
-                      () =>
-                          _isAdvancedOptionsHidden = !_isAdvancedOptionsHidden,
-                    ),
-                    icon: Icon(
-                      _isAdvancedOptionsHidden
-                          ? Icons.arrow_drop_up_rounded
-                          : Icons.arrow_drop_down_rounded,
-                    ),
-                    label: Text(
-                      'Developer',
-                      overflow: TextOverflow.fade,
-                      softWrap: false,
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        );
-      },
-    );
   }
 }
 
