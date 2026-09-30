@@ -1,5 +1,6 @@
 use super::bitcoin::BitcoinNetworkExt as _;
 use super::coordinator::Coordinator;
+use super::signer_selection::SignerSelection;
 use super::transaction::BuildTxState;
 use super::{bitcoin::Transaction, signing::UnsignedTx};
 use crate::api::broadcast::Broadcast;
@@ -17,7 +18,6 @@ pub use frostsnap_coordinator::verify_address::VerifyAddressProtocolState;
 
 use frostsnap_core::bitcoin_transaction::TransactionTemplate;
 use frostsnap_core::{DeviceId, KeyId, MasterAppkey};
-use std::collections::HashSet;
 use std::str::FromStr;
 use std::sync::atomic::AtomicBool;
 use std::sync::RwLock;
@@ -240,21 +240,25 @@ impl SuperWallet {
         coord: RustAutoOpaque<Coordinator>,
         master_appkey: MasterAppkey,
     ) -> Option<BuildTxState> {
-        let frost_key = coord
-            .blocking_read()
-            .get_frost_key(master_appkey.key_id())?;
+        let coord = coord.blocking_read();
+        let frost_key = coord.get_frost_key(master_appkey.key_id())?;
+        let broadcast = Broadcast::default();
+        let signers = SignerSelection::new(
+            Arc::new(coord.0.nonce_counts()),
+            &coord.0.nonces_reserved,
+            broadcast.clone(),
+        );
         let state = BuildTxState {
-            coord,
             super_wallet: self.clone(),
             frost_key,
-            broadcast: Broadcast::default(),
+            broadcast,
+            signers,
             is_refreshing: Arc::new(AtomicBool::new(false)),
             inner: Arc::new(RwLock::new(super::transaction::BuildTxInner {
                 confirmation_estimates: None,
                 confirmation_target: super::transaction::ConfirmationTarget::default(),
                 recipients: Vec::new(),
                 access_id: None,
-                signers: HashSet::new(),
             })),
         };
         Some(state)

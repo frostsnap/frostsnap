@@ -1,9 +1,9 @@
+import 'package:frostsnap/device_selector.dart';
 import 'package:frostsnap/camera/camera.dart';
 import 'package:frostsnap/contexts.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'package:frostsnap/global.dart';
-import 'package:frostsnap/id_ext.dart';
 import 'package:frostsnap/maybe_fullscreen_dialog.dart';
 import 'package:frostsnap/snackbar.dart';
 import 'package:frostsnap/src/rust/api.dart';
@@ -13,8 +13,6 @@ import 'package:frostsnap/src/rust/api/signing.dart';
 import 'package:frostsnap/src/rust/api/super_wallet.dart';
 import 'package:frostsnap/src/rust/api/transaction.dart';
 import 'package:frostsnap/theme.dart';
-import 'package:frostsnap/device_colors.dart';
-import 'package:frostsnap/genuine_badge.dart';
 import 'package:frostsnap/wallet.dart';
 import 'package:frostsnap/wallet_send_controllers.dart';
 import 'package:frostsnap/wallet_send_feerate_picker.dart';
@@ -487,10 +485,6 @@ class _WalletSendPageState extends State<WalletSendPage> {
     final threshold = accessStruct.threshold();
     final selectedDevices = state.selectedSigners();
     final remaining = threshold - selectedDevices.length;
-    final signers = state.availableSigners().sortByKeyShareIndex(
-      accessStruct,
-      (signer) => signer.$1,
-    );
 
     final signersInputCard = Card.outlined(
       color: cardColor,
@@ -499,50 +493,15 @@ class _WalletSendPageState extends State<WalletSendPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          ListTile(
-            dense: true,
-            title: Text('Select Signers'),
-            trailing: Text('${threshold} required'),
-          ),
-          Column(
-            children: signers.map((device) {
-              final (id, name) = device;
-              final nonces = coord.noncesAvailable(id: id);
-              final isSelected = state.isSignerSelected(dId: id);
-
-              if (nonces == 0) state.deselectSigner(dId: id);
-
-              return CheckboxListTile(
-                value: isSelected,
-                onChanged: remaining > 0 || isSelected
-                    ? (selected) => selected ?? false
-                          ? state.selectSigner(dId: id)
-                          : state.deselectSigner(dId: id)
-                    : null,
-                secondary: CaseAccent(
-                  id: id,
-                  builder: (context, accent) => Icon(Icons.key, color: accent),
-                ),
-                title: Row(
-                  spacing: 8,
-                  children: [
-                    Expanded(
-                      child: Text(
-                        name ?? '<unknown>',
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    GenuineBadge.forDeviceId(id),
-                  ],
-                ),
-                subtitle: nonces == 0
-                    ? Text(
-                        'no nonces remaining or too many signing sessions',
-                        style: TextStyle(color: theme.colorScheme.error),
-                      )
-                    : null,
-              );
-            }).toList(),
+          DeviceSelectorList(
+            title: 'Select Signers',
+            trailing: '${threshold} required',
+            devices: DeviceItem.fromAccessStructure(accessStruct),
+            selected: selectedDevices.toSet(),
+            canSelectMore: remaining > 0,
+            onChanged: (id, selected) => selected
+                ? state.selectSigner(dId: id)
+                : state.deselectSigner(dId: id),
           ),
           Padding(
             padding: const EdgeInsets.all(12.0),
