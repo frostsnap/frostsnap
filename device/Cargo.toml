@@ -40,7 +40,6 @@ embedded-graphics = "0.8.1"
 rand_chacha = { workspace = true }
 frostsnap_cst816s = { workspace = true }
 crc.workspace = true
-micromath = "2"
 reed-solomon = "0.2.1"
 frostsnap_widgets = { workspace = true }
 frostsnap_macros = { path = "../macros" }

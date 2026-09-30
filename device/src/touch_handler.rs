@@ -3,7 +3,7 @@ use embedded_graphics::prelude::Point;
 use frostsnap_cst816s::{interrupt::TouchReceiver, TouchGesture};
 use frostsnap_widgets::{debug::OverlayDebug, DynWidget, Widget};
 
-use crate::touch_calibration::adjust_touch_point;
+use frostsnap_widgets::touch_calibration::adjust_touch_point;
 
 /// Process all pending touch events from the receiver
 pub fn process_all_touch_events<W>(

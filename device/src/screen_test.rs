@@ -7,7 +7,7 @@ use frostsnap_widgets::{
     palette::PALETTE, DynWidget, Instant as WidgetInstant, ScreenTest, SuperDrawTarget, Widget,
 };
 
-use crate::touch_calibration::adjust_touch_point;
+use frostsnap_widgets::touch_calibration::adjust_touch_point;
 
 pub fn run<S>(display: S, touch_receiver: &mut TouchReceiver) -> S
 where
