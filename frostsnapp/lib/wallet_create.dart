@@ -6,7 +6,6 @@ import 'package:frostsnap/animated_gradient_card.dart';
 import 'package:frostsnap/device_action_fullscreen_dialog.dart';
 import 'package:frostsnap/device_action_upgrade.dart';
 import 'package:frostsnap/hex.dart';
-import 'package:frostsnap/id_ext.dart';
 import 'package:frostsnap/secure_key_provider.dart';
 import 'package:frostsnap/settings.dart';
 import 'package:frostsnap/snackbar.dart';
@@ -43,8 +42,8 @@ class WalletCreateForm {
   BitcoinNetwork network = BitcoinNetwork.bitcoin;
   String? name;
 
-  final Set<DeviceId> selectedDevices = deviceIdSet([]);
-  final Map<DeviceId, String> deviceNames = deviceIdMap<String>();
+  final Set<DeviceId> selectedDevices = <DeviceId>{};
+  final Map<DeviceId, String> deviceNames = <DeviceId, String>{};
 
   int? threshold;
 
@@ -71,7 +70,7 @@ Set<DeviceId> duplicateNamedDeviceIdsAmong(
     if (key.isEmpty) continue;
     counts.update(key, (c) => c + 1, ifAbsent: () => 1);
   }
-  final dups = deviceIdSet([]);
+  final dups = <DeviceId>{};
   names.forEach((id, name) {
     if (!participants.contains(id)) return;
     final key = name.trim().toLowerCase();
@@ -323,8 +322,7 @@ class WalletCreateController extends ChangeNotifier {
     );
   });
   bool get allWalletDevicesConnected => _form.selectedDevices.every(
-    (selectedId) =>
-        _deviceList.devices.any((dev) => deviceIdEquals(dev.id, selectedId)),
+    (selectedId) => _deviceList.devices.any((dev) => dev.id == selectedId),
   );
   bool get devicesNeedNonceReplenishment {
     final nonceRequest = coord.createNonceRequest(
@@ -364,7 +362,7 @@ class WalletCreateController extends ChangeNotifier {
   /// currently connected devices ([_deviceList]) participate — a name retained
   /// from a since-disconnected device must not block a remaining device.
   Set<DeviceId> get duplicateNamedDeviceIds => duplicateNamedDeviceIdsAmong(
-    deviceIdSet(_deviceList.devices.map((dev) => dev.id)),
+    _deviceList.devices.map((dev) => dev.id).toSet(),
     _form.deviceNames,
   );
 
@@ -829,8 +827,8 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
     ],
   );
 
-  final Map<DeviceId, TextEditingController> _nameControllers = deviceIdMap();
-  final Map<DeviceId, FocusNode> _nameFocusNodes = deviceIdMap();
+  final Map<DeviceId, TextEditingController> _nameControllers = {};
+  final Map<DeviceId, FocusNode> _nameFocusNodes = {};
 
   Widget _inlineNameField(BuildContext context, ConnectedDevice device) {
     final cs = Theme.of(context).colorScheme;
