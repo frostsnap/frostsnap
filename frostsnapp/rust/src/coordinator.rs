@@ -67,9 +67,54 @@ pub struct FfiCoordinator {
     // backup management
     pub(crate) backup_state: Arc<Mutex<Persisted<BackupState>>>,
     pub(crate) backup_run_streams: Arc<Mutex<BTreeMap<KeyId, StreamSink<BackupRun>>>>,
+    pub(crate) nonces_reserved: NonceReservedListeners,
 }
 
 type Signal = Box<dyn Sink<()>>;
+
+pub(crate) trait NonceSource {
+    fn nonces_available(&self, id: DeviceId) -> u32;
+}
+
+#[derive(Clone)]
+pub(crate) struct NonceCounts(Arc<Mutex<Persisted<FrostCoordinator>>>);
+
+impl NonceSource for NonceCounts {
+    fn nonces_available(&self, id: DeviceId) -> u32 {
+        self.0
+            .lock()
+            .unwrap()
+            .nonces_available(id)
+            .values()
+            .copied()
+            .max()
+            .unwrap_or(0)
+    }
+}
+
+type NonceListener = Box<dyn Fn() -> bool + Send>;
+
+/// Listeners told whenever a signing session reserves nonces, the only way a device's available
+/// nonces go down.
+#[derive(Default, Clone)]
+pub(crate) struct NonceReservedListeners(Arc<Mutex<Vec<NonceListener>>>);
+
+impl NonceReservedListeners {
+    /// `listener` is dropped the first time it returns `false`. It must not register another
+    /// listener.
+    pub(crate) fn register(&self, listener: impl Fn() -> bool + Send + 'static) {
+        self.0.lock().unwrap().push(Box::new(listener));
+    }
+
+    pub(crate) fn notify(&self) {
+        self.0.lock().unwrap().retain(|listener| listener());
+    }
+
+    #[cfg(test)]
+    pub(crate) fn is_empty(&self) -> bool {
+        self.0.lock().unwrap().is_empty()
+    }
+}
 
 impl FfiCoordinator {
     pub fn new(
@@ -107,6 +152,7 @@ impl FfiCoordinator {
             device_names: Arc::new(Mutex::new(device_names)),
             backup_state: Arc::new(Mutex::new(backup_state)),
             backup_run_streams: Default::default(),
+            nonces_reserved: Default::default(),
         })
     }
 
@@ -419,14 +465,11 @@ impl FfiCoordinator {
     }
 
     pub fn nonces_available(&self, id: DeviceId) -> u32 {
-        self.coordinator
-            .lock()
-            .unwrap()
-            .nonces_available(id)
-            .values()
-            .copied()
-            .max()
-            .unwrap_or(0)
+        self.nonce_counts().nonces_available(id)
+    }
+
+    pub(crate) fn nonce_counts(&self) -> NonceCounts {
+        NonceCounts(self.coordinator.clone())
     }
 
     pub fn nonce_replenish_request(&self, devices: BTreeSet<DeviceId>) -> NonceReplenishRequest {
@@ -462,16 +505,19 @@ impl FfiCoordinator {
         task: WireSignTask,
         sink: impl Sink<SigningState>,
     ) -> anyhow::Result<()> {
-        let mut coordinator = self.coordinator.lock().unwrap();
-        let session_id =
-            coordinator.staged_mutate(&mut self.db.lock().unwrap(), |coordinator| {
+        let session_id = self.coordinator.lock().unwrap().staged_mutate(
+            &mut self.db.lock().unwrap(),
+            |coordinator| {
                 Ok(coordinator.start_sign(
                     access_structure_ref,
                     task,
                     &devices,
                     &mut rand::thread_rng(),
                 )?)
-            })?;
+            },
+        )?;
+        // Only once the coordinator lock is released: listeners read nonce counts through it.
+        self.nonces_reserved.notify();
 
         let signals = self.signing_session_signals.clone();
         let sink = sink.inspect(move |_| {
