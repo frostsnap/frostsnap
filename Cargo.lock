@@ -2141,6 +2141,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "frostsnapp_macros"
+version = "0.0.1"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
+]
+
+[[package]]
 name = "fugit"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4125,6 +4134,7 @@ dependencies = [
  "frostsnap_core",
  "frostsnap_desktop_camera",
  "frostsnap_secure_boot",
+ "frostsnapp_macros",
  "futures",
  "image",
  "lazy_static",
