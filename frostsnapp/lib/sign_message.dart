@@ -4,10 +4,12 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:frostsnap/animated_check.dart';
 import 'package:frostsnap/device_action.dart';
+import 'package:frostsnap/device_selector.dart';
 import 'package:frostsnap/id_ext.dart';
 import 'package:frostsnap/global.dart';
 import 'package:frostsnap/wallet_key_mismatch.dart';
 import 'package:frostsnap/src/rust/api.dart';
+import 'package:frostsnap/src/rust/api/broadcast.dart';
 import 'package:frostsnap/src/rust/api/coordinator.dart';
 import 'package:frostsnap/src/rust/api/signing.dart';
 import 'package:frostsnap/stream_ext.dart';
@@ -52,16 +54,21 @@ class SignMessageForm extends StatefulWidget {
 
 class _SignMessageFormState extends State<SignMessageForm> {
   final _messageController = TextEditingController();
-  Set<DeviceId> selected = deviceIdSet([]);
+  final selection = coord.signerSelection();
+  late final UnitBroadcastSubscription selectionSub;
 
   @override
   void initState() {
     super.initState();
+    selectionSub = selection.subscribe();
+    selectionSub.start().listen((_) => mounted ? setState(() {}) : null);
   }
 
   @override
   void dispose() {
     _messageController.dispose();
+    selectionSub.dispose();
+    selection.dispose();
     super.dispose();
   }
 
@@ -69,6 +76,7 @@ class _SignMessageFormState extends State<SignMessageForm> {
   Widget build(BuildContext context) {
     final accessStructure = widget.frostKey.accessStructures()[0];
     final threshold = accessStructure.threshold();
+    final selected = selection.selected();
     final buttonReady =
         selected.length == threshold && _messageController.text.isNotEmpty;
 
@@ -112,11 +120,11 @@ class _SignMessageFormState extends State<SignMessageForm> {
             'Select $threshold device${threshold > 1 ? "s" : ""} to sign with:',
           ),
         ),
-        SigningDeviceSelector(
-          frostKey: widget.frostKey,
-          onChanged: (selectedDevices) => setState(() {
-            selected = selectedDevices;
-          }),
+        DeviceSelectorList(
+          devices: DeviceItem.fromAccessStructure(accessStructure),
+          selected: deviceIdSet(selected),
+          onChanged: (id, checked) =>
+              checked ? selection.select(dId: id) : selection.deselect(dId: id),
         ),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -126,71 +134,6 @@ class _SignMessageFormState extends State<SignMessageForm> {
           ),
         ),
       ],
-    );
-  }
-}
-
-class SigningDeviceSelector extends StatefulWidget {
-  final FrostKey frostKey;
-  final Function(Set<DeviceId>)? onChanged;
-  final Iterable<DeviceId>? initialSet;
-
-  const SigningDeviceSelector({
-    super.key,
-    required this.frostKey,
-    this.onChanged,
-    this.initialSet,
-  });
-
-  @override
-  State<SigningDeviceSelector> createState() => _SigningDeviceSelectorState();
-}
-
-class _SigningDeviceSelectorState extends State<SigningDeviceSelector> {
-  final Set<DeviceId> selected = deviceIdSet([]);
-
-  @override
-  void initState() {
-    super.initState();
-    final initialSet = widget.initialSet;
-    if (initialSet != null) selected.addAll(initialSet);
-  }
-
-  @override
-  void dispose() {
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final accessStructure = widget.frostKey.accessStructures()[0];
-    final devices = accessStructure.devices();
-
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: devices.map((id) {
-        final name = coord.getDeviceName(id: id);
-        onChanged(bool? value) {
-          setState(() {
-            if (value == true) {
-              selected.add(id);
-            } else {
-              selected.remove(id);
-            }
-          });
-          widget.onChanged?.call(selected);
-        }
-
-        final enoughNonces = coord.noncesAvailable(id: id) >= 1;
-        return CheckboxListTile(
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-          title: Text(
-            "${name ?? '<unknown>'}${enoughNonces ? '' : ' (not enough nonces)'}",
-          ),
-          value: selected.contains(id),
-          onChanged: enoughNonces ? onChanged : null,
-        );
-      }).toList(),
     );
   }
 }

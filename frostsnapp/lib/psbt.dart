@@ -7,11 +7,13 @@ import 'package:flutter/material.dart';
 import 'package:frostsnap/camera/camera.dart';
 import 'package:frostsnap/contexts.dart';
 import 'package:frostsnap/copy_feedback.dart';
+import 'package:frostsnap/device_selector.dart';
+import 'package:frostsnap/global.dart';
 import 'package:frostsnap/id_ext.dart';
 import 'package:frostsnap/maybe_fullscreen_dialog.dart';
-import 'package:frostsnap/sign_message.dart';
 import 'package:frostsnap/snackbar.dart';
 import 'package:frostsnap/src/rust/api.dart';
+import 'package:frostsnap/src/rust/api/broadcast.dart';
 import 'package:frostsnap/src/rust/api/qr.dart';
 import 'package:frostsnap/src/rust/api/signing.dart';
 import 'package:frostsnap/src/rust/api/super_wallet.dart';
@@ -32,9 +34,23 @@ class LoadPsbtPage extends StatefulWidget {
 
 class LoadPsbtPageState extends State<LoadPsbtPage> {
   String? fileContents;
-  Set<DeviceId> selectedDevices = deviceIdSet([]);
+  final selection = coord.signerSelection();
+  late final UnitBroadcastSubscription selectionSub;
   SignedTx? signedTx;
-  final selectorKey = Key('key-selector');
+
+  @override
+  void initState() {
+    super.initState();
+    selectionSub = selection.subscribe();
+    selectionSub.start().listen((_) => mounted ? setState(() {}) : null);
+  }
+
+  @override
+  void dispose() {
+    selectionSub.dispose();
+    selection.dispose();
+    super.dispose();
+  }
 
   Future<bool> tryStartSigningPsbt(
     BuildContext context,
@@ -100,7 +116,7 @@ class LoadPsbtPageState extends State<LoadPsbtPage> {
                   .accessStructures()[0]
                   .accessStructureRef(),
               unsignedTx: unsignedTx,
-              devices: selectedDevices.toList(),
+              devices: selection.selected(),
             ),
           ),
         ),
@@ -115,7 +131,7 @@ class LoadPsbtPageState extends State<LoadPsbtPage> {
     final frostKey = widget.wallet.frostKey()!;
     final accessStructure = frostKey.accessStructures()[0];
     final enoughSelected =
-        selectedDevices.length == accessStructure.threshold();
+        selection.selected().length == accessStructure.threshold();
     final scanPsbtButton = TextButton.icon(
       onPressed: !enoughSelected
           ? null
@@ -166,15 +182,11 @@ class LoadPsbtPageState extends State<LoadPsbtPage> {
             'Select ${accessStructure.threshold()} device${accessStructure.threshold() > 1 ? "s" : ""} to sign with.',
           ),
         ),
-        SigningDeviceSelector(
-          key: selectorKey,
-          initialSet: selectedDevices,
-          frostKey: frostKey,
-          onChanged: (selected) {
-            setState(() {
-              selectedDevices = selected;
-            });
-          },
+        DeviceSelectorList(
+          devices: DeviceItem.fromAccessStructure(accessStructure),
+          selected: deviceIdSet(selection.selected()),
+          onChanged: (id, checked) =>
+              checked ? selection.select(dId: id) : selection.deselect(dId: id),
         ),
       ],
     );
