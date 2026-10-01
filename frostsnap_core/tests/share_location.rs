@@ -41,7 +41,9 @@ fn test_find_share_in_complete_wallet_single_device() {
     let first_device_id = expected_location.device_ids[0];
 
     // Now test find_share
-    let result = run.coordinator.find_share(share_image, TEST_ENCRYPTION_KEY);
+    let result = run
+        .coordinator
+        .find_share(share_image, None, TEST_ENCRYPTION_KEY);
 
     assert!(result.is_some(), "Should find share in complete wallet");
     let location = result.unwrap();
@@ -109,7 +111,9 @@ fn test_find_share_in_complete_wallet_multiple_devices() {
         .expect("should be able to add duplicate share");
 
     // Now find_share should return both devices
-    let result = run.coordinator.find_share(share_image, TEST_ENCRYPTION_KEY);
+    let result = run
+        .coordinator
+        .find_share(share_image, None, TEST_ENCRYPTION_KEY);
 
     assert!(result.is_some());
     let location = result.unwrap();
@@ -172,7 +176,7 @@ fn test_find_share_virtual_in_complete_wallet() {
     // Find this virtual share
     let result = run
         .coordinator
-        .find_share(virtual_share_image, TEST_ENCRYPTION_KEY);
+        .find_share(virtual_share_image, None, TEST_ENCRYPTION_KEY);
 
     assert!(
         result.is_some(),
@@ -225,7 +229,9 @@ fn test_find_share_in_restoration_physical() {
     let held_share = &restoration.access_structure.held_shares[0];
     let share_image = held_share.held_share.share_image;
 
-    let result = run.coordinator.find_share(share_image, TEST_ENCRYPTION_KEY);
+    let result = run
+        .coordinator
+        .find_share(share_image, None, TEST_ENCRYPTION_KEY);
 
     assert!(result.is_some(), "Should find share in restoration");
     let location = result.unwrap();
@@ -292,7 +298,7 @@ fn test_find_share_in_restoration_virtual() {
     // but no device has physically provided it to this coordinator
     let result = run
         .coordinator
-        .find_share(third_device_share_image, TEST_ENCRYPTION_KEY);
+        .find_share(third_device_share_image, None, TEST_ENCRYPTION_KEY);
 
     assert!(
         result.is_some(),
@@ -335,7 +341,9 @@ fn test_find_share_duplicate_same_restoration() {
         .share_image;
 
     // Try to find this share (which already exists in the restoration)
-    let result = run.coordinator.find_share(share_image, TEST_ENCRYPTION_KEY);
+    let result = run
+        .coordinator
+        .find_share(share_image, None, TEST_ENCRYPTION_KEY);
 
     assert!(result.is_some(), "Should find share already in restoration");
     let location = result.unwrap();
@@ -385,7 +393,9 @@ fn test_find_share_conflict_different_restorations() {
 
     // Now try to find the share from first restoration
     // It should be found in the first restoration
-    let result = run.coordinator.find_share(share_image, TEST_ENCRYPTION_KEY);
+    let result = run
+        .coordinator
+        .find_share(share_image, None, TEST_ENCRYPTION_KEY);
 
     assert!(result.is_some(), "Should find share in first restoration");
     let location = result.unwrap();
@@ -439,7 +449,9 @@ fn test_find_share_conflict_complete_vs_restoration() {
     run.run_until_finished(&mut env, &mut test_rng).unwrap();
 
     // Try to find the first device's share - it should be found in the complete wallet
-    let result = run.coordinator.find_share(share_image, TEST_ENCRYPTION_KEY);
+    let result = run
+        .coordinator
+        .find_share(share_image, None, TEST_ENCRYPTION_KEY);
 
     assert!(
         result.is_some(),
