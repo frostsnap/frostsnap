@@ -12,8 +12,10 @@ pub enum ShareBackupError {
         /// The invalid word that was provided
         word: String,
     },
-    /// The share index cannot be zero
-    InvalidShareIndex,
+    /// A `#0` backup was used where a share is needed
+    NotAShare,
+    /// The encoded scalar must be less than the secp256k1 group order
+    InvalidScalar,
     /// The share index could not be parsed as a number
     ShareIndexParseError,
     /// The words checksum verification failed
@@ -36,8 +38,14 @@ impl fmt::Display for ShareBackupError {
                     word_index, word
                 )
             }
-            ShareBackupError::InvalidShareIndex => {
-                write!(f, "Share index cannot be zero")
+            ShareBackupError::NotAShare => {
+                write!(
+                    f,
+                    "A #0 backup holds the secret itself and cannot be used as a share"
+                )
+            }
+            ShareBackupError::InvalidScalar => {
+                write!(f, "Scalar is not less than the secp256k1 group order")
             }
             ShareBackupError::ShareIndexParseError => {
                 write!(f, "Invalid share index format")
