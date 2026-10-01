@@ -415,7 +415,7 @@ impl<C: ColorInterpolate> AARoundedRectIter<C> {
             return 0;
         }
 
-        let target = (frac * total as u32).floor() as u64;
+        let target = frac.mul_floor(total);
 
         let mut cumulative = 0u64;
         for i in 0..8u8 {
@@ -724,6 +724,21 @@ mod tests {
     use super::*;
     use embedded_graphics::pixelcolor::Rgb565;
     use embedded_graphics::pixelcolor::RgbColor;
+
+    #[test]
+    fn frac_to_raw_spans_a_screen_sized_perimeter() {
+        // A screen-sized border's perimeter is ~230,000 in these scaled units, beyond Rat's range.
+        let bg = Rgb565::BLACK;
+        let iter = AARoundedRectIter::new(240, 280, 42, 5, bg, bg, bg);
+        let mut last = 0;
+        for tenths in 1..10 {
+            let raw = iter.frac_to_raw(Frac::from_ratio(tenths, 10));
+            assert!(raw > last, "{tenths}/10 -> {raw}, not past {last}");
+            last = raw;
+        }
+        assert!(last < iter.total_raw_pixels());
+        assert_eq!(iter.frac_to_raw(Frac::ONE), iter.total_raw_pixels());
+    }
 
     #[test]
     fn sanity() {

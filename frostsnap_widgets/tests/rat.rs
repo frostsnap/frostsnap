@@ -20,7 +20,7 @@ fn test_rat_from_ratio() {
 
     // Division by zero should give a very large value
     let div_by_zero = Rat::from_ratio(1, 0);
-    assert!(div_by_zero > Rat::from_ratio(1000000, 1));
+    assert!(div_by_zero > Rat::from_ratio(65535, 1));
 }
 
 #[test]
@@ -86,10 +86,10 @@ fn test_rat_mul_rat() {
 #[test]
 fn test_rat_div() {
     let half = Rat::from_ratio(1, 2);
-    assert_eq!(half / 2, 2_500); // Internal representation detail
+    assert_eq!(half / 2, Rat::from_ratio(1, 4));
 
     let three_quarters = Rat::from_ratio(3, 4);
-    assert_eq!(three_quarters / 3, 2_500);
+    assert_eq!(three_quarters / 3, Rat::from_ratio(1, 4));
 }
 
 #[test]
@@ -108,9 +108,9 @@ fn test_rat_display() {
 
 #[test]
 fn test_rat_debug() {
-    assert_eq!(format!("{:?}", Rat::from_ratio(1, 2)), "5000/10000");
-    assert_eq!(format!("{:?}", Rat::from_ratio(1, 4)), "2500/10000");
-    assert_eq!(format!("{:?}", Rat::ONE), "10000/10000");
+    assert_eq!(format!("{:?}", Rat::from_ratio(1, 2)), "32768/65536");
+    assert_eq!(format!("{:?}", Rat::from_ratio(1, 4)), "16384/65536");
+    assert_eq!(format!("{:?}", Rat::ONE), "65536/65536");
 }
 
 #[test]
@@ -169,8 +169,8 @@ fn test_frac_display() {
 
 #[test]
 fn test_frac_debug() {
-    assert_eq!(format!("{:?}", Frac::from_ratio(1, 2)), "Frac(5000/10000)");
-    assert_eq!(format!("{:?}", Frac::ONE), "Frac(10000/10000)");
+    assert_eq!(format!("{:?}", Frac::from_ratio(1, 2)), "Frac(32768/65536)");
+    assert_eq!(format!("{:?}", Frac::ONE), "Frac(65536/65536)");
 }
 
 #[test]

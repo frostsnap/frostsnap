@@ -3,6 +3,12 @@ use embedded_graphics::pixelcolor::{
     BinaryColor, Gray2, Gray4, GrayColor, PixelColor, Rgb565, RgbColor,
 };
 
+/// `from * (1 - frac)`, rounded half down. The `to` term rounds half up, and if both rounded up at a
+/// tie (a 63 -> 63 blend at exactly 1/2) the sum would overflow the channel.
+fn from_term(from: u8, frac: Frac) -> u32 {
+    from as u32 - (frac * from as u32).round()
+}
+
 /// Trait for colors that can be interpolated
 pub trait ColorInterpolate: PixelColor {
     /// Interpolate between two colors. Returns a color that is `frac` of the way from `self` to `other`.
@@ -19,13 +25,10 @@ impl ColorInterpolate for Rgb565 {
             return *self;
         }
 
-        // frac represents progress from self to other
-        let frac_inv = Frac::ONE - frac;
-
         // For each color component, calculate: self * (1-frac) + other * frac
-        let from_r = (frac_inv * self.r() as u32).round();
-        let from_g = (frac_inv * self.g() as u32).round();
-        let from_b = (frac_inv * self.b() as u32).round();
+        let from_r = from_term(self.r(), frac);
+        let from_g = from_term(self.g(), frac);
+        let from_b = from_term(self.b(), frac);
 
         let to_r = (frac * other.r() as u32).round();
         let to_g = (frac * other.g() as u32).round();
@@ -59,9 +62,7 @@ impl ColorInterpolate for Gray2 {
             return *self;
         }
 
-        let frac_inv = Frac::ONE - frac;
-
-        let from_v = (frac_inv * self.luma() as u32).round();
+        let from_v = from_term(self.luma(), frac);
         let to_v = (frac * other.luma() as u32).round();
 
         Gray2::new((from_v + to_v) as u8)
@@ -77,9 +78,7 @@ impl ColorInterpolate for Gray4 {
             return *self;
         }
 
-        let frac_inv = Frac::ONE - frac;
-
-        let from_v = (frac_inv * self.luma() as u32).round();
+        let from_v = from_term(self.luma(), frac);
         let to_v = (frac * other.luma() as u32).round();
 
         Gray4::new((from_v + to_v) as u8)
