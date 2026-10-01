@@ -365,6 +365,14 @@ impl State {
         self.tmp_waiting_consolidate.clear();
         self.tmp_waiting_save.clear();
     }
+
+    pub fn shares_being_saved(
+        &self,
+    ) -> impl Iterator<Item = (DeviceId, RestorationId, &HeldShare2)> {
+        self.tmp_waiting_save
+            .iter()
+            .map(|((device_id, _), (restoration_id, held))| (*device_id, *restoration_id, held))
+    }
 }
 
 impl FrostCoordinator {
@@ -556,9 +564,11 @@ impl FrostCoordinator {
         // exclude it from the restoration later.
 
         // Use find_share to check if share exists elsewhere
-        if let Some(location) =
-            self.find_share(recover_share.held_share.share_image, encryption_key)
-        {
+        if let Some(location) = self.find_share(
+            recover_share.held_share.share_image,
+            recover_share.held_share.access_structure_ref,
+            encryption_key,
+        ) {
             match location.key_state {
                 KeyLocationState::Restoring {
                     restoration_id: found_id,
@@ -604,7 +614,7 @@ impl FrostCoordinator {
             .ok_or(RestorePhysicalBackupError::UnknownRestorationId)?;
 
         // Use find_share to check if share exists elsewhere
-        if let Some(location) = self.find_share(phase.backup.share_image, encryption_key) {
+        if let Some(location) = self.find_share(phase.backup.share_image, None, encryption_key) {
             match location.key_state {
                 KeyLocationState::Restoring {
                     restoration_id: found_id,
@@ -650,6 +660,9 @@ impl FrostCoordinator {
             .clone();
 
         let access_structure_ref = AccessStructureRef::from_root_shared_key(&root_shared_key);
+        if let Some(key_name) = self.restored_wallet_already_exists(restoration_id) {
+            return Err(RestorationError::AlreadyExists { key_name });
+        }
 
         let device_to_share_index = state
             .access_structure
@@ -680,6 +693,20 @@ impl FrostCoordinator {
         ));
 
         Ok(access_structure_ref)
+    }
+
+    /// The name of the wallet in the app that this restoration's recovered key already is. It
+    /// checks the key, not the access structure: a wallet may hold the key under another one.
+    pub fn restored_wallet_already_exists(&self, restoration_id: RestorationId) -> Option<String> {
+        let shared_key = self
+            .restoration
+            .restorations
+            .get(&restoration_id)?
+            .access_structure
+            .shared_key
+            .as_ref()?;
+        let key_id = AccessStructureRef::from_root_shared_key(shared_key).key_id;
+        Some(self.keys.get(&key_id)?.key_name.clone())
     }
 
     pub fn get_restoration_state(&self, restoration_id: RestorationId) -> Option<RestorationState> {
@@ -1357,6 +1384,8 @@ pub enum RestorationError {
     UnknownRestorationId,
     /// You can't restore yet since you don't have enough shares
     NotEnoughShares,
+    /// The restored wallet is already in the app
+    AlreadyExists { key_name: String },
 }
 
 impl fmt::Display for RestorationError {
@@ -1366,6 +1395,9 @@ impl fmt::Display for RestorationError {
                 write!(f, "The restoration session no longer exists")
             }
             RestorationError::NotEnoughShares => write!(f, "Not enough shares to restore"),
+            RestorationError::AlreadyExists { key_name } => {
+                write!(f, "This wallet is already in the app as '{key_name}'")
+            }
         }
     }
 }
