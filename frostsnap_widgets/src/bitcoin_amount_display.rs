@@ -1,5 +1,5 @@
 use crate::DefaultTextStyle;
-use crate::{palette::PALETTE, prelude::*, rat::FatRat};
+use crate::{palette::PALETTE, prelude::*};
 use alloc::string::ToString;
 use embedded_graphics::{geometry::Size, pixelcolor::Rgb565};
 
@@ -31,16 +31,20 @@ pub struct BitcoinAmountDisplay {
 
 impl BitcoinAmountDisplay {
     pub fn new(satoshis: u64) -> Self {
-        let btc = FatRat::from_ratio(satoshis, 100_000_000);
-        let amount_str = format!("{}.", btc.whole_part());
+        const SATS_PER_BTC: u64 = 100_000_000;
+        let whole = satoshis / SATS_PER_BTC;
         let mut color = PALETTE.text_disabled;
-        if btc.whole_part() > 0 {
+        if whole > 0 {
             color = PALETTE.primary;
         }
-        let whole_text = Text::new(amount_str, DefaultTextStyle::new(crate::FONT_LARGE, color));
+        let whole_text = Text::new(
+            format!("{whole}."),
+            DefaultTextStyle::new(crate::FONT_LARGE, color),
+        );
 
-        // Get decimal digits iterator (take only 8 for Bitcoin)
-        let mut after_decimal = btc.decimal_digits().take(8).map(|digit| {
+        let decimals = (satoshis % SATS_PER_BTC) as u32;
+        let mut after_decimal = (0..8).rev().map(|place| {
+            let digit = decimals / 10u32.pow(place) % 10;
             if digit > 0 {
                 color = PALETTE.primary;
             }
