@@ -170,18 +170,23 @@ impl CoordSuperWallet {
         approot: MasterAppkey,
         network: bitcoin::NetworkKind,
     ) -> Vec<(BitcoinAccountKeychain, Descriptor<DescriptorPublicKey>)> {
-        [
-            BitcoinAccountKeychain::external(),
-            BitcoinAccountKeychain::internal(),
-        ]
-        .into_iter()
-        .zip(
-            //XXX: this logic is very brittle and implicit with respect to accounts
-            super::multi_x_descriptor_for_account(approot, BitcoinAccount::default(), network)
-                .into_single_descriptors()
-                .expect("should be well formed"),
-        )
-        .collect()
+        //XXX: implicit with respect to accounts: only the default account is ever described
+        super::multi_x_descriptor_for_account(approot, BitcoinAccount::default(), network)
+            .into_single_descriptors()
+            .expect("should be well formed")
+            .into_iter()
+            .map(|descriptor| {
+                let keychain = super::keychain_from_descriptor(&descriptor)
+                    .expect("our descriptors always encode a keychain");
+                (
+                    BitcoinAccountKeychain {
+                        account: BitcoinAccount::default(),
+                        keychain,
+                    },
+                    descriptor,
+                )
+            })
+            .collect()
     }
 
     pub(super) fn lazily_initialize_key(&mut self, master_appkey: MasterAppkey) {
@@ -360,12 +365,9 @@ impl CoordSuperWallet {
                     let derived = descriptor.at_derivation_index(i).ok()?;
                     let address = derived.address(self.network).ok()?;
                     if address == target_address {
-                        // FIXME: this should get the derivation path from the descriptor itself
-                        let external = account_descriptors[0] == *descriptor;
-                        let keychain = if external {
-                            BitcoinAccountKeychain::external()
-                        } else {
-                            BitcoinAccountKeychain::internal()
+                        let keychain = BitcoinAccountKeychain {
+                            account: BitcoinAccount::default(),
+                            keychain: super::keychain_from_descriptor(descriptor)?,
                         };
 
                         Some(self.address_info(
@@ -620,6 +622,54 @@ mod test {
     use super::*;
     use bitcoin::key::{Secp256k1, TweakedPublicKey};
     use frostsnap_core::{schnorr_fun::fun::Point, tweak::AppTweak};
+
+    #[test]
+    fn search_for_address_finds_internal_keychain_address() {
+        let network = bitcoin::Network::Bitcoin;
+        let db = Arc::new(Mutex::new(rusqlite::Connection::open_in_memory().unwrap()));
+        let (client, _handler) = {
+            let trusted = {
+                let mut conn = db.lock().unwrap();
+                Persisted::new(&mut *conn, network).unwrap()
+            };
+            crate::bitcoin::chain_sync::ChainClient::new(
+                bitcoin::constants::genesis_block(network).block_hash(),
+                crate::bitcoin::chain_sync::ElectrumConfig {
+                    enabled: crate::settings::ElectrumEnabled::None,
+                    primary: String::new(),
+                    backup: String::new(),
+                },
+                trusted,
+                db.clone(),
+            )
+        };
+        let mut wallet = CoordSuperWallet::load_or_init(db, network, client).unwrap();
+        let master_appkey =
+            MasterAppkey::derive_from_rootkey(Point::random(&mut rand::thread_rng()));
+        wallet.list_addresses(master_appkey);
+
+        let internal_descriptor = crate::bitcoin::descriptor_for_account_keychain(
+            (master_appkey, BitcoinAccountKeychain::internal()),
+            bitcoin::NetworkKind::Main,
+        );
+        let address = internal_descriptor
+            .at_derivation_index(7)
+            .unwrap()
+            .address(network)
+            .unwrap();
+
+        let found = wallet
+            .search_for_address(master_appkey, address.to_string(), 0, 20)
+            .unwrap();
+        assert!(!found.external);
+        assert_eq!(found.index, 7);
+        assert_eq!(
+            found.derivation_path,
+            BitcoinBip32Path::internal(NormalIndex::new(7).unwrap())
+                .path_segments_from_bitcoin_appkey()
+                .collect::<Vec<_>>()
+        );
+    }
 
     #[test]
     fn confirmation_count_is_derived_from_the_wallet_snapshot_tip() {
