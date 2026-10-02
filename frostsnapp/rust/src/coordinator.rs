@@ -661,7 +661,7 @@ impl FfiCoordinator {
 
     pub fn get_device_case_color(&self, id: DeviceId) -> Option<api::device_list::CaseColor> {
         let genuine_certs = self.genuine_certs.as_ref()?.lock().unwrap();
-        api::device_list::CaseColor::from_comms(genuine_certs.get(id)?.case_color())
+        Some(genuine_certs.get(id)?.case_color())
     }
 
     pub fn genuine_check_enabled(&self) -> bool {

@@ -193,13 +193,14 @@ class _DeviceDetailsState extends State<DeviceDetails> {
           ]
         : <Widget>[];
 
+    final swatch = device.caseColor?.swatch;
     final advancedHidden = [
-      if (device.caseColor != null)
+      if (swatch != null)
         ListTile(
           contentPadding: EdgeInsets.symmetric(horizontal: 16),
           title: Text('Case Colour'),
-          subtitle: Text(device.caseColor!.label, style: monospaceTextStyle),
-          leading: Icon(Icons.circle, color: device.caseColor!.color),
+          subtitle: Text(swatch.label, style: monospaceTextStyle),
+          leading: Icon(Icons.circle, color: swatch.color),
         ),
       CopyListTile(
         data: device.id.toHex(),

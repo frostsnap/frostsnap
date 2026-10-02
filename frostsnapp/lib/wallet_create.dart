@@ -911,7 +911,7 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
         leading: Icon(
           Icons.key,
           color:
-              device?.caseColor?.color ??
+              device?.caseColor?.swatch?.color ??
               (enabled
                   ? cs.onSurfaceVariant
                   : cs.onSurfaceVariant.withValues(alpha: 0.5)),
