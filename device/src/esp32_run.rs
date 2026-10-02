@@ -29,7 +29,7 @@ use frostsnap_core::{Gist, Kind};
 use frostsnap_embedded::NonceAbSlot;
 use rand_core::RngCore;
 
-use crate::ds::HardwareDs;
+use crate::ds::{HardwareDs, SignRequest};
 use crate::efuse::EfuseHmacKeys;
 use crate::frosty_ui::FrostyUi;
 use crate::ota::OtaPartitions;
@@ -220,18 +220,13 @@ impl<'a> DeviceLoop<'a> {
             DeviceAction::FactoryAttest(challenge) => {
                 let signed = DsSignedMessage::GenuineAttestationV0 {
                     challenge,
-                    attested: attested.clone(),
+                    attested,
                 };
-                let Some(ds_signature) = hw_ds.sign(&signed.to_signing_bytes(), self.sha256) else {
-                    return;
-                };
-                self.upstream_connection
-                    .send_to_coordinator([DeviceSendBody::GenuineCheck(
-                        DeviceMessage::FactoryAttestation {
-                            attested: Box::new(attested),
-                            ds_signature: Box::new(ds_signature),
-                        },
-                    )]);
+                hw_ds.push(
+                    SignRequest::FactoryAttestation(challenge),
+                    &signed.to_signing_bytes(),
+                    self.sha256,
+                )
             }
             DeviceAction::IdentityAttest(challenge) => {
                 let schnorr = frostsnap_core::schnorr_fun::new_with_deterministic_nonces::<
@@ -797,6 +792,27 @@ impl<'a> DeviceLoop<'a> {
                 }
                 UiEvent::EraseDataConfirm => {
                     self.erase_state = Some(erase::Erase::new(&self.full_nvs));
+                }
+            }
+        }
+
+        if let Some(hw_ds) = self.hardware_rsa.as_mut() {
+            if let Some((request, ds_signature)) = hw_ds.poll() {
+                match request {
+                    SignRequest::FactoryAttestation(_) => {
+                        if let Ok(factory_data) = hw_ds.factory_data().read() {
+                            let attested = AttestedDevice::V0 {
+                                device_id: self.device_id,
+                                certificate: factory_data.certificate,
+                            };
+                            self.upstream_connection.send_to_coordinator([
+                                DeviceSendBody::GenuineCheck(DeviceMessage::FactoryAttestation {
+                                    attested: Box::new(attested),
+                                    ds_signature: Box::new(ds_signature),
+                                }),
+                            ]);
+                        }
+                    }
                 }
             }
         }
