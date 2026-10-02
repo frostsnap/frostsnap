@@ -79,7 +79,7 @@ class _DeviceListPageState extends State<DeviceListPage> {
             color: hasKey && hasWallet ? null : theme.disabledColor,
           ),
         ),
-        leading: Icon(Icons.key),
+        leading: Icon(Icons.key, color: device.caseColor?.color),
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           spacing: 8,
