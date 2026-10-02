@@ -1,5 +1,6 @@
 import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
+import 'package:frostsnap/certificate_details.dart';
 import 'package:frostsnap/global.dart';
 import 'package:frostsnap/id_ext.dart';
 import 'package:frostsnap/src/rust/api.dart';
@@ -13,9 +14,9 @@ final bool genuineCheckEnabled = coord.genuineCheckEnabled();
 
 enum GenuineLook { genuine, updateToVerify, unverified }
 
-/// Note what this file does *not* import: `device_colors.dart`. Tinting a "Genuine" pill with the
-/// case colour gave a red device a red badge (red being the universal error colour) and made a
-/// black device's badge invisible against the dark theme.
+/// The badge's colours come only from the status, never the case colour: tinting a "Genuine" pill
+/// with it gave a red device a red badge (red being the universal error colour) and made a black
+/// device's badge invisible against the dark theme.
 extension GenuineStatusExt on GenuineStatus {
   GenuineLook get look => switch (this) {
     GenuineStatus_Genuine() => GenuineLook.genuine,
@@ -98,11 +99,21 @@ void showGenuineExplanation(BuildContext context, GenuineStatus status) {
             size: 28,
           ),
           title: Text(title),
-          content: Text(
-            body,
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                body,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+              if (status case GenuineStatus_Genuine(:final certificate)) ...[
+                const SizedBox(height: 16),
+                CertificateDetails(certificate: certificate),
+              ],
+            ],
           ),
           actions: [
             TextButton(
