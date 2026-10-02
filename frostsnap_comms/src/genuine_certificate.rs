@@ -45,6 +45,19 @@ impl CertificateBody {
             CertificateBody::Frontier { case_color, .. } => *case_color,
         }
     }
+
+    pub fn revision(&self) -> &str {
+        match self {
+            CertificateBody::Frontier { revision, .. } => revision,
+        }
+    }
+
+    /// Unix seconds, UTC.
+    pub fn provisioned_at(&self) -> u64 {
+        match self {
+            CertificateBody::Frontier { timestamp, .. } => *timestamp,
+        }
+    }
 }
 
 #[derive(bincode::Encode, bincode::Decode, Debug, Clone, PartialEq)]

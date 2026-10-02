@@ -46,8 +46,35 @@ impl CaseColor {
     }
 }
 
+/// What the factory certified about a device, from a verified certificate.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GenuineCertificate {
+    pub serial: String,
+    pub revision: String,
+    pub case_color: Option<CaseColor>,
+    /// Unix seconds, UTC.
+    pub provisioned_at: u64,
+    /// PKCS#1 DER encoding of the device's DS (RSA) public key.
+    pub ds_public_key: Vec<u8>,
+}
+
+impl GenuineCertificate {
+    #[frb(ignore)]
+    pub fn from_body(
+        body: &frostsnap_coordinator::frostsnap_comms::genuine_certificate::CertificateBody,
+    ) -> Self {
+        Self {
+            serial: body.serial_number(),
+            revision: body.revision().to_string(),
+            case_color: CaseColor::from_comms(body.case_color()),
+            provisioned_at: body.provisioned_at(),
+            ds_public_key: body.ds_public_key().clone(),
+        }
+    }
+}
+
 /// A failed attestation is never shown.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum GenuineStatus {
     Unattested {
         firmware_supports_check: bool,
@@ -56,7 +83,9 @@ pub enum GenuineStatus {
         firmware_supports_check: bool,
     },
     /// Proven for this connection.
-    Genuine,
+    Genuine {
+        certificate: GenuineCertificate,
+    },
 }
 
 impl GenuineStatus {
@@ -84,7 +113,9 @@ impl GenuineStatus {
                 CaseColor::from_comms(certificate.case_color()),
             ),
             S::Genuine { certificate } => (
-                GenuineStatus::Genuine,
+                GenuineStatus::Genuine {
+                    certificate: GenuineCertificate::from_body(&certificate),
+                },
                 CaseColor::from_comms(certificate.case_color()),
             ),
         }
