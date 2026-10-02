@@ -272,6 +272,10 @@ build-dmg:
 test-ordinary +ARGS="":
     cargo test {{ARGS}}
 
+test-app +ARGS="": maybe-gen
+    cargo build -p rust_lib_frostsnapp
+    ( cd frostsnapp; flutter test {{ARGS}} )
+
 test: test-ordinary
 
 check-ordinary +ARGS="":
