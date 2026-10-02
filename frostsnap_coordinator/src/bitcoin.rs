@@ -65,11 +65,37 @@ pub fn descriptor_for_account_keychain(
     keychain: KeychainId,
     network: bitcoin::NetworkKind,
 ) -> Descriptor<DescriptorPublicKey> {
-    let idx = keychain.1.keychain as usize;
     multi_x_descriptor_for_account(keychain.0, keychain.1.account, network)
         .into_single_descriptors()
         .expect("infallible")
-        .remove(idx)
+        .into_iter()
+        .find(|descriptor| keychain_from_descriptor(descriptor) == Some(keychain.1.keychain))
+        .expect("the multi descriptor contains every keychain")
+}
+
+/// The keychain a descriptor encodes, read from its own derivation path rather
+/// than from its position in a vector of split descriptors. Returns `None` for
+/// descriptors that don't end in one of our keychain child numbers.
+pub fn keychain_from_descriptor(descriptor: &Descriptor<DescriptorPublicKey>) -> Option<Keychain> {
+    let desc_key = match descriptor {
+        Descriptor::Tr(tr) => tr.internal_key(),
+        _ => return None,
+    };
+    let derivation_path = match desc_key {
+        DescriptorPublicKey::XPub(xpub) => &xpub.derivation_path,
+        // defensive: a split descriptor never has multiple paths
+        DescriptorPublicKey::MultiXPub(multi) => multi.derivation_paths.paths().first()?,
+        _ => return None,
+    };
+    match derivation_path.into_iter().next_back()? {
+        ChildNumber::Normal { index } if *index == Keychain::External as u32 => {
+            Some(Keychain::External)
+        }
+        ChildNumber::Normal { index } if *index == Keychain::Internal as u32 => {
+            Some(Keychain::Internal)
+        }
+        _ => None,
+    }
 }
 
 fn peek_spk(approot: MasterAppkey, path: BitcoinBip32Path) -> ScriptBuf {
@@ -92,6 +118,27 @@ mod test {
     };
 
     use super::*;
+
+    #[test]
+    fn keychain_is_read_from_the_descriptor_path_not_its_position() {
+        let master_appkey = MasterAppkey::from_str("0325b0d1cda060241998916f45d02e227db436bdd708a55cf1dc67f3f534e332186fd6543fbfc5dd07094e93543fa05120f12d3a80876aa011a4897b7a0770d1fb").unwrap();
+        let descriptors = multi_x_descriptor_for_account(
+            master_appkey,
+            BitcoinAccount::default(),
+            bitcoin::NetworkKind::Main,
+        )
+        .into_single_descriptors()
+        .unwrap();
+
+        assert_eq!(
+            keychain_from_descriptor(&descriptors[0]),
+            Some(Keychain::External)
+        );
+        assert_eq!(
+            keychain_from_descriptor(&descriptors[1]),
+            Some(Keychain::Internal)
+        );
+    }
 
     #[test]
     fn descriptor_should_match_frostsnap_core() {
