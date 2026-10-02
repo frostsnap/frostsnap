@@ -1,14 +1,31 @@
 use crate::flash::FactoryDataHandle;
+use alloc::collections::VecDeque;
 use esp_hal::{peripherals::DS, sha::Sha};
-use frostsnap_comms::factory::pad_message_for_rsa;
 use frostsnap_comms::factory::DS_KEY_SIZE_BITS;
+use frostsnap_comms::factory::{pad_message_for_rsa, PaddedMessageBlock};
 use frostsnap_comms::genuine_certificate::DsSignature;
 use nb::block;
 
-/// Hardware DS signing implementation using ESP32's Digital Signature peripheral.
+/// What a DS signature is for, so the device loop can build the reply once it completes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SignRequest {
+    FactoryAttestation(frostsnap_comms::GenuineChallenge),
+}
+
+enum State {
+    Idle,
+    Computing(SignRequest),
+    /// `set_finish` has been issued; the peripheral is busy until it clears.
+    Finishing,
+}
+
+/// Signs with the ESP32 Digital Signature peripheral without blocking the device loop: a
+/// signature takes around 700 ms, during which the loop must keep serving USB and the chain.
 pub struct HardwareDs<'a> {
     ds: DS<'a>,
     factory_data: FactoryDataHandle<'a>,
+    queue: VecDeque<(SignRequest, PaddedMessageBlock)>,
+    state: State,
 }
 
 impl<'a> HardwareDs<'a> {
@@ -35,17 +52,32 @@ impl<'a> HardwareDs<'a> {
                 .modify(|_, w| w.crypto_ds_rst().clear_bit());
         });
 
-        Self { ds, factory_data }
+        Self {
+            ds,
+            factory_data,
+            queue: VecDeque::new(),
+            state: State::Idle,
+        }
     }
 
     pub fn factory_data(&self) -> FactoryDataHandle<'a> {
         self.factory_data
     }
 
-    /// Sign a message using the hardware DS peripheral. `None` if the factory data can't be read.
-    pub fn sign(&mut self, message: &[u8], sha256: &mut Sha<'_>) -> Option<DsSignature> {
-        let encrypted_params = self.factory_data.read().ok()?.ds_encrypted_params;
-        // Calculate message digest using hardware SHA and apply padding
+    /// Queues a signature over `message`. The result comes out of [`Self::poll`].
+    ///
+    /// Pending work stays bounded whatever the host sends: a request identical to the one computing
+    /// or one queued is dropped, and a new request replaces any queued request of the same kind.
+    /// The coordinator waits on only its newest request, so a replaced one would go unanswered
+    /// anyway.
+    pub fn push(&mut self, request: SignRequest, message: &[u8], sha256: &mut Sha<'_>) {
+        let in_flight = matches!(self.state, State::Computing(computing) if computing == request);
+        if in_flight || self.queue.iter().any(|(queued, _)| *queued == request) {
+            return;
+        }
+        self.queue.retain(|(queued, _)| {
+            core::mem::discriminant(queued) != core::mem::discriminant(&request)
+        });
         let mut digest = [0u8; 32];
         let mut hasher = sha256.start::<esp_hal::sha::Sha256>();
         let mut remaining = message;
@@ -53,10 +85,36 @@ impl<'a> HardwareDs<'a> {
             remaining = block!(hasher.update(remaining)).expect("infallible");
         }
         block!(hasher.finish(&mut digest)).unwrap();
+        self.queue
+            .push_back((request, pad_message_for_rsa(&digest)));
+    }
 
-        let padded_message = pad_message_for_rsa(&digest);
-        let sig = private_exponentiation(&self.ds, &encrypted_params, padded_message);
-        Some(words_to_signature(&sig))
+    /// Call on every iteration of the device loop. Never waits on the exponentiation.
+    pub fn poll(&mut self) -> Option<(SignRequest, DsSignature)> {
+        let regs = self.ds.register_block();
+        match self.state {
+            State::Computing(request) => {
+                if regs.query_busy().read().query_busy().bit() {
+                    return None;
+                }
+                let signature = words_to_signature(&read_signature(&self.ds));
+                regs.set_finish().write(|w| w.set_finish().set_bit());
+                self.state = State::Finishing;
+                return Some((request, signature));
+            }
+            State::Finishing => {
+                if regs.query_busy().read().query_busy().bit() {
+                    return None;
+                }
+                self.state = State::Idle;
+            }
+            State::Idle => {}
+        }
+        let (request, padded_message) = self.queue.pop_front()?;
+        let factory_data = self.factory_data.read().ok()?;
+        start_exponentiation(&self.ds, &factory_data.ds_encrypted_params, padded_message);
+        self.state = State::Computing(request);
+        None
     }
 }
 
@@ -70,11 +128,10 @@ fn words_to_signature(words: &[u32; 96]) -> DsSignature {
     DsSignature(result)
 }
 
-fn private_exponentiation(
-    ds: &DS<'_>,
-    encrypted_params: &[u8],
-    mut challenge: [u8; 384],
-) -> [u32; 96] {
+/// Waits only for the key check that `set_start` begins, which is short; the exponentiation runs
+/// on after this returns.
+fn start_exponentiation(ds: &DS<'_>, encrypted_params: &[u8], block: PaddedMessageBlock) {
+    let mut challenge = block.0;
     challenge.reverse();
 
     let iv = &encrypted_params[..16];
@@ -126,7 +183,10 @@ fn private_exponentiation(
     }
 
     regs.set_continue().write(|w| w.set_continue().set_bit());
-    while regs.query_busy().read().query_busy().bit_is_set() {}
+}
+
+fn read_signature(ds: &DS<'_>) -> [u32; 96] {
+    let regs = ds.register_block();
 
     let mut sig = [0u32; 96];
     if regs.query_check().read().bits() == 0 {
@@ -137,9 +197,6 @@ fn private_exponentiation(
     } else {
         panic!("Failed to read signature from DS!")
     }
-
-    regs.set_finish().write(|w| w.set_finish().set_bit());
-    while regs.query_busy().read().query_busy().bit() {}
 
     sig
 }
