@@ -9,12 +9,6 @@ use frostsnap_core::{
     Versioned,
 };
 
-pub const CERTIFICATE_BINCODE_CONFIG: bincode::config::Configuration<
-    bincode::config::LittleEndian,
-    bincode::config::Fixint,
-    bincode::config::NoLimit,
-> = bincode::config::standard().with_fixed_int_encoding();
-
 #[derive(bincode::Encode, bincode::Decode, Debug, Clone, PartialEq)]
 pub enum CertificateBody {
     Frontier {
@@ -43,6 +37,25 @@ impl CertificateBody {
     pub fn ds_public_key(&self) -> &Vec<u8> {
         match &self {
             CertificateBody::Frontier { ds_public_key, .. } => ds_public_key,
+        }
+    }
+
+    pub fn case_color(&self) -> CaseColor {
+        match self {
+            CertificateBody::Frontier { case_color, .. } => *case_color,
+        }
+    }
+
+    pub fn revision(&self) -> &str {
+        match self {
+            CertificateBody::Frontier { revision, .. } => revision,
+        }
+    }
+
+    /// Unix seconds, UTC.
+    pub fn provisioned_at(&self) -> u64 {
+        match self {
+            CertificateBody::Frontier { timestamp, .. } => *timestamp,
         }
     }
 }
@@ -92,7 +105,7 @@ impl core::fmt::Display for CaseColor {
             CaseColor::Silver => "Silver",
             CaseColor::Blue => "Blue",
             CaseColor::Red => "Red",
-            _ => "Black",
+            _ => "Unknown",
         };
         write!(f, "{}", s)
     }
@@ -132,7 +145,7 @@ pub fn sign_certificate<NG: NonceGen>(
     };
 
     let certificate_bytes =
-        bincode::encode_to_vec(&certificate_body, CERTIFICATE_BINCODE_CONFIG).unwrap();
+        bincode::encode_to_vec(&certificate_body, crate::SIGNING_BINCODE_CONFIG).unwrap();
     let message = Message::new("frostsnap-genuine-key", &certificate_bytes);
     let factory_signature = FrostsnapFactorySignature {
         factory_key: factory_keypair.public_key(),
@@ -157,7 +170,7 @@ pub fn verify_certificate(
             }
 
             let certificate_bytes =
-                bincode::encode_to_vec(&certificate.body, CERTIFICATE_BINCODE_CONFIG).unwrap();
+                bincode::encode_to_vec(&certificate.body, crate::SIGNING_BINCODE_CONFIG).unwrap();
             let message = Message::new("frostsnap-genuine-key", &certificate_bytes);
             let schnorr = Schnorr::<Sha256>::verify_only();
             schnorr
@@ -167,38 +180,77 @@ pub fn verify_certificate(
     }
 }
 
-/// Verify a certificate and its challenge-response in one step.
-/// Returns the verified certificate body on success.
-#[cfg(feature = "coordinator")]
-pub fn verify_genuine(
-    certificate: &Certificate,
-    factory_key: Point<EvenY>,
-    challenge: crate::GenuineChallenge,
-    signature: &[u8; 384],
-) -> Option<CertificateBody> {
-    let body = verify_certificate(certificate, factory_key)?;
-    verify_challenge(&body, challenge, signature).ok()?;
-    Some(body)
+/// A signature from a device's DS (RSA-3072) key.
+#[derive(Clone, PartialEq, Eq)]
+pub struct DsSignature(pub [u8; 384]);
+
+frostsnap_core::impl_display_debug_serialize! {
+    fn to_bytes(signature: &DsSignature) -> [u8;384] {
+        signature.0
+    }
 }
 
-/// Verify the RSA challenge-response signature from a device.
-/// The device signs SHA256(challenge) with its DS private key.
-#[cfg(feature = "coordinator")]
-pub fn verify_challenge(
-    certificate_body: &CertificateBody,
-    challenge: crate::GenuineChallenge,
-    signature: &[u8; 384],
-) -> Result<(), alloc::boxed::Box<dyn core::error::Error>> {
-    use rsa::pkcs1::DecodeRsaPublicKey;
-    use sha2::Digest;
+frostsnap_core::impl_fromstr_deserialize! {
+    name => "DS signature",
+    fn from_bytes(bytes: [u8;384]) -> DsSignature {
+        DsSignature(bytes)
+    }
+}
 
-    let ds_public_key = rsa::RsaPublicKey::from_pkcs1_der(certificate_body.ds_public_key())?;
-    let padding = rsa::Pkcs1v15Sign::new::<sha2::Sha256>();
-    let message_digest: [u8; 32] = sha2::Sha256::digest(challenge.0).into();
-    ds_public_key
-        .verify(padding, &message_digest, signature.as_ref())
-        .map_err(|e| alloc::format!("Challenge signature verification failed: {e}"))?;
-    Ok(())
+#[cfg(feature = "coordinator")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GenuineError {
+    DeviceIdMismatch,
+    UnknownFactoryKey,
+    CertificateSignatureInvalid,
+    MalformedDsKey,
+    FactoryAttestationSignatureInvalid,
+    IdentityAttestationSignatureInvalid,
+}
+
+#[cfg(feature = "coordinator")]
+impl core::fmt::Display for GenuineError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        let s = match self {
+            GenuineError::DeviceIdMismatch => "factory attestation is for another device",
+            GenuineError::UnknownFactoryKey => "certificate signed by an unknown factory key",
+            GenuineError::CertificateSignatureInvalid => "factory certificate signature invalid",
+            GenuineError::MalformedDsKey => "malformed DS public key in certificate",
+            GenuineError::FactoryAttestationSignatureInvalid => {
+                "factory attestation signature invalid"
+            }
+            GenuineError::IdentityAttestationSignatureInvalid => {
+                "identity attestation signature invalid"
+            }
+        };
+        write!(f, "{s}")
+    }
+}
+
+#[cfg(feature = "coordinator")]
+impl core::error::Error for GenuineError {}
+
+#[cfg(feature = "coordinator")]
+pub fn verify_certificate_detailed(
+    certificate: &Certificate,
+    factory_key: Point<EvenY>,
+) -> Result<CertificateBody, GenuineError> {
+    match &certificate.factory_signature {
+        frostsnap_core::Versioned::V0(factory_signature) => {
+            if factory_key != factory_signature.factory_key {
+                return Err(GenuineError::UnknownFactoryKey);
+            }
+            let certificate_bytes =
+                bincode::encode_to_vec(&certificate.body, crate::SIGNING_BINCODE_CONFIG).unwrap();
+            let message = Message::new("frostsnap-genuine-key", &certificate_bytes);
+            let schnorr = Schnorr::<Sha256>::verify_only();
+            if schnorr.verify(&factory_key, message, &factory_signature.signature) {
+                Ok(certificate.body.clone())
+            } else {
+                Err(GenuineError::CertificateSignatureInvalid)
+            }
+        }
+    }
 }
 
 #[cfg(test)]

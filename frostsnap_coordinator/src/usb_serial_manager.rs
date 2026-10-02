@@ -2,17 +2,12 @@
 const USB_VID: u16 = 12346;
 const USB_PID: u16 = 4097;
 
-// The genuine check as currently implemented is vulnerable to a MITM:
-// a malicious device can forward a received challenge to a genuine
-// device and relay the response back, passing the check without
-// actually holding the DS key. The signature needs to be over the
-// device's own DeviceId to bind it. Disabled until that's fixed.
-const DO_GENUINE_CHECK: bool = false;
-
-use crate::firmware::ValidatedFirmwareBin;
+use crate::firmware::{FirmwareVersion, ValidatedFirmwareBin};
+use crate::genuine_check::{GenuineCheck, GenuineStatus};
 use crate::PortOpenError;
 use crate::{FramedSerialPort, Serial};
 use anyhow::anyhow;
+use frostsnap_comms::genuine_check::DeviceMessage;
 use frostsnap_comms::DeviceName;
 use frostsnap_comms::{CommsMisc, ReceiveSerial};
 use frostsnap_comms::{
@@ -21,7 +16,6 @@ use frostsnap_comms::{
 };
 use frostsnap_comms::{CoordinatorSendMessage, MAGIC_BYTES_PERIOD};
 use frostsnap_core::message::DeviceToCoordinatorMessage;
-use frostsnap_core::schnorr_fun::fun::{marker::EvenY, Point};
 use frostsnap_core::{DeviceId, Gist};
 use std::collections::BTreeSet;
 use std::collections::HashMap;
@@ -57,12 +51,8 @@ pub struct UsbSerialManager {
     outbox_sender: std::sync::mpsc::Sender<CoordinatorSendMessage>,
     /// The firmware binary provided to devices who are doing an upgrade
     firmware_bin: Option<ValidatedFirmwareBin>,
-    /// Genuine certificate public key for verifying device certificates
-    genuine_cert_key: Option<Point<EvenY>>,
-    /// Ongoing genuine check challenges to devices
-    challenges: HashMap<DeviceId, frostsnap_comms::GenuineChallenge>,
-    /// Devices that passed genuine certificate verification
-    genuine_devices: HashMap<DeviceId, frostsnap_comms::genuine_certificate::CertificateBody>,
+    /// `None` in a build with no factory key.
+    genuine_check: Option<GenuineCheck>,
 }
 
 pub struct DevicePort {
@@ -96,9 +86,7 @@ impl UsbSerialManager {
             port_outbox: receiver,
             outbox_sender: sender,
             firmware_bin: None,
-            genuine_cert_key: None,
-            challenges: Default::default(),
-            genuine_devices: Default::default(),
+            genuine_check: None,
         }
     }
 
@@ -107,8 +95,8 @@ impl UsbSerialManager {
         self
     }
 
-    pub fn with_genuine_cert_key(mut self, key: Point<EvenY>) -> Self {
-        self.genuine_cert_key = Some(key);
+    pub fn with_genuine_check(mut self, genuine_check: GenuineCheck) -> Self {
+        self.genuine_check = Some(genuine_check);
         self
     }
 
@@ -127,12 +115,7 @@ impl UsbSerialManager {
         self.ignored.remove(port);
         if let Some(device_ids) = self.reverse_device_ports.remove(port) {
             for device_id in device_ids {
-                if self.device_ports.remove(&device_id).is_some() {
-                    changes.push(DeviceChange::Disconnected { id: device_id });
-                }
-                self.registered_devices.remove(&device_id);
-                self.challenges.remove(&device_id);
-                self.genuine_devices.remove(&device_id);
+                self.disconnect_device(device_id, changes);
                 event!(
                     Level::DEBUG,
                     port = port,
@@ -140,6 +123,27 @@ impl UsbSerialManager {
                     "removing device because of disconnected port"
                 )
             }
+        }
+    }
+
+    /// Everything this manager holds for a device that has gone.
+    fn disconnect_device(&mut self, device_id: DeviceId, changes: &mut Vec<DeviceChange>) {
+        if self.device_ports.remove(&device_id).is_some() {
+            changes.push(DeviceChange::Disconnected { id: device_id });
+        }
+        self.registered_devices.remove(&device_id);
+        if let Some(genuine_check) = &mut self.genuine_check {
+            genuine_check.disconnected(device_id);
+        }
+    }
+
+    fn recv_genuine(&mut self, from: DeviceId, message: DeviceMessage) {
+        if let Some(message) = self
+            .genuine_check
+            .as_mut()
+            .and_then(|genuine_check| genuine_check.recv(from, message))
+        {
+            self.outbox_sender.send(message).unwrap();
         }
     }
 
@@ -351,14 +355,11 @@ impl UsbSerialManager {
                                             .enumerate()
                                             .find(|(_, device_id)| **device_id == message.from)
                                         {
-                                            let index_of_disconnection = i + 1;
-                                            while device_list.len() > index_of_disconnection {
-                                                let device_id = device_list.pop().unwrap();
-                                                self.device_ports.remove(&device_id);
-                                                self.registered_devices.remove(&device_id);
-                                                device_changes.push(DeviceChange::Disconnected {
-                                                    id: device_id,
-                                                });
+                                            for device_id in device_list.split_off(i + 1) {
+                                                self.disconnect_device(
+                                                    device_id,
+                                                    &mut device_changes,
+                                                );
                                             }
                                         }
                                     }
@@ -413,39 +414,9 @@ impl UsbSerialManager {
                                         body: AppMessageBody::Misc(inner),
                                     }))
                                 }
-                                DeviceSendBody::SignedChallenge {
-                                    signature,
-                                    certificate,
-                                } => {
-                                    let Some(challenge) = self.challenges.remove(&message.from)
-                                    else {
-                                        event!(
-                                            Level::WARN,
-                                            device = message.from.to_string(),
-                                            "received SignedChallenge but no challenge was pending"
-                                        );
-                                        continue;
-                                    };
-                                    match self.genuine_cert_key.and_then(|key| {
-                                        frostsnap_comms::genuine_certificate::verify_genuine(
-                                            &certificate,
-                                            key,
-                                            challenge,
-                                            &signature,
-                                        )
-                                    }) {
-                                        Some(certificate_body) => {
-                                            self.genuine_devices
-                                                .insert(message.from, certificate_body.clone());
-                                            device_changes.push(DeviceChange::GenuineDevice {
-                                                id: message.from,
-                                                certificate: certificate_body,
-                                            });
-                                        }
-                                        None => {
-                                            event!(Level::WARN, device = message.from.to_string(), "genuine check failed — invalid certificate or challenge response");
-                                        }
-                                    }
+                                DeviceSendBody::_LegacySignedChallenge { .. } => {}
+                                DeviceSendBody::GenuineCheck(genuine) => {
+                                    self.recv_genuine(message.from, genuine)
                                 }
                             }
                         }
@@ -566,6 +537,15 @@ impl UsbSerialManager {
             }
         }
 
+        if let Some(genuine_check) = &mut self.genuine_check {
+            device_changes.extend(
+                genuine_check
+                    .take_changes()
+                    .into_iter()
+                    .map(|(id, status)| DeviceChange::Genuine { id, status }),
+            );
+        }
+
         device_changes
     }
 
@@ -603,15 +583,10 @@ impl UsbSerialManager {
             ))
             .unwrap();
 
-        if DO_GENUINE_CHECK && self.genuine_cert_key.is_some() {
-            let challenge = frostsnap_comms::GenuineChallenge::random(&mut rand::thread_rng());
-            self.challenges.insert(from, challenge);
-            self.outbox_sender
-                .send(CoordinatorSendMessage::to(
-                    from,
-                    CoordinatorSendBody::Challenge(Box::new(challenge)),
-                ))
-                .unwrap();
+        if let Some(message) = self.genuine_check.as_mut().and_then(|genuine_check| {
+            genuine_check.connected(from, FirmwareVersion::new(firmware_digest))
+        }) {
+            self.outbox_sender.send(message).unwrap();
         }
 
         self.reverse_device_ports
@@ -846,9 +821,9 @@ pub enum DeviceChange {
         id: DeviceId,
     },
     AppMessage(AppMessage),
-    GenuineDevice {
+    Genuine {
         id: DeviceId,
-        certificate: frostsnap_comms::genuine_certificate::CertificateBody,
+        status: GenuineStatus,
     },
 }
 

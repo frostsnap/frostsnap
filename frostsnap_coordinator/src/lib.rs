@@ -5,6 +5,7 @@ pub mod enter_physical_backup;
 pub mod erase_device;
 pub mod firmware;
 pub mod firmware_upgrade;
+pub mod genuine_check;
 pub mod keygen;
 pub mod nonce_replenish;
 mod serial_port;

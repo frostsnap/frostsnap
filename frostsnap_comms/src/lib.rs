@@ -10,6 +10,7 @@ pub mod firmware_reader;
 pub mod firmware_version;
 pub mod fixed_string;
 pub mod genuine_certificate;
+pub mod genuine_check;
 use alloc::boxed::Box;
 use alloc::string::ToString;
 use alloc::vec::Vec;
@@ -22,7 +23,7 @@ pub use fixed_string::{
     DeviceName, FixedString, StringTooLong, DEVICE_NAME_MAX_LENGTH, KEY_NAME_MAX_LENGTH,
 };
 
-use genuine_certificate::Certificate;
+use genuine_certificate::{Certificate, DsSignature};
 
 /// We choose this baudrate because esp32c3 freezes interrupts during flash
 /// erase cycles somtimes ~30ms. This is slow enough that the 128 byte uart
@@ -58,6 +59,14 @@ pub const BINCODE_CONFIG: bincode::config::Configuration<
     bincode::config::Varint,
     bincode::config::Limit<MAX_MESSAGE_ALLOC_SIZE>,
 > = bincode::config::standard().with_limit::<MAX_MESSAGE_ALLOC_SIZE>();
+
+/// For bytes that get signed: fixed-width little-endian integers, so the encoding of a value never
+/// depends on its magnitude.
+pub const SIGNING_BINCODE_CONFIG: bincode::config::Configuration<
+    bincode::config::LittleEndian,
+    bincode::config::Fixint,
+    bincode::config::NoLimit,
+> = bincode::config::standard().with_fixed_int_encoding();
 
 #[derive(Encode, Decode, Debug, Clone)]
 #[bincode(
@@ -226,7 +235,10 @@ pub enum CoordinatorSendBody {
     Cancel,
     Upgrade(CoordinatorUpgradeMessage),
     DataErase,
-    Challenge(Box<GenuineChallenge>),
+    /// Answered by firmware up to v0.4.0 with an RSA signature over the bare challenge, which a
+    /// relay can forward. Never sent, and ignored by current firmware.
+    _LegacyChallenge(Box<GenuineChallenge>),
+    GenuineCheck(genuine_check::CoordinatorMessage),
 }
 
 impl From<CoordinatorSendBody> for WireCoordinatorSendBody {
@@ -448,10 +460,11 @@ pub enum DeviceSendBody {
     NeedName,
     _LegacyAckUpgradeMode, // Used by earliest devices
     Misc(CommsMisc),
-    SignedChallenge {
-        signature: Box<[u8; 384]>,
+    _LegacySignedChallenge {
+        signature: Box<DsSignature>,
         certificate: Box<Certificate>,
     },
+    GenuineCheck(genuine_check::DeviceMessage),
 }
 
 #[derive(Encode, Decode, Debug, Clone)]
@@ -547,6 +560,15 @@ impl Gist for DeviceSendBody {
         match self {
             DeviceSendBody::Core(msg) => msg.gist(),
             DeviceSendBody::Debug { message } => format!("debug: {message}"),
+            DeviceSendBody::GenuineCheck(genuine_check::DeviceMessage::FactoryAttestation {
+                attested,
+                ..
+            }) => {
+                format!(
+                    "FactoryAttestation(serial={})",
+                    attested.certificate().unverified_raw_serial()
+                )
+            }
             _ => format!("{self:?}"),
         }
     }
