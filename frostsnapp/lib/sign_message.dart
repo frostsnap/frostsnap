@@ -164,7 +164,10 @@ class _SigningDeviceSelectorState extends State<SigningDeviceSelector> {
   @override
   Widget build(BuildContext context) {
     final accessStructure = widget.frostKey.accessStructures()[0];
-    final devices = accessStructure.devices();
+    final devices = accessStructure.devices().sortByKeyShareIndex(
+      accessStructure,
+      (id) => id,
+    );
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -330,13 +333,23 @@ class DeviceSigningProgress extends StatelessWidget {
             }
             final state = snapshot.data!;
             final gotShares = deviceIdSet(state.gotShares);
+            final asRef = coord
+                .activeSigningSession(sessionId: state.sessionId)
+                ?.accessStructureRef();
+            final accessStruct = asRef == null
+                ? null
+                : coord.getAccessStructure(asRef: asRef);
+            final neededFrom = state.neededFrom.sortByKeyShareIndex(
+              accessStruct,
+              (id) => id,
+            );
             return ListView.builder(
               physics: NeverScrollableScrollPhysics(),
               shrinkWrap: true,
-              itemCount: state.neededFrom.length,
+              itemCount: neededFrom.length,
               itemBuilder: (context, index) {
                 final Widget icon;
-                final id = state.neededFrom[index];
+                final id = neededFrom[index];
                 final name = coord.getDeviceName(id: id);
                 if (gotShares.contains(id)) {
                   icon = AnimatedCheckCircle();
