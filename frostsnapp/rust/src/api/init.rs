@@ -75,9 +75,6 @@ impl super::Api {
         if let Some(firmware) = crate::FIRMWARE.map(ValidatedFirmwareBin::new).transpose()? {
             usb_manager = usb_manager.with_firmware_bin(firmware);
         }
-        if let Some(key) = load_genuine_cert_key() {
-            usb_manager = usb_manager.with_genuine_cert_key(key);
-        }
         let (coord, app_state) = load_internal(app_dir, usb_manager)?;
         Ok((coord, app_state, ffi_serial))
     }
@@ -88,9 +85,6 @@ impl super::Api {
         let mut usb_manager = UsbSerialManager::new(Box::new(DesktopSerial));
         if let Some(firmware) = crate::FIRMWARE.map(ValidatedFirmwareBin::new).transpose()? {
             usb_manager = usb_manager.with_firmware_bin(firmware);
-        }
-        if let Some(key) = load_genuine_cert_key() {
-            usb_manager = usb_manager.with_genuine_cert_key(key);
         }
         load_internal(app_dir, usb_manager)
     }
@@ -129,7 +123,7 @@ fn load_internal(
     })?;
     let db = Arc::new(Mutex::new(db));
 
-    let coordinator = FfiCoordinator::new(db.clone(), usb_serial_manager)?;
+    let coordinator = FfiCoordinator::new(db.clone(), usb_serial_manager, load_genuine_cert_key())?;
     let coordinator = Coordinator(coordinator);
     let app_state = AppCtx {
         settings: RustAutoOpaque::new(Settings::new(db.clone(), app_dir)?),

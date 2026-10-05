@@ -97,6 +97,12 @@ impl DeviceList {
                         name: None,
                         id,
                         recovery_mode: api::RecoveryMode::Off,
+                        case_color: None,
+                        genuine: api::GenuineStatus::Unattested {
+                            firmware_supports_check: FirmwareVersion::new(firmware_digest)
+                                .features()
+                                .genuine_check,
+                        },
                     },
                 );
             }
@@ -156,13 +162,37 @@ impl DeviceList {
                 }
             }
             DeviceChange::AppMessage(_) => { /* not relevant */ }
-            DeviceChange::GenuineDevice { .. } => { /* not displayed in app yet */ }
+            DeviceChange::Genuine { id, status } => {
+                let (genuine, case_color) = api::GenuineStatus::from_coordinator(status);
+                self.update_device(id, |device| {
+                    device.genuine = genuine;
+                    device.case_color = case_color;
+                });
+            }
         }
     }
 
     pub fn get_device(&self, id: DeviceId) -> Option<api::ConnectedDevice> {
         self.connected.get(&id).cloned()
     }
+
+    /// A device that isn't in `devices` yet (unnamed) is still updated, and carries the update
+    /// into the list when it is appended.
+    fn update_device(&mut self, id: DeviceId, f: impl FnOnce(&mut api::ConnectedDevice)) {
+        let index = self.index_of(id);
+        let Some(connected) = self.connected.get_mut(&id) else {
+            return;
+        };
+        f(connected);
+        if let Some(index) = index {
+            self.outbox.push(api::DeviceListChange {
+                kind: api::DeviceListChangeKind::GenuineCheck,
+                index: index as u32,
+                device: connected.clone(),
+            });
+        }
+    }
+
     fn index_of(&self, id: DeviceId) -> Option<usize> {
         self.devices
             .iter()
