@@ -1,13 +1,14 @@
-use alloc::vec::Vec;
+use crate::flash::FactoryDataHandle;
 use esp_hal::{peripherals::DS, sha::Sha};
 use frostsnap_comms::factory::pad_message_for_rsa;
 use frostsnap_comms::factory::DS_KEY_SIZE_BITS;
+use frostsnap_comms::genuine_certificate::DsSignature;
 use nb::block;
 
 /// Hardware DS signing implementation using ESP32's Digital Signature peripheral.
 pub struct HardwareDs<'a> {
     ds: DS<'a>,
-    encrypted_params: Vec<u8>,
+    factory_data: FactoryDataHandle<'a>,
 }
 
 impl<'a> HardwareDs<'a> {
@@ -23,7 +24,7 @@ impl<'a> HardwareDs<'a> {
     /// the read-modify-write must run inside a critical section to avoid
     /// clobbering a concurrent update from an interrupt handler. esp-hal's
     /// own `PeripheralClockControl` does the same via its `NonReentrantMutex`.
-    pub fn new(ds: DS<'a>, encrypted_params: Vec<u8>) -> Self {
+    pub fn new(ds: DS<'a>, factory_data: FactoryDataHandle<'a>) -> Self {
         critical_section::with(|_| {
             let sys = esp_hal::peripherals::SYSTEM::regs();
             sys.perip_clk_en1()
@@ -34,14 +35,16 @@ impl<'a> HardwareDs<'a> {
                 .modify(|_, w| w.crypto_ds_rst().clear_bit());
         });
 
-        Self {
-            ds,
-            encrypted_params,
-        }
+        Self { ds, factory_data }
     }
 
-    /// Sign a message using the hardware DS peripheral
-    pub fn sign(&mut self, message: &[u8], sha256: &mut Sha<'_>) -> [u8; 384] {
+    pub fn factory_data(&self) -> FactoryDataHandle<'a> {
+        self.factory_data
+    }
+
+    /// Sign a message using the hardware DS peripheral. `None` if the factory data can't be read.
+    pub fn sign(&mut self, message: &[u8], sha256: &mut Sha<'_>) -> Option<DsSignature> {
+        let encrypted_params = self.factory_data.read().ok()?.ds_encrypted_params;
         // Calculate message digest using hardware SHA and apply padding
         let mut digest = [0u8; 32];
         let mut hasher = sha256.start::<esp_hal::sha::Sha256>();
@@ -52,19 +55,19 @@ impl<'a> HardwareDs<'a> {
         block!(hasher.finish(&mut digest)).unwrap();
 
         let padded_message = pad_message_for_rsa(&digest);
-        let sig = private_exponentiation(&self.ds, &self.encrypted_params, padded_message);
-        words_to_bytes(&sig)
+        let sig = private_exponentiation(&self.ds, &encrypted_params, padded_message);
+        Some(words_to_signature(&sig))
     }
 }
 
-fn words_to_bytes(words: &[u32; 96]) -> [u8; 384] {
+fn words_to_signature(words: &[u32; 96]) -> DsSignature {
     let mut result = [0u8; 384];
     for (i, &word) in words.iter().rev().enumerate() {
         let bytes = word.to_be_bytes();
         let start = i * 4;
         result[start..start + 4].copy_from_slice(&bytes);
     }
-    result
+    DsSignature(result)
 }
 
 fn private_exponentiation(

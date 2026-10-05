@@ -1,58 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:frostsnap/device_colors.dart';
-import 'package:frostsnap/genuine_badge.dart';
 import 'package:frostsnap/src/rust/api/device_list.dart';
 
 void main() {
-  group('GenuineStatus presentation', () {
-    const scheme = ColorScheme.dark();
-
-    test('every status is distinguishable from every other', () {
-      // Two statuses that look and read alike are worse than no badge: the whole
-      // point is that "verified" and "we could not verify" are not confusable.
-      final labels = GenuineStatus.values.map((s) => s.label).toSet();
-      expect(labels, hasLength(GenuineStatus.values.length));
-
-      final byAppearance = GenuineStatus.values
-          .map((s) => '${s.icon.codePoint}/${s.color(scheme)}')
-          .toSet();
-      expect(
-        byAppearance.length,
-        greaterThan(1),
-        reason: 'statuses must not all render identically',
-      );
-    });
-
-    test('genuine and unknown never render the same', () {
-      expect(
-        GenuineStatus.genuine.label,
-        isNot(GenuineStatus.unknown.label),
-      );
-      expect(
-        GenuineStatus.genuine.color(scheme),
-        isNot(GenuineStatus.unknown.color(scheme)),
-      );
-      expect(GenuineStatus.genuine.icon, isNot(GenuineStatus.unknown.icon));
-    });
-
-    test('a failed check is not dressed up as merely unchecked', () {
-      expect(
-        GenuineStatus.failed.color(scheme),
-        isNot(GenuineStatus.unknown.color(scheme)),
-      );
-      expect(GenuineStatus.failed.icon, isNot(GenuineStatus.unknown.icon));
-    });
-
-    test('every status explains itself', () {
-      for (final status in GenuineStatus.values) {
-        final (title, body) = status.explanation;
-        expect(title, isNotEmpty, reason: '$status has no title');
-        expect(body, isNotEmpty, reason: '$status has no explanation');
-      }
-    });
-  });
-
   group('CaseColor presentation', () {
     test('no two case colours render alike', () {
       // Colour exists so a device on screen can be matched to the one in your

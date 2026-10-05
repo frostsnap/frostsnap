@@ -3,24 +3,14 @@ import 'package:frostsnap/global.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/device_list.dart';
 
-/// Case colour for a device we may only hold an id for, taken from the persisted
-/// record so it works while the device is disconnected and costs no round-trip to
-/// the device itself.
-///
-/// `null` when we've never verified it — a device only tells us its colour as part
-/// of a certificate — or when it claims a colour this build has no name for. Prefer
-/// [ConnectedDevice.caseColor] when you have the device in hand; it is live.
+/// Case colour from the certificate on file, so it works while the device is disconnected. `null`
+/// when no certificate is on file or its colour has no name in this build.
 Color? caseAccentColor(DeviceId id) => coord.getDeviceCaseColor(id: id)?.color;
 
 /// The physical colours a Frostsnap case comes in.
 ///
-/// Cosmetic identity only — this is how someone tells their own devices apart on a
-/// desk. It is read from a device's certificate *before* and *regardless of*
-/// verification, so a device effectively chooses the colour it claims.
-///
-/// Nothing here may be used to signal trust. That lives in `genuine_badge.dart`,
-/// which deliberately imports nothing from this file: a device must not be able to
-/// influence how its own authenticity is rendered.
+/// Cosmetic identity only. A certificate on file says nothing about whether the device in front of
+/// the user is genuine, so nothing here may signal trust; that lives in `genuine_badge.dart`.
 extension CaseColorExt on CaseColor {
   /// Tuned for the app's dark theme. Black is rendered as a very dark grey rather
   /// than true black, which would be indistinguishable from "no colour known"

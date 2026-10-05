@@ -11,6 +11,7 @@ use crate::{
     DownstreamConnectionState, Duration, Instant, UpstreamConnection, UpstreamConnectionState,
 };
 use alloc::{boxed::Box, collections::VecDeque, string::ToString, vec::Vec};
+use frostsnap_comms::genuine_check::{self, AttestedDevice, DsSignedMessage};
 use frostsnap_comms::{
     CommsMisc, CoordinatorSendBody, CoordinatorUpgradeMessage, DeviceName, DeviceSendBody,
     ReceiveSerial, Sha256Digest, Upstream, MAGIC_BYTES_PERIOD,
@@ -50,7 +51,6 @@ struct DeviceLoop<'a> {
     rng: &'a mut ChaCha20Rng,
     hmac_keys: &'a mut EfuseHmacKeys<'a>,
     hardware_rsa: &'a mut Option<HardwareDs<'a>>,
-    certificate: &'a Option<frostsnap_comms::genuine_certificate::Certificate>,
     ota_partitions: &'a mut OtaPartitions<'a>,
     ui: &'a mut FrostyUi<'a>,
     sha256: &'a mut Sha<'a>,
@@ -90,7 +90,6 @@ impl<'a> DeviceLoop<'a> {
             ref mut rng,
             ref mut hmac_keys,
             ds: ref mut hardware_rsa,
-            ref certificate,
             ref mut nvs,
             ota: ref mut ota_partitions,
             ref mut ui,
@@ -176,7 +175,6 @@ impl<'a> DeviceLoop<'a> {
             rng,
             hmac_keys,
             hardware_rsa,
-            certificate,
             ota_partitions,
             ui,
             sha256,
@@ -202,6 +200,53 @@ impl<'a> DeviceLoop<'a> {
             erase_state: None,
             pending_device_name: None,
         })
+    }
+
+    fn genuine_check(&mut self, message: &genuine_check::CoordinatorMessage) {
+        let Some(hw_ds) = self.hardware_rsa.as_mut() else {
+            return;
+        };
+        let Ok(factory_data) = hw_ds.factory_data().read() else {
+            return;
+        };
+        let attested = AttestedDevice::V0 {
+            device_id: self.device_id,
+            certificate: factory_data.certificate,
+        };
+        let attested_digest = attested.digest();
+        match message.device_action(attested_digest) {
+            genuine_check::DeviceAction::FactoryAttest(challenge) => {
+                let signed = DsSignedMessage::GenuineAttestationV0 {
+                    challenge,
+                    attested: attested.clone(),
+                };
+                let Some(ds_signature) = hw_ds.sign(&signed.to_signing_bytes(), self.sha256) else {
+                    return;
+                };
+                self.upstream_connection
+                    .send_to_coordinator([DeviceSendBody::GenuineCheck(
+                        genuine_check::DeviceMessage::FactoryAttestation {
+                            attested: Box::new(attested),
+                            ds_signature: Box::new(ds_signature),
+                        },
+                    )]);
+            }
+            genuine_check::DeviceAction::IdentityAttest(challenge) => {
+                let schnorr = frostsnap_core::schnorr_fun::new_with_deterministic_nonces::<
+                    frostsnap_core::sha2::Sha256,
+                >();
+                let signature = genuine_check::sign_identity_attestation(
+                    &schnorr,
+                    self.signer.keypair(),
+                    challenge,
+                    attested_digest,
+                );
+                self.upstream_connection
+                    .send_to_coordinator([DeviceSendBody::GenuineCheck(
+                        genuine_check::DeviceMessage::IdentityAttestation { signature },
+                    )]);
+            }
+        }
     }
 
     fn update_default_workflow(&mut self) {
@@ -554,40 +599,9 @@ impl<'a> DeviceLoop<'a> {
                 CoordinatorSendBody::DataErase => self
                     .ui
                     .set_workflow(ui::Workflow::prompt(ui::Prompt::EraseDevice)),
-                CoordinatorSendBody::Challenge(challenge) => {
-                    if let (Some(hw_rsa), Some(cert)) =
-                        (self.hardware_rsa.as_mut(), self.certificate.as_ref())
-                    {
-                        use frostsnap_core::schnorr_fun;
-                        // Genuine-hardware proof: DS (RSA) signature over
-                        // `tag ‖ challenge ‖ device_id` (see genuine_challenge_message).
-                        let bound_message =
-                            frostsnap_comms::genuine_certificate::genuine_challenge_message(
-                                **challenge,
-                                self.device_id,
-                            );
-                        let rsa_signature = hw_rsa.sign(&bound_message, self.sha256);
-
-                        // Identity proof: schnorr signature over the challenge with
-                        // our DeviceId key (proof of possession).
-                        let schnorr = schnorr_fun::new_with_deterministic_nonces::<
-                            frostsnap_core::sha2::Sha256,
-                        >();
-                        let identity_signature =
-                            frostsnap_comms::genuine_certificate::sign_identity_challenge(
-                                &schnorr,
-                                self.signer.keypair(),
-                                **challenge,
-                            );
-
-                        self.upstream_connection.send_to_coordinator([
-                            DeviceSendBody::GenuineProof {
-                                rsa_signature: Box::new(rsa_signature),
-                                identity_signature,
-                                certificate: Box::new(cert.clone()),
-                            },
-                        ]);
-                    }
+                CoordinatorSendBody::_LegacyChallenge(_) => {}
+                CoordinatorSendBody::GenuineCheck(message) => {
+                    self.genuine_check(message);
                 }
             }
         }
