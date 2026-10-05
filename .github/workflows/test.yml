@@ -219,3 +219,30 @@ jobs:
       - uses: taiki-e/install-action@just
       - run: dart format --version
       - run: just lint-app
+
+  flutter-test:
+    name: Flutter Test
+    runs-on: ubuntu-latest
+    env:
+      RUSTUP_TOOLCHAIN: stable
+      # Keeps the cached target/debug small; nothing reads the debuginfo.
+      CARGO_PROFILE_DEV_DEBUG: 0
+      CARGO_INCREMENTAL: 0
+    steps:
+      - uses: actions/checkout@v4
+      - uses: taiki-e/install-action@just
+      - uses: "./.github/actions/fetch-cargo-deps"
+      - uses: "./.github/actions/generate-frb"
+      - uses: "./.github/actions/fetch-dart-deps"
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version-file: frostsnapp/.fvmrc
+          cache: true
+
+      - uses: "./.github/actions/cache-rust-target"
+        with:
+          key: "flutter-test-v0"
+          path: "target/debug"
+
+      - run: just test-app
