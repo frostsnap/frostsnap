@@ -9,7 +9,7 @@ use rand_chacha::ChaCha20Rng;
 use crate::{
     ds::HardwareDs,
     efuse::EfuseHmacKeys,
-    flash::VersionedFactoryData,
+    flash::FactoryDataHandle,
     frosty_ui::FrostyUi,
     io::SerialInterface,
     ota::OtaPartitions,
@@ -36,9 +36,6 @@ pub struct Resources<'a> {
 
     /// RSA hardware accelerator
     pub rsa: Rsa<'a, Blocking>,
-
-    /// Factory certificate (for production devices)
-    pub certificate: Option<frostsnap_comms::genuine_certificate::Certificate>,
 
     /// NVS partition for mutation log
     pub nvs: EspFlashPartition<'a>,
@@ -119,16 +116,9 @@ impl<'a> Resources<'a> {
 
         let ui = Box::new(FrostyUi::new(display, touch_receiver));
 
-        // Extract factory data
-        let factory = factory_data.into_factory_data();
-
-        // Create HardwareDs for production devices
-        let ds = Some(HardwareDs::new(ds, factory.ds_encrypted_params.clone()));
+        let ds = Some(HardwareDs::new(ds, factory_data));
 
         let rsa = Rsa::new(rsa);
-
-        // Extract certificate from factory data
-        let certificate = Some(factory.certificate);
 
         // Create serial interfaces
         let (upstream_serial, downstream_serial) =
@@ -139,7 +129,6 @@ impl<'a> Resources<'a> {
             hmac_keys,
             ds,
             rsa,
-            certificate,
             nvs: partitions.nvs,
             ota: partitions.ota,
             ui,
@@ -186,17 +175,7 @@ impl<'a> Resources<'a> {
 
         let ui = Box::new(FrostyUi::new(display, touch_receiver));
 
-        // Create HardwareDs if factory data is present (dev devices might have it)
-        let (ds, certificate) = if let Some(factory_data) = factory_data {
-            let factory = factory_data.into_factory_data();
-            (
-                Some(HardwareDs::new(ds, factory.ds_encrypted_params)),
-                Some(factory.certificate),
-            )
-        } else {
-            // Dev device without factory data - no hardware RSA
-            (None, None)
-        };
+        let ds = factory_data.map(|factory_data| HardwareDs::new(ds, factory_data));
 
         let rsa = Rsa::new(rsa);
 
@@ -208,7 +187,6 @@ impl<'a> Resources<'a> {
             rng,
             hmac_keys,
             ds,
-            certificate,
             rsa,
             nvs: partitions.nvs,
             ota: partitions.ota,
@@ -223,12 +201,12 @@ impl<'a> Resources<'a> {
     /// Read flash partitions and data common to both dev and prod
     fn read_flash_data(
         flash: FlashStorage<'static>,
-    ) -> (Partitions<'a>, Option<VersionedFactoryData>) {
+    ) -> (Partitions<'a>, Option<FactoryDataHandle<'a>>) {
         // Resources is leaked, so the partitions' flash lives as long as it does.
         let partitions = Partitions::load(Box::leak(Box::new(RefCell::new(flash))));
 
-        // Try to read factory data (may not exist on dev devices)
-        let factory_data = VersionedFactoryData::read(partitions.factory_cert).ok();
+        // Dev devices may have no factory data
+        let factory_data = FactoryDataHandle::open(partitions.factory_cert);
 
         (partitions, factory_data)
     }
