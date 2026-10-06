@@ -161,6 +161,17 @@ impl UnsignedTx {
         Transaction::from_template(&self.scoped())
     }
 
+    /// The unsigned transaction as a PSBT carrying each input's prevout, for a party that has to
+    /// commit to the txid before the transaction is signed — an Ark server cosigning a board.
+    #[frb(ignore)]
+    pub(crate) fn to_unsigned_psbt(&self) -> Result<Psbt> {
+        let mut psbt = Psbt::from_unsigned_tx(self.template_tx.to_rust_bitcoin_tx())?;
+        for (psbt_input, input) in psbt.inputs.iter_mut().zip(self.template_tx.inputs()) {
+            psbt_input.witness_utxo = Some(input.txout());
+        }
+        Ok(psbt)
+    }
+
     /// The transaction with these signatures witnessed onto the inputs they were produced for.
     ///
     /// Lives here rather than on `Transaction` because it needs the template, and only a

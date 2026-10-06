@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:collection/collection.dart';
+import 'package:frostsnap/ark.dart';
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -755,7 +756,7 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
               onPressed: (haveSignatures && !isBroadcasting)
                   ? () => broadcast(context)
                   : null,
-              child: Text('Broadcast'),
+              child: Text(isArkBoard(context) ? 'Board into Ark' : 'Broadcast'),
             ),
           ),
       ],
@@ -881,6 +882,13 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
 
   bool isBroadcasting = false;
 
+  bool isArkBoard(BuildContext context) {
+    final unsignedTx = widget.signingParams?.unsignedTx;
+    final network = WalletContext.of(context)?.superWallet.network;
+    if (unsignedTx == null || network == null) return false;
+    return ArkService.opened(network)?.isBoard(unsignedTx: unsignedTx) ?? false;
+  }
+
   broadcast(BuildContext context) async {
     if (mounted) setState(() => isBroadcasting = true);
     final walletCtx = WalletContext.of(context)!;
@@ -917,6 +925,32 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
         showErrorSnackbar(context, 'Cannot broadcast: $e');
       }
       return;
+    }
+    // A board's funding transaction is only safe to broadcast once the Ark server has cosigned
+    // the VTXO's exit against its txid, so that happens first and a refusal broadcasts nothing.
+    final ark = ArkService.opened(walletCtx.superWallet.network);
+    if (ark != null && ark.isBoard(unsignedTx: signingParams.unsignedTx)) {
+      try {
+        final receipt = await ark.board(
+          unsignedTx: signingParams.unsignedTx,
+          signatures: signatures,
+        );
+        if (mounted) {
+          showMessageSnackbar(
+            context,
+            'Ark server cosigned the board · VTXO ${receipt.vtxoId}',
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          setState(() => isBroadcasting = false);
+          showErrorSnackbar(
+            context,
+            'Ark board refused, nothing was broadcast: $e',
+          );
+        }
+        return;
+      }
     }
     var broadcastError = '';
     final broadcasted = await walletCtx.wallet.superWallet
