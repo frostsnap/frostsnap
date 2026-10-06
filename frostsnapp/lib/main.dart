@@ -391,23 +391,16 @@ class _StartupErrorWidgetState extends State<StartupErrorWidget> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   Text("Contact support: ", style: theme.textTheme.bodyMedium),
-                  InkWell(
-                    onTap: () {
-                      Clipboard.setData(
-                        ClipboardData(text: "support@frostsnap.com"),
-                      );
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text("Email copied to clipboard"),
-                          duration: Duration(seconds: 2),
+                  CopyTapTarget(
+                    data: "support@frostsnap.com",
+                    builder: (context, onCopy, _) => InkWell(
+                      onTap: onCopy,
+                      child: Text(
+                        "support@frostsnap.com",
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: theme.colorScheme.primary,
+                          decoration: TextDecoration.underline,
                         ),
-                      );
-                    },
-                    child: Text(
-                      "support@frostsnap.com",
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: theme.colorScheme.primary,
-                        decoration: TextDecoration.underline,
                       ),
                     ),
                   ),
