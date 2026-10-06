@@ -1,7 +1,6 @@
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:frostsnap/id_ext.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/lib.dart';
 import 'package:frostsnap/wallet_create.dart';
@@ -23,61 +22,55 @@ void main() {
     final a = deviceId(1);
     final b = deviceId(2);
 
-    Map<DeviceId, String> names(Map<DeviceId, String> entries) {
-      final map = deviceIdMap<String>();
-      map.addAll(entries);
-      return map;
-    }
-
     test(
       'a name freed by a disconnected device can be reused (the #505 bug)',
       () {
         // A was named "Cold", then A left the device list; B (still connected)
         // reuses "Cold". A's retained entry must not flag B.
-        final participants = deviceIdSet([b]); // only B is connected now
-        final dups = duplicateNamedDeviceIdsAmong(
-          participants,
-          names({a: 'Cold', b: 'Cold'}),
-        );
+        final participants = {deviceId(2)}; // only B is connected now
+        final dups = duplicateNamedDeviceIdsAmong(participants, {
+          a: 'Cold',
+          b: 'Cold',
+        });
         expect(dups, isEmpty);
       },
     );
 
     test('two currently-connected devices sharing a name are both flagged', () {
-      final participants = deviceIdSet([a, b]);
-      final dups = duplicateNamedDeviceIdsAmong(
-        participants,
-        names({a: 'Cold', b: 'Cold'}),
-      );
+      final participants = {deviceId(1), deviceId(2)};
+      final dups = duplicateNamedDeviceIdsAmong(participants, {
+        a: 'Cold',
+        b: 'Cold',
+      });
       expect(dups.length, 2);
       expect(dups.contains(a), isTrue);
       expect(dups.contains(b), isTrue);
     });
 
     test('the collision is case-insensitive and trims whitespace', () {
-      final participants = deviceIdSet([a, b]);
-      final dups = duplicateNamedDeviceIdsAmong(
-        participants,
-        names({a: 'Cold', b: '  cOLD '}),
-      );
+      final participants = {deviceId(1), deviceId(2)};
+      final dups = duplicateNamedDeviceIdsAmong(participants, {
+        a: 'Cold',
+        b: '  cOLD ',
+      });
       expect(dups.length, 2);
     });
 
     test('distinct names among connected devices are not flagged', () {
-      final participants = deviceIdSet([a, b]);
-      final dups = duplicateNamedDeviceIdsAmong(
-        participants,
-        names({a: 'Cold', b: 'Hot'}),
-      );
+      final participants = {deviceId(1), deviceId(2)};
+      final dups = duplicateNamedDeviceIdsAmong(participants, {
+        a: 'Cold',
+        b: 'Hot',
+      });
       expect(dups, isEmpty);
     });
 
     test('an empty or whitespace-only name never collides', () {
-      final participants = deviceIdSet([a, b]);
-      final dups = duplicateNamedDeviceIdsAmong(
-        participants,
-        names({a: '', b: '   '}),
-      );
+      final participants = {deviceId(1), deviceId(2)};
+      final dups = duplicateNamedDeviceIdsAmong(participants, {
+        a: '',
+        b: '   ',
+      });
       expect(dups, isEmpty);
     });
   });

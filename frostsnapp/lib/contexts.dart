@@ -1,6 +1,5 @@
 import 'package:confetti/confetti.dart';
 import 'package:flutter/material.dart';
-import 'package:frostsnap/id_ext.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/backup_run.dart';
 import 'package:frostsnap/src/rust/api/bitcoin.dart';
@@ -43,9 +42,9 @@ class SuperWalletContext extends InheritedWidget {
 
   SuperWalletContext({super.key, required super.child, required this.appCtx});
 
-  final Map<KeyId, Stream<TxState>> _txStreams = keyIdMap();
-  final Map<KeyId, Stream<void>> _signingSessionSignals = keyIdMap();
-  final Map<KeyId, Stream<BackupRun>> _backupStreams = keyIdMap();
+  final Map<KeyId, Stream<TxState>> _txStreams = {};
+  final Map<KeyId, Stream<void>> _signingSessionSignals = {};
+  final Map<KeyId, Stream<BackupRun>> _backupStreams = {};
 
   // Static method to allow easy access to the Foo instance
   static SuperWalletContext? of(BuildContext context) {
