@@ -675,6 +675,9 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
                         .requestFocus(),
                   ),
                 ),
+                onTap: () => _nameFocusNodes
+                    .putIfAbsent(device.id, () => FocusNode())
+                    .requestFocus(),
               ),
               canUpgrade: () => _deviceRow(
                 context: context,
