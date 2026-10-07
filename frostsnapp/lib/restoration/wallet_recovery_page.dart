@@ -343,16 +343,14 @@ class WalletRecoveryPage extends StatelessWidget {
             title: Row(
               spacing: 8,
               children: [
-                Flexible(
-                  child: Tooltip(
-                    message: "key number ${share.index}",
-                    child: Text(
-                      "#${share.index}",
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        fontWeight: FontWeight.w500,
-                        fontSize: 18,
-                      ),
+                Tooltip(
+                  message: "key number ${share.index}",
+                  child: Text(
+                    "#${share.index}",
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      fontWeight: FontWeight.w500,
+                      fontSize: 18,
                     ),
                   ),
                 ),

@@ -841,7 +841,7 @@ class WalletBottomBar extends StatelessWidget {
                   children: [
                     Flexible(child: receiveButton),
                     Flexible(child: sendButton),
-                    Flexible(child: moreButton),
+                    moreButton,
                   ],
                 ),
               ),
