@@ -57,7 +57,10 @@ impl PsbtQrDecoder {
                 break;
             }
 
-            if part.len() < 3 || part[0..3].to_lowercase() != "ur:" {
+            if !part
+                .get(..3)
+                .is_some_and(|prefix| prefix.eq_ignore_ascii_case("ur:"))
+            {
                 continue; // TODO: return invalid QR error
             }
 
@@ -206,4 +209,36 @@ pub enum QrDecoderStatus {
     Progress { progress: f32 },
     Decoded(Vec<u8>),
     Failed(String),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn multibyte_utf8_is_unsupported_without_panicking() {
+        let mut decoder = PsbtQrDecoder::new();
+        for part in ["💩", "aaé", "a€", "éé"] {
+            assert!(matches!(
+                decoder.ingest_ur_strings(vec![part.to_owned()]).unwrap(),
+                QrDecoderStatus::Progress { progress } if progress == 0.0
+            ));
+        }
+    }
+
+    #[test]
+    fn ur_prefix_is_ascii_case_insensitive() {
+        let payload = b"psbt\xff".to_vec();
+        let encoded = ur::ur::encode(&payload, &ur::ur::Type::Custom("crypto-psbt"));
+        for prefix in ["ur:", "UR:", "Ur:", "uR:"] {
+            let mut decoder = PsbtQrDecoder::new();
+            let part = format!("{prefix}{}", encoded.strip_prefix("ur:").unwrap());
+            let QrDecoderStatus::Decoded(decoded) =
+                decoder.ingest_ur_strings(vec![part]).unwrap()
+            else {
+                panic!("expected decoded payload for prefix {prefix}");
+            };
+            assert_eq!(decoded, payload, "prefix {prefix}");
+        }
+    }
 }
