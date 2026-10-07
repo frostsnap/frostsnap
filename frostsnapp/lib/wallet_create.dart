@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -12,6 +13,8 @@ import 'package:frostsnap/snackbar.dart';
 import 'package:frostsnap/threshold_selector.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/bitcoin_network_ext.dart';
+import 'package:frostsnap/bullet_list.dart';
+import 'package:frostsnap/copy_feedback.dart';
 import 'package:frostsnap/src/rust/api/bitcoin.dart';
 import 'package:frostsnap/src/rust/api/device_list.dart';
 import 'package:frostsnap/src/rust/api/keygen.dart';
@@ -78,6 +81,8 @@ Set<DeviceId> duplicateNamedDeviceIdsAmong(
   });
   return dups;
 }
+
+final _host = Platform.isAndroid || Platform.isIOS ? 'phone' : 'computer';
 
 class WalletCreateController extends ChangeNotifier {
   WalletCreateStep _step = WalletCreateStep.values.first;
@@ -149,12 +154,16 @@ class WalletCreateController extends ChangeNotifier {
           if (state == null) return const SizedBox();
 
           final sessionHash = state.sessionHash;
+          final n = form.selectedDevices.length;
+          final tOfN = '${form.threshold}-of-$n';
           return Column(
             crossAxisAlignment: CrossAxisAlignment.center,
             spacing: 12,
             children: [
-              const Text(
-                'Check that this code is identical and matches on every device',
+              Text(
+                n == 1
+                    ? 'Check the device shows $tOfN and this code'
+                    : 'Check all $n devices show $tOfN and this same code',
                 textAlign: TextAlign.center,
               ),
               Card.filled(
@@ -180,10 +189,7 @@ class WalletCreateController extends ChangeNotifier {
                     secondChild: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Text(
-                          '${form.threshold}-of-${form.selectedDevices.length}',
-                          style: theme.textTheme.labelLarge,
-                        ),
+                        Text(tOfN, style: theme.textTheme.labelLarge),
                         Text(
                           keygenChecksum,
                           style: theme.textTheme.headlineLarge?.copyWith(
@@ -199,8 +205,29 @@ class WalletCreateController extends ChangeNotifier {
                   ),
                 ),
               ),
-              Text(
-                'The security check code confirms that all devices have behaved honestly during key generation.',
+              Text.rich(
+                TextSpan(
+                  text:
+                      'This check guarantees that every device (including '
+                      'this $_host) has contributed randomness and agrees on '
+                      'the same wallet. ',
+                  children: [
+                    WidgetSpan(
+                      alignment: PlaceholderAlignment.baseline,
+                      baseline: TextBaseline.alphabetic,
+                      child: InkWell(
+                        onTap: () => _showSecurityCheckInfo(context),
+                        child: Text(
+                          'Learn more',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.primary,
+                            decoration: TextDecoration.underline,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
                 textAlign: TextAlign.center,
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: theme.colorScheme.onSurfaceVariant,
@@ -263,6 +290,94 @@ class WalletCreateController extends ChangeNotifier {
 
   void _onCancel() async {
     await coord.cancelProtocol();
+  }
+
+  /// Shows an in-app explainer for the security check. Deliberately an
+  /// in-app dialog rather than an external link (url_launcher): this screen is
+  /// shown while the user is actively comparing a code across devices, and
+  /// navigating away mid-comparison is a bad UX and a security risk.
+  void _showSecurityCheckInfo(BuildContext context) {
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        final theme = Theme.of(dialogContext);
+        return BackdropFilter(
+          filter: blurFilter,
+          child: AlertDialog(
+            constraints: dialogConstraints,
+            scrollable: true,
+            title: const Text('Security check'),
+            content: DefaultTextStyle(
+              style: theme.textTheme.bodyMedium!.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                spacing: 12,
+                children: [
+                  Text(
+                    'Every device, and this $_host, contributes its own '
+                    "randomness to the wallet's key, so it stays "
+                    'unpredictable as long as any one of them is honest.',
+                  ),
+                  Text(
+                    'The code is a fingerprint of the whole key generation '
+                    'transcript: which devices participated and what messages '
+                    'were sent. Each device calculates the code itself and '
+                    'mixes in a secret of its own, so nobody can predict it.',
+                  ),
+                  Text(
+                    "Before you confirm, check on each device's screen that:",
+                  ),
+                  BulletList([
+                    Text('The threshold and device count are what you expect'),
+                    Text('Every device you plugged in is showing the code'),
+                    Text('The code is the same on all of them'),
+                  ]),
+                  Text.rich(
+                    TextSpan(
+                      text:
+                          'These checks would catch any app that attempts to '
+                          'trick your devices into setting up different '
+                          'wallets, or that secretly adds a device of its '
+                          "own. If anything doesn't match, cancel and "
+                          'contact ',
+                      children: [
+                        WidgetSpan(
+                          alignment: PlaceholderAlignment.baseline,
+                          baseline: TextBaseline.alphabetic,
+                          child: CopyTapTarget(
+                            data: 'support@frostsnap.com',
+                            builder: (context, onCopy, _) => InkWell(
+                              onTap: onCopy,
+                              child: Text(
+                                'support@frostsnap.com',
+                                style: TextStyle(
+                                  color: theme.colorScheme.primary,
+                                  decoration: TextDecoration.underline,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const TextSpan(text: '.'),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(),
+                child: const Text('Ok'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   Future<void> resetDeviceNames(Iterable<ConnectedDevice> devices) async {
