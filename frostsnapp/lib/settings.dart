@@ -10,6 +10,7 @@ import 'package:frostsnap/bullet_list.dart';
 import 'package:frostsnap/contexts.dart';
 import 'package:frostsnap/copy_feedback.dart';
 import 'package:frostsnap/device_action_fullscreen_dialog.dart';
+import 'package:frostsnap/chain_source_settings.dart';
 import 'package:frostsnap/electrum_server_settings.dart';
 import 'package:frostsnap/global.dart';
 import 'package:frostsnap/logs.dart';
@@ -190,6 +191,13 @@ class SettingsPage extends StatelessWidget {
                   icon: Icons.info_outline,
                   bodyBuilder: (context) {
                     return AboutPage();
+                  },
+                ),
+                SettingsItem(
+                  title: Text('Chain source'),
+                  icon: Icons.hub_outlined,
+                  bodyBuilder: (context) {
+                    return ChainSourceSettingsPage();
                   },
                 ),
                 SettingsItem(
@@ -593,6 +601,14 @@ class SetNetworkPage extends StatelessWidget {
   }
 }
 
+/// The Electrum detail of a chain status, or null when a different backend is running.
+extension ChainStatusElectrum on ChainStatus {
+  ElectrumStatus? get electrum => switch (detail) {
+    ChainStatusDetail_Electrum(:final field0) => field0,
+    _ => null,
+  };
+}
+
 class ChainStatusIcon extends StatelessWidget {
   final ChainStatus chainStatus;
 
@@ -606,9 +622,13 @@ class ChainStatusIcon extends StatelessWidget {
     final String statusName;
     final theme = Theme.of(context);
 
-    final currentUrl = chainStatus.onBackup
-        ? chainStatus.backupUrl
-        : chainStatus.primaryUrl;
+    final detail = chainStatus.detail;
+    final String currentSource = switch (detail) {
+      ChainStatusDetail_Electrum(:final field0) =>
+        field0.onBackup ? field0.backupUrl : field0.primaryUrl,
+      ChainStatusDetail_CompactFilters(:final field0) =>
+        field0.peers == 1 ? "1 peer" : "${field0.peers} peers",
+    };
 
     switch (chainStatus.state) {
       case ChainStatusState.connected:
@@ -634,10 +654,19 @@ class ChainStatusIcon extends StatelessWidget {
     }
 
     final onBackup =
-        chainStatus.state == ChainStatusState.connected && chainStatus.onBackup;
+        chainStatus.state == ChainStatusState.connected &&
+        detail is ChainStatusDetail_Electrum &&
+        detail.field0.onBackup;
+
+    final progressSuffix = switch (detail) {
+      ChainStatusDetail_CompactFilters(:final field0)
+          when field0.progress > 0 && field0.progress < 1 =>
+        " · ${(field0.progress * 100).round()}%",
+      _ => "",
+    };
 
     return Tooltip(
-      message: "$statusName: $currentUrl",
+      message: "$statusName: $currentSource$progressSuffix",
       child: Stack(
         clipBehavior: Clip.none,
         children: [
@@ -721,7 +750,7 @@ class ChainStatusIcon extends StatelessWidget {
               ),
               _ServerStatusTile(
                 label: 'Primary Server',
-                url: status.primaryUrl,
+                url: status.electrum?.primaryUrl ?? '',
                 status: _getServerStatusFor(status, false),
                 enabled: primaryEnabled,
                 onTap: primaryEnabled
@@ -745,7 +774,7 @@ class ChainStatusIcon extends StatelessWidget {
               ),
               _ServerStatusTile(
                 label: 'Backup Server',
-                url: status.backupUrl,
+                url: status.electrum?.backupUrl ?? '',
                 status: _getServerStatusFor(status, true),
                 enabled: backupEnabled,
                 onTap: backupEnabled
@@ -781,10 +810,12 @@ class ChainStatusIcon extends StatelessWidget {
     ChainStatus status,
     bool isBackup,
   ) {
+    final electrum = status.electrum;
+    if (electrum == null) return ChainStatusState.idle;
     final state = status.state;
     if (state == ChainStatusState.idle) return ChainStatusState.idle;
     if (state == ChainStatusState.connected) {
-      return status.onBackup == isBackup
+      return electrum.onBackup == isBackup
           ? ChainStatusState.connected
           : ChainStatusState.idle;
     }
