@@ -588,14 +588,14 @@ macro_rules! demo_widget {
                 use $crate::{ firmware_upgrade::FirmwareUpgradeProgress, Padding };
 
                 // Show downloading state at 65% progress
-                let widget = FirmwareUpgradeProgress::downloading(0.65);
+                let widget = FirmwareUpgradeProgress::downloading($crate::Frac::from_ratio(65, 100));
                 $run_macro!(widget);
             }
             "firmware_upgrade_erase" => {
                 use $crate::firmware_upgrade::FirmwareUpgradeProgress;
 
                 // Show erasing state at 35% progress
-                let widget = FirmwareUpgradeProgress::erasing(0.35);
+                let widget = FirmwareUpgradeProgress::erasing($crate::Frac::from_ratio(35, 100));
                 $run_macro!(widget);
             }
             "firmware_upgrade_passive" => {

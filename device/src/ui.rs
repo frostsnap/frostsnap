@@ -132,8 +132,8 @@ pub enum BusyTask {
 
 #[derive(Clone, Copy, Debug)]
 pub enum FirmwareUpgradeStatus {
-    Erase { progress: f32 },
-    Download { progress: f32 },
+    Erase { progress: Frac },
+    Download { progress: Frac },
     Passive,
     Rejected { reason: crate::ota::RefuseReason },
 }

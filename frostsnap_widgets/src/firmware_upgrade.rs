@@ -1,7 +1,7 @@
 use crate::HOLD_TO_CONFIRM_TIME_SHORT_MS;
 use crate::{
-    gray4_style::Gray4TextStyle, palette::PALETTE, prelude::*, GrayToAlpha, HoldToConfirm, Image,
-    Padding, ProgressIndicator,
+    gray4_style::Gray4TextStyle, palette::PALETTE, prelude::*, Frac, GrayToAlpha, HoldToConfirm,
+    Image, Padding, ProgressIndicator,
 };
 use alloc::{boxed::Box, format, string::String, string::ToString};
 use embedded_graphics::geometry::Size;
@@ -154,7 +154,7 @@ pub enum FirmwareUpgradeProgress {
 }
 
 impl FirmwareUpgradeProgress {
-    fn new_active(status_text: &str, progress: f32) -> Self {
+    fn new_active(status_text: &str, progress: Frac) -> Self {
         let title = Text::new(
             "Firmware upgrade".to_string(),
             Gray4TextStyle::new(&NOTO_SANS_18_MEDIUM, PALETTE.on_background),
@@ -166,7 +166,7 @@ impl FirmwareUpgradeProgress {
         );
 
         let mut progress_indicator = ProgressIndicator::new();
-        progress_indicator.set_progress(crate::Frac::from_ratio((progress * 100.0) as u32, 100));
+        progress_indicator.set_progress(progress);
 
         let mut column = Column::new((title, status, progress_indicator))
             .with_main_axis_alignment(MainAxisAlignment::Center)
@@ -180,11 +180,11 @@ impl FirmwareUpgradeProgress {
         }
     }
 
-    pub fn erasing(progress: f32) -> Self {
+    pub fn erasing(progress: Frac) -> Self {
         Self::new_active("Preparing device", progress)
     }
 
-    pub fn downloading(progress: f32) -> Self {
+    pub fn downloading(progress: Frac) -> Self {
         Self::new_active("Receiving and verifying", progress)
     }
 
@@ -254,14 +254,9 @@ impl FirmwareUpgradeProgress {
     }
 
     /// Update the progress for active states
-    pub fn update_progress(&mut self, progress: f32) {
+    pub fn update_progress(&mut self, progress: Frac) {
         if let Self::Active { widget } = self {
-            widget
-                .child
-                .child
-                .children
-                .2
-                .set_progress(crate::Frac::from_ratio((progress * 100.0) as u32, 100));
+            widget.child.child.children.2.set_progress(progress);
         }
     }
 }

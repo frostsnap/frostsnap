@@ -195,6 +195,10 @@ pub struct FeePage {
     >,
 }
 
+fn fee_rate_text(sats_per_vbyte: f64) -> alloc::string::String {
+    format!("{:.1} sats/vB", sats_per_vbyte as f32)
+}
+
 impl FeePage {
     #[inline(never)]
     fn new(fee_sats: u64, fee_rate_sats_per_vbyte: Option<f64>) -> Self {
@@ -207,7 +211,7 @@ impl FeePage {
 
         let fee_rate_text = if let Some(rate) = fee_rate_sats_per_vbyte {
             Text::new(
-                format!("{:.1} sats/vB", rate),
+                fee_rate_text(rate),
                 Gray4TextStyle::new(FONT_PAGE_HEADER, PALETTE.text_secondary),
             )
         } else {
@@ -541,6 +545,13 @@ impl SignTxPrompt {
 #[cfg(test)]
 mod test {
     use super::*;
+
+    #[test]
+    fn fee_rate_text_is_tenths_of_the_whole_rate() {
+        assert_eq!(fee_rate_text(12.5), "12.5 sats/vB");
+        assert_eq!(fee_rate_text(2.96), "3.0 sats/vB");
+        assert_eq!(fee_rate_text(1_000_000.0), "1000000.0 sats/vB");
+    }
     use crate::WidgetList;
     use core::str::FromStr;
     use frostsnap_core::bitcoin_transaction::PromptRecipient;
