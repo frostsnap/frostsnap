@@ -8,9 +8,23 @@ on:
     types: [opened, synchronize, reopened]
 
 jobs:
+  tree-gate:
+    name: Tree gate
+    runs-on: ubuntu-latest
+    outputs:
+      skip: ${{ steps.gate.outputs.skip }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github/actions/tree-gate
+      - id: gate
+        uses: ./.github/actions/tree-gate
+
   build-device-firmware:
     name: Build Device Firmware
     runs-on: ubuntu-latest
+    needs: tree-gate
+    if: needs.tree-gate.outputs.skip != 'true'
     env:
       RISCV_VERSION: "2024.09.03-nightly"
     strategy:
@@ -70,6 +84,8 @@ jobs:
   test-ordinary-libs:
     name: Test ordinary libraries
     runs-on: ubuntu-latest
+    needs: tree-gate
+    if: needs.tree-gate.outputs.skip != 'true'
     env:
       RUSTUP_TOOLCHAIN: stable
     steps:
@@ -206,6 +222,8 @@ jobs:
   flutter-analyze:
     name: Flutter Analyze
     runs-on: ubuntu-latest
+    needs: tree-gate
+    if: needs.tree-gate.outputs.skip != 'true'
     steps:
       - uses: actions/checkout@v4
       - uses: "./.github/actions/generate-frb"
@@ -223,6 +241,8 @@ jobs:
   flutter-test:
     name: Flutter Test
     runs-on: ubuntu-latest
+    needs: tree-gate
+    if: needs.tree-gate.outputs.skip != 'true'
     env:
       RUSTUP_TOOLCHAIN: stable
       # Keeps the cached target/debug small; nothing reads the debuginfo.
@@ -246,3 +266,23 @@ jobs:
           path: "target/debug"
 
       - run: just test-app
+
+  record-pass:
+    name: Record pass
+    needs:
+      - build-device-firmware
+      - test-ordinary-libs
+      - app-build-android
+      - app-build-linux
+      - app-image
+      - app-build-windows
+      - app-build-macos
+      - flutter-analyze
+      - flutter-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/tree-gate
+        with:
+          record: "true"
+          needs: ${{ toJSON(needs) }}

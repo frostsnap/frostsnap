@@ -8,9 +8,23 @@ on:
     types: [opened, synchronize, reopened]
 
 jobs:
+  tree-gate:
+    name: Tree gate
+    runs-on: ubuntu-latest
+    outputs:
+      skip: ${{ steps.gate.outputs.skip }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github/actions/tree-gate
+      - id: gate
+        uses: ./.github/actions/tree-gate
+
   deterministic-build-device:
     name: Deterministic Build Device Firmware
     runs-on: ubuntu-latest
+    needs: tree-gate
+    if: needs.tree-gate.outputs.skip != 'true'
     # This job is allowed to fail and won't block PRs
     continue-on-error: true
     steps:
@@ -36,3 +50,8 @@ jobs:
         with:
           name: frostsnap-frontier-deterministic-${{ github.sha }}.bin
           path: /var/tmp/frostsnap/target/riscv32imc-unknown-none-elf/release/frontier.bin
+      # A step after a failure is skipped even under job-level continue-on-error, so only a real
+      # pass records the marker.
+      - uses: ./.github/actions/tree-gate
+        with:
+          record: "true"
