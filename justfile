@@ -154,15 +154,21 @@ get-build-version:
 
 gen +ARGS="":
     cd frostsnapp && flutter_rust_bridge_codegen generate {{ARGS}}
-    find frostsnapp/rust/src/api -type f -exec sha256sum {} + > {{app_canary}}
+    just frb-input-hashes > {{app_canary}}
+
+# Everything frb's generated bindings depend on: its rust_input, the macros it expands, its config,
+# and the crate manifest that pins the frb version. CI keys its bindings cache on this too.
+frb-input-hashes:
+    @find frostsnapp/rust/src/api frostsnapp/macros/src -type f | LC_ALL=C sort | xargs sha256sum
+    @sha256sum frostsnapp/macros/Cargo.toml frostsnapp/flutter_rust_bridge.yaml frostsnapp/rust/Cargo.toml
 
 build-runner:
     cd frostsnapp && dart run build_runner build --delete-conflicting-outputs
 
 maybe-gen:
     #!/bin/sh
-    if ! sha256sum --check {{app_canary}} >/dev/null 2>&1 ; then
-       echo "{{app_canary}} changed so re-running bindgen">&2;
+    if ! just frb-input-hashes | cmp -s - {{app_canary}} ; then
+       echo "frb inputs changed since {{app_canary}} was written, so re-running bindgen">&2;
        just gen
     fi
     just build-runner
