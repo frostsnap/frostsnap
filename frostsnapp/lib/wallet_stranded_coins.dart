@@ -1,4 +1,3 @@
-import 'package:frostsnap/src/rust/api/broadcast.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:frostsnap/contexts.dart';
@@ -164,7 +163,6 @@ class _ConsolidatePageState extends State<ConsolidatePage> {
   /// Borrowed for the two things the send flow already knows how to do: hold the feerate its
   /// picker sets, and track which devices will sign.
   BuildTxState? state;
-  UnitBroadcastSubscription? sub;
   StreamSubscription<void>? stateSub;
   SendPlan? plan;
   String? planError;
@@ -192,19 +190,16 @@ class _ConsolidatePageState extends State<ConsolidatePage> {
     if (built.confirmationEstimates() == null) {
       built.refreshConfirmationEstimates();
     }
-    final sub = built.subscribe();
-    setState(() {
-      state = built;
-      this.sub = sub;
-    });
-    stateSub = sub.start().listen((_) => mounted ? setState(() {}) : null);
+    setState(() => state = built);
+    stateSub = built.changes().watch().listen(
+      (_) => mounted ? setState(() {}) : null,
+    );
     WidgetsBinding.instance.addPostFrameCallback((_) => _plan());
   }
 
   @override
   void dispose() {
     stateSub?.cancel();
-    sub?.dispose();
     state?.dispose();
     if (widget.scrollController == null) scrollController.dispose();
     super.dispose();
