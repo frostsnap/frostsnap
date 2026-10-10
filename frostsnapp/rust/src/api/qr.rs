@@ -134,15 +134,14 @@ pub struct QrEncoder(ur::Encoder<'static>);
 impl QrEncoder {
     #[frb(sync)]
     pub fn new(bytes: Vec<u8>) -> Self {
-        let mut length_bytes = bytes.len().to_be_bytes().to_vec();
-        while length_bytes.len() > 1 && length_bytes[0] == 0 {
-            length_bytes.remove(0);
-        }
-
-        // prepending OP_PUSHDATA1 and length for CBOR
-        let mut encode_bytes = Vec::new();
-        encode_bytes.extend_from_slice(&[0x59]);
-        encode_bytes.extend_from_slice(&length_bytes);
+        // CBOR byte string header (major type 2) with the shortest length encoding
+        let len = bytes.len();
+        let mut encode_bytes = match len {
+            0..=23 => vec![0x40 | len as u8],
+            24..=0xff => vec![0x58, len as u8],
+            0x100..=0xffff => vec![0x59, (len >> 8) as u8, len as u8],
+            _ => [&[0x5a][..], &(len as u32).to_be_bytes()].concat(),
+        };
         encode_bytes.extend_from_slice(&bytes);
 
         QrEncoder(ur::Encoder::new(&encode_bytes, 400, "crypto-psbt").unwrap())
