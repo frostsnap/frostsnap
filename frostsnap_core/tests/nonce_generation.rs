@@ -51,3 +51,89 @@ fn test_nonce_generation_deterministic() {
         assert_eq!(actual, expected, "Nonce {} mismatch", i);
     }
 }
+
+/// Re-opening a nonce stream whose slot was evicted must give fresh nonces, never a replay of the
+/// ones handed out before eviction.
+#[test]
+fn reopening_evicted_nonce_stream_gives_fresh_nonces() {
+    use frostsnap_core::device::{DeviceToUserMessage, FrostSigner};
+    use frostsnap_core::message::{signing, CoordinatorToDeviceMessage, DeviceSend};
+    use frostsnap_core::nonce_stream::CoordNonceStreamState;
+
+    const N_SLOTS: usize = 4;
+    const BATCH_SIZE: u32 = 4;
+
+    fn open_stream(
+        device: &mut FrostSigner,
+        stream_id: NonceStreamId,
+        rng: &mut impl rand::RngCore,
+    ) -> Vec<String> {
+        let message = CoordinatorToDeviceMessage::Signing(
+            signing::CoordinatorSigning::OpenNonceStreams(signing::OpenNonceStreams {
+                streams: vec![CoordNonceStreamState {
+                    stream_id,
+                    index: 0,
+                    remaining: 0,
+                }],
+            }),
+        );
+        let sends = device.recv_coordinator_message(message, rng).unwrap();
+        let mut batch = match sends.into_iter().next().unwrap() {
+            DeviceSend::ToUser(msg) => match *msg {
+                DeviceToUserMessage::NonceJobs(batch) => batch,
+                other => panic!("expected nonce jobs, got {other:?}"),
+            },
+            other => panic!("expected a message to the user, got {other:?}"),
+        };
+        batch.run_until_finished(&mut TestDeviceKeyGen);
+        let segments = batch.into_segments();
+        assert_eq!(segments.len(), 1);
+        assert_eq!(segments[0].stream_id, stream_id);
+        segments[0]
+            .nonces
+            .iter()
+            .map(|nonce| nonce.to_string())
+            .collect()
+    }
+
+    let mut rng = rand::thread_rng();
+    let mut device = FrostSigner::new_random_with_nonce_batch_size(&mut rng, N_SLOTS, BATCH_SIZE);
+
+    let evicted_stream = NonceStreamId::random(&mut rng);
+    let before_eviction = open_stream(&mut device, evicted_stream, &mut rng);
+    assert_eq!(before_eviction.len(), BATCH_SIZE as usize);
+
+    // Fill every slot with other streams, evicting the first one (least recently used).
+    let other_streams: Vec<_> = (0..N_SLOTS)
+        .map(|_| NonceStreamId::random(&mut rng))
+        .collect();
+    let survivor = other_streams[0];
+    let all_opened: Vec<Vec<String>> = other_streams
+        .iter()
+        .map(|stream_id| open_stream(&mut device, *stream_id, &mut rng))
+        .collect();
+    let survivor_before = all_opened[0].clone();
+    assert!(
+        device.nonce_slots().get(evicted_stream).is_none(),
+        "the first stream should have been evicted"
+    );
+
+    // Positive control: a stream that was not evicted still hands out the same nonces.
+    assert_eq!(
+        open_stream(&mut device, survivor, &mut rng),
+        survivor_before,
+        "a stream still in a slot must be reproducible"
+    );
+
+    let after_eviction = open_stream(&mut device, evicted_stream, &mut rng);
+    assert_ne!(
+        after_eviction[0], before_eviction[0],
+        "re-opened evicted stream reused its first nonce"
+    );
+    for nonce in &after_eviction {
+        assert!(
+            !before_eviction.contains(nonce),
+            "re-opened evicted stream reused a nonce it had already handed out"
+        );
+    }
+}
