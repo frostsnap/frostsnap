@@ -173,9 +173,9 @@ impl<'a> OtaPartitions<'a> {
         self.current_slot().map(|(_, slot)| slot.our_metadata)
     }
 
-    /// Write to the otadata parition to indicate that a different partition should be the main one.
+    /// Write to the otadata partition to indicate that a different partition should be the main one.
     fn switch_partition(&self, slot: usize, metadata: OtaMetadata) {
-        // to select it the parition must be higher than the other one
+        // to select it the partition must be higher than the other one
         let next_seq = match self.current_slot() {
             Some((current_slot, otadata_slot)) => {
                 if slot == current_slot {
@@ -191,7 +191,7 @@ impl<'a> OtaPartitions<'a> {
             None => 1,
         };
 
-        // it also needs a valid checksum on the parition
+        // it also needs a valid checksum on the partition
         let seq_crc = CRC.checksum(&next_seq.to_le_bytes());
         let otadata = EspOtadataSlot {
             seq: next_seq,
@@ -205,7 +205,7 @@ impl<'a> OtaPartitions<'a> {
         let mut writer = target.bincode_writer_remember_to_flush::<64>();
         bincode::encode_into_writer(&otadata, &mut writer, OTADATA_BINCODE_CONFIG)
             .expect("failed to write otadata");
-        let _ = writer.flush().expect("failed to switch parition");
+        let _ = writer.flush().expect("failed to switch partition");
         let what_was_written: EspOtadataSlot =
             bincode::decode_from_reader(target.bincode_reader(), OTADATA_BINCODE_CONFIG)
                 .expect("failed to read back what was written");

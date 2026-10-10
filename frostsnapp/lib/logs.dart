@@ -47,7 +47,7 @@ class _LogPane extends State<LogPane> {
     final List<TextSpan> logSpans = _logs.map((log) {
       try {
         if (!log.startsWith("20")) {
-          throw Exception("not this millenium or not a date");
+          throw Exception("not this millennium or not a date");
         }
         final sections = log.split(RegExp(r' +'));
         return TextSpan(

@@ -301,7 +301,7 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
         let access_structure_id =
             AccessStructureId::from_app_poly(app_shared_key.key.point_polynomial());
 
-        // SHARE ENCRYPTION NOTE 1: We make the device gnerate the encryption key for the share right after keygen rather
+        // SHARE ENCRYPTION NOTE 1: We make the device generate the encryption key for the share right after keygen rather
         // than letting the coordinator send it to the device to protect against malicious
         // coordinators. A coordinator could provide garbage for example and then the device would
         // never be able to decrypt its share again.

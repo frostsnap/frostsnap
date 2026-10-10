@@ -843,7 +843,7 @@ impl FrostCoordinator {
         match message {
             DeviceRestoration::PhysicalEntered(entered_physical_backup) => {
                 //XXX: We could check if a restoration id exists before sending out the message but
-                // it's not a good idea becuase atm it's valid to ask a device to enter a backup
+                // it's not a good idea because atm it's valid to ask a device to enter a backup
                 // when you're not keeping track of the restoration id for the purpose of doing a
                 // backup check.
                 Ok(vec![CoordinatorSend::ToUser(
@@ -1372,7 +1372,7 @@ impl fmt::Display for RestorationError {
 
 impl std::error::Error for RestorationError {}
 
-/// An error occuring when you try and an a "recover share" to a restoration session
+/// An error occurring when you try and an a "recover share" to a restoration session
 #[derive(Debug, Clone)]
 pub enum RestoreRecoverShareError {
     /// The restoration session no longer exists
