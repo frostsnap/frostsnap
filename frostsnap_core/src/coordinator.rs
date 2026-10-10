@@ -901,7 +901,7 @@ impl FrostCoordinator {
                     if !session.parties().contains(signer_index) {
                         return Err(Error::coordinator_invalid_message(
                             message_kind,
-                            "Signer was not a particpant for this session",
+                            "Signer was not a participant for this session",
                         ));
                     }
 
