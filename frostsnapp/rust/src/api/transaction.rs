@@ -197,7 +197,7 @@ impl BuildTxState {
 
     /// Refresh confirmation estimates.
     ///
-    /// Returns `None` if a previous referesh request has not completed yet.
+    /// Returns `None` if a previous refresh request has not completed yet.
     pub fn refresh_confirmation_estimates(&self) -> anyhow::Result<Option<ConfirmationEstimates>> {
         use std::sync::atomic::Ordering;
 

@@ -42,7 +42,7 @@ class AddressInputController with ChangeNotifier {
       return false;
     }
 
-    // We always notify listeners on submit (dont' check for changes) for simplicity and safety.
+    // We always notify listeners on submit (don't check for changes) for simplicity and safety.
     notifyListeners();
     return true;
   }
@@ -183,7 +183,7 @@ class AmountInputController with ChangeNotifier {
 
   // Error string for when user input is not a valid bitcoin/satoshi amount.
   String? _textError;
-  // Error string for when amount specified surpases avaliable.
+  // Error string for when amount specified surpasses available.
   String? _availableError;
   String? get error {
     if (_textEditingController.text.isEmpty) return null;

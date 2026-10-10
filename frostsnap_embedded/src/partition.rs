@@ -84,7 +84,7 @@ impl<'a, S: NorFlash> FlashPartition<'a, S> {
         Ok(ret)
     }
 
-    /// splits n_sectors off the end of the parition into a new parition
+    /// splits n_sectors off the end of the partition into a new partition
     pub fn split_off_end(&mut self, n_sectors: u32) -> FlashPartition<'a, S> {
         assert!(n_sectors <= self.n_sectors);
         self.n_sectors -= n_sectors;
@@ -98,7 +98,7 @@ impl<'a, S: NorFlash> FlashPartition<'a, S> {
         }
     }
 
-    /// splits n_sectors off the front of the parition into a new partition
+    /// splits n_sectors off the front of the partition into a new partition
     pub fn split_off_front(&mut self, n_sectors: u32) -> FlashPartition<'a, S> {
         assert!(n_sectors <= self.n_sectors);
         let mut end = self.split_off_end(self.n_sectors - n_sectors);

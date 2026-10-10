@@ -728,7 +728,7 @@ impl FrostCoordinator {
                                 )
                             })?;
 
-                        // contributers are the devices plus one coordinator
+                        // contributors are the devices plus one coordinator
                         if state.certifier.is_finished() {
                             let certified_keygen = state.certifier
                                 .finish()
