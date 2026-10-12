@@ -83,8 +83,15 @@ pub fn keychain_from_descriptor(descriptor: &Descriptor<DescriptorPublicKey>) ->
     };
     let derivation_path = match desc_key {
         DescriptorPublicKey::XPub(xpub) => &xpub.derivation_path,
-        // defensive: a split descriptor never has multiple paths
-        DescriptorPublicKey::MultiXPub(multi) => multi.derivation_paths.paths().first()?,
+        // A split descriptor has exactly one path. An unsplit MultiXPub does
+        // not identify a single keychain, so don't infer one from its first path.
+        DescriptorPublicKey::MultiXPub(multi) => {
+            let paths = multi.derivation_paths.paths();
+            if paths.len() != 1 {
+                return None;
+            }
+            &paths[0]
+        }
         _ => return None,
     };
     match derivation_path.into_iter().next_back()? {
@@ -138,6 +145,18 @@ mod test {
             keychain_from_descriptor(&descriptors[1]),
             Some(Keychain::Internal)
         );
+    }
+
+    #[test]
+    fn unsplit_multi_descriptor_does_not_identify_a_single_keychain() {
+        let master_appkey = MasterAppkey::from_str("0325b0d1cda060241998916f45d02e227db436bdd708a55cf1dc67f3f534e332186fd6543fbfc5dd07094e93543fa05120f12d3a80876aa011a4897b7a0770d1fb").unwrap();
+        let descriptor = multi_x_descriptor_for_account(
+            master_appkey,
+            BitcoinAccount::default(),
+            bitcoin::NetworkKind::Main,
+        );
+
+        assert_eq!(keychain_from_descriptor(&descriptor), None);
     }
 
     #[test]
