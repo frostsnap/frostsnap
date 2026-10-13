@@ -233,8 +233,7 @@ mod tests {
         for prefix in ["ur:", "UR:", "Ur:", "uR:"] {
             let mut decoder = PsbtQrDecoder::new();
             let part = format!("{prefix}{}", encoded.strip_prefix("ur:").unwrap());
-            let QrDecoderStatus::Decoded(decoded) =
-                decoder.ingest_ur_strings(vec![part]).unwrap()
+            let QrDecoderStatus::Decoded(decoded) = decoder.ingest_ur_strings(vec![part]).unwrap()
             else {
                 panic!("expected decoded payload for prefix {prefix}");
             };
