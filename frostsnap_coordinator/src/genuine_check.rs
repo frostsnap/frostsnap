@@ -250,7 +250,7 @@ mod test {
     use crate::persist::{BincodeWrapper, Persist};
     use frostsnap_comms::factory::DS_KEY_SIZE_BITS;
     use frostsnap_comms::genuine_certificate::{
-        sign_certificate, CaseColor, Certificate, DsSignature,
+        sign_certificate, CaseColor, Certificate, CertificateBody, DsSignature,
     };
     use frostsnap_comms::genuine_check::{
         sign_identity_attestation, AttestedDevice, AttestedDeviceDigest, DsSignedMessage,
@@ -262,7 +262,7 @@ mod test {
     };
     use frostsnap_core::sha2::{Digest, Sha256};
     use rand::{rngs::StdRng, SeedableRng};
-    use rsa::{pkcs1::EncodeRsaPublicKey, Pkcs1v15Sign, RsaPrivateKey};
+    use rsa::{Pkcs1v15Sign, RsaPrivateKey};
     use rusqlite::params;
     use std::sync::LazyLock;
 
@@ -295,11 +295,13 @@ mod test {
             let keypair = KeyPair::new(Scalar::random(&mut StdRng::seed_from_u64(seed)));
             let certificate = sign_certificate(
                 schnorr_fun::new_with_deterministic_nonces::<Sha256>(),
-                ds_key.to_public_key().to_pkcs1_der().unwrap().to_vec(),
-                case_color,
-                "2.7-1625".to_string(),
-                "220825002".to_string(),
-                1971,
+                CertificateBody::Frontier {
+                    ds_public_key: (&ds_key.to_public_key()).into(),
+                    case_color,
+                    revision: "2.7-1625".to_string(),
+                    serial: "220825002".to_string(),
+                    timestamp: 1971,
+                },
                 *FACTORY,
             );
             Self {

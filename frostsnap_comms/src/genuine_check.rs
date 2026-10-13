@@ -215,14 +215,11 @@ pub fn verify_factory_attestation(
     from: DeviceId,
     ds_signature: &DsSignature,
 ) -> Result<CertificateBody, GenuineError> {
-    use rsa::pkcs1::DecodeRsaPublicKey;
-
     if attested.device_id() != from {
         return Err(GenuineError::DeviceIdMismatch);
     }
     let body = verify_certificate_detailed(attested.certificate(), factory_key)?;
-    let ds_public_key = rsa::RsaPublicKey::from_pkcs1_der(body.ds_public_key())
-        .map_err(|_| GenuineError::MalformedDsKey)?;
+    let ds_public_key = body.ds_public_key().to_rsa()?;
     let signed = DsSignedMessage::GenuineAttestationV0 {
         challenge,
         attested: attested.clone(),
@@ -241,12 +238,11 @@ pub fn verify_factory_attestation(
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::genuine_certificate::{sign_certificate, CaseColor};
+    use crate::genuine_certificate::{sign_certificate, CaseColor, DsPublicKeyDer};
     use frostsnap_core::hex;
     use frostsnap_core::schnorr_fun::{self, fun::Scalar};
     use rand_chacha::rand_core::SeedableRng;
     use rand_chacha::ChaCha20Rng;
-    use rsa::pkcs1::EncodeRsaPublicKey;
     use rsa::RsaPrivateKey;
     use std::string::ToString;
 
@@ -254,14 +250,16 @@ mod test {
         KeyPair::new(Scalar::from_bytes_mod_order([byte; 32]).non_zero().unwrap())
     }
 
-    fn certificate(factory: KeyPair<EvenY>, ds_public_key: Vec<u8>) -> Certificate {
+    fn certificate(factory: KeyPair<EvenY>, ds_public_key: DsPublicKeyDer) -> Certificate {
         sign_certificate(
             schnorr_fun::new_with_deterministic_nonces::<Sha256>(),
-            ds_public_key,
-            CaseColor::Orange,
-            "2.7-1625".to_string(),
-            "220825002".to_string(),
-            1971,
+            CertificateBody::Frontier {
+                ds_public_key,
+                case_color: CaseColor::Orange,
+                revision: "2.7-1625".to_string(),
+                serial: "220825002".to_string(),
+                timestamp: 1971,
+            },
             factory,
         )
     }
@@ -283,7 +281,7 @@ mod test {
         let device_id = DeviceId::new(keypair(2).public_key());
         let attested = AttestedDevice::V0 {
             device_id,
-            certificate: certificate(factory, vec![0xd5; 3]),
+            certificate: certificate(factory, DsPublicKeyDer(vec![0xd5; 3])),
         };
 
         let challenge = GenuineChallenge([0xcc; 32]);
@@ -352,10 +350,7 @@ mod test {
         let other_id = DeviceId::new(keypair(4).public_key());
         let attested = AttestedDevice::V0 {
             device_id,
-            certificate: certificate(
-                factory,
-                ds_private.to_public_key().to_pkcs1_der().unwrap().to_vec(),
-            ),
+            certificate: certificate(factory, (&ds_private.to_public_key()).into()),
         };
         let challenge = GenuineChallenge([3u8; 32]);
         let ds_signature = ds_sign(

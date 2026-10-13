@@ -12,12 +12,36 @@ use frostsnap_core::{
 #[derive(bincode::Encode, bincode::Decode, Debug, Clone, PartialEq)]
 pub enum CertificateBody {
     Frontier {
-        ds_public_key: Vec<u8>,
+        ds_public_key: DsPublicKeyDer,
         case_color: CaseColor,
         revision: String,
         serial: String,
         timestamp: u64,
     },
+}
+
+/// PKCS#1 DER encoding of a device's RSA-3072 DS public key.
+#[derive(bincode::Encode, bincode::Decode, Debug, Clone, PartialEq, Eq)]
+pub struct DsPublicKeyDer(pub Vec<u8>);
+
+impl DsPublicKeyDer {
+    #[cfg(feature = "coordinator")]
+    pub fn to_rsa(&self) -> Result<rsa::RsaPublicKey, GenuineError> {
+        use rsa::pkcs1::DecodeRsaPublicKey;
+        rsa::RsaPublicKey::from_pkcs1_der(&self.0).map_err(|_| GenuineError::MalformedDsKey)
+    }
+}
+
+#[cfg(feature = "rsa")]
+impl From<&rsa::RsaPublicKey> for DsPublicKeyDer {
+    fn from(key: &rsa::RsaPublicKey) -> Self {
+        use rsa::pkcs1::EncodeRsaPublicKey;
+        DsPublicKeyDer(
+            key.to_pkcs1_der()
+                .expect("an RSA public key always has a DER encoding")
+                .to_vec(),
+        )
+    }
 }
 
 impl CertificateBody {
@@ -34,7 +58,7 @@ impl CertificateBody {
         }
     }
 
-    pub fn ds_public_key(&self) -> &Vec<u8> {
+    pub fn ds_public_key(&self) -> &DsPublicKeyDer {
         match &self {
             CertificateBody::Frontier { ds_public_key, .. } => ds_public_key,
         }
@@ -66,22 +90,66 @@ impl Certificate {
     }
 }
 
-#[derive(bincode::Encode, bincode::Decode, Debug, Copy, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum CaseColor {
     Black,
     Orange,
     Silver,
     Blue,
     Red,
-    Unused0,
-    Unused1,
-    Unused2,
-    Unused3,
-    Unused4,
-    Unused5,
-    Unused6,
-    Unused8,
-    Unused9,
+    /// A colour this build has no name for.
+    Other(u32),
+}
+
+impl CaseColor {
+    fn index(self) -> u32 {
+        match self {
+            CaseColor::Black => 0,
+            CaseColor::Orange => 1,
+            CaseColor::Silver => 2,
+            CaseColor::Blue => 3,
+            CaseColor::Red => 4,
+            CaseColor::Other(index) => index,
+        }
+    }
+
+    fn from_index(index: u32) -> Self {
+        match index {
+            0 => CaseColor::Black,
+            1 => CaseColor::Orange,
+            2 => CaseColor::Silver,
+            3 => CaseColor::Blue,
+            4 => CaseColor::Red,
+            index => CaseColor::Other(index),
+        }
+    }
+}
+
+// Encoded as the bare `u32` variant index, exactly as the derived unit-variant enum this replaced,
+// so issued certificates still verify.
+impl bincode::Encode for CaseColor {
+    fn encode<E: bincode::enc::Encoder>(
+        &self,
+        encoder: &mut E,
+    ) -> Result<(), bincode::error::EncodeError> {
+        self.index().encode(encoder)
+    }
+}
+
+impl<Context> bincode::Decode<Context> for CaseColor {
+    fn decode<D: bincode::de::Decoder<Context = Context>>(
+        decoder: &mut D,
+    ) -> Result<Self, bincode::error::DecodeError> {
+        Ok(Self::from_index(u32::decode(decoder)?))
+    }
+}
+
+impl<'de, Context> bincode::BorrowDecode<'de, Context> for CaseColor {
+    fn borrow_decode<D: bincode::de::BorrowDecoder<'de, Context = Context>>(
+        decoder: &mut D,
+    ) -> Result<Self, bincode::error::DecodeError> {
+        Ok(Self::from_index(u32::borrow_decode(decoder)?))
+    }
 }
 
 impl core::fmt::Display for CaseColor {
@@ -92,7 +160,7 @@ impl core::fmt::Display for CaseColor {
             CaseColor::Silver => "Silver",
             CaseColor::Blue => "Blue",
             CaseColor::Red => "Red",
-            _ => "Unknown",
+            CaseColor::Other(_) => "Unknown",
         };
         write!(f, "{}", s)
     }
@@ -116,21 +184,9 @@ impl core::str::FromStr for CaseColor {
 /// Sign a new genuine certificate using the factory keypair
 pub fn sign_certificate<NG: NonceGen>(
     schnorr: Schnorr<Sha256, NG>,
-    ds_public_key: Vec<u8>,
-    case_color: CaseColor,
-    revision: String,
-    serial: String,
-    timestamp: u64,
+    certificate_body: CertificateBody,
     factory_keypair: KeyPair<EvenY>,
 ) -> Certificate {
-    let certificate_body = CertificateBody::Frontier {
-        ds_public_key,
-        case_color,
-        timestamp,
-        revision,
-        serial,
-    };
-
     let certificate_bytes =
         bincode::encode_to_vec(&certificate_body, crate::SIGNING_BINCODE_CONFIG).unwrap();
     let message = Message::new("frostsnap-genuine-key", &certificate_bytes);
@@ -249,7 +305,6 @@ mod test {
     use frostsnap_core::{schnorr_fun, sha2};
     use rand_chacha::rand_core::SeedableRng;
     use rand_chacha::ChaCha20Rng;
-    use rsa::pkcs1::EncodeRsaPublicKey;
     use rsa::RsaPrivateKey;
 
     #[test]
@@ -267,16 +322,101 @@ mod test {
 
         let certificate = sign_certificate(
             schnorr,
-            ds_public_key.to_pkcs1_der().unwrap().to_vec(),
-            CaseColor::Orange,
-            "2.7-1625".to_string(), // BOARD_REVISION
-            "220825002".to_string(),
-            1971,
+            CertificateBody::Frontier {
+                ds_public_key: DsPublicKeyDer::from(&ds_public_key),
+                case_color: CaseColor::Orange,
+                revision: "2.7-1625".to_string(), // BOARD_REVISION
+                serial: "220825002".to_string(),
+                timestamp: 1971,
+            },
             factory_keypair,
         );
 
         let verified_cert = verify_certificate(&certificate, factory_keypair.public_key()).unwrap();
 
         std::dbg!(verified_cert.serial_number());
+    }
+
+    /// The derived enum `CaseColor` was before it gained `Other`.
+    #[derive(bincode::Encode, bincode::Decode, Debug, Copy, Clone, PartialEq)]
+    enum LegacyCaseColor {
+        Black,
+        Orange,
+        Silver,
+        Blue,
+        Red,
+        Unused0,
+        Unused1,
+        Unused2,
+        Unused3,
+        Unused4,
+        Unused5,
+        Unused6,
+        Unused8,
+        Unused9,
+    }
+
+    const LEGACY: [(LegacyCaseColor, CaseColor); 14] = [
+        (LegacyCaseColor::Black, CaseColor::Black),
+        (LegacyCaseColor::Orange, CaseColor::Orange),
+        (LegacyCaseColor::Silver, CaseColor::Silver),
+        (LegacyCaseColor::Blue, CaseColor::Blue),
+        (LegacyCaseColor::Red, CaseColor::Red),
+        (LegacyCaseColor::Unused0, CaseColor::Other(5)),
+        (LegacyCaseColor::Unused1, CaseColor::Other(6)),
+        (LegacyCaseColor::Unused2, CaseColor::Other(7)),
+        (LegacyCaseColor::Unused3, CaseColor::Other(8)),
+        (LegacyCaseColor::Unused4, CaseColor::Other(9)),
+        (LegacyCaseColor::Unused5, CaseColor::Other(10)),
+        (LegacyCaseColor::Unused6, CaseColor::Other(11)),
+        (LegacyCaseColor::Unused8, CaseColor::Other(12)),
+        (LegacyCaseColor::Unused9, CaseColor::Other(13)),
+    ];
+
+    fn both_configs<T: bincode::Encode>(value: T) -> [Vec<u8>; 2] {
+        [
+            bincode::encode_to_vec(&value, crate::SIGNING_BINCODE_CONFIG).unwrap(),
+            bincode::encode_to_vec(&value, crate::BINCODE_CONFIG).unwrap(),
+        ]
+    }
+
+    fn decode_both(encodings: [Vec<u8>; 2]) -> [CaseColor; 2] {
+        let [fixint, varint] = encodings;
+        [
+            bincode::decode_from_slice(&fixint, crate::SIGNING_BINCODE_CONFIG)
+                .unwrap()
+                .0,
+            bincode::decode_from_slice(&varint, crate::BINCODE_CONFIG)
+                .unwrap()
+                .0,
+        ]
+    }
+
+    #[test]
+    fn case_color_encodes_as_the_legacy_derived_enum() {
+        for (legacy, color) in LEGACY {
+            assert_eq!(both_configs(color), both_configs(legacy), "{legacy:?}");
+            assert_eq!(decode_both(both_configs(legacy)), [color; 2]);
+        }
+        assert_eq!(both_configs(CaseColor::Red), [vec![4, 0, 0, 0], vec![4]]);
+        assert_eq!(
+            both_configs(CaseColor::Other(13)),
+            [vec![13, 0, 0, 0], vec![13]]
+        );
+    }
+
+    #[test]
+    fn unknown_case_color_round_trips() {
+        for index in [14u32, 99, 300] {
+            let encodings = both_configs(index);
+            assert_eq!(decode_both(encodings.clone()), [CaseColor::Other(index); 2]);
+            assert_eq!(both_configs(CaseColor::Other(index)), encodings);
+        }
+    }
+
+    #[test]
+    fn ds_public_key_der_encodes_as_bare_bytes() {
+        let der = vec![0xd5u8; 300];
+        assert_eq!(both_configs(DsPublicKeyDer(der.clone())), both_configs(der));
     }
 }
