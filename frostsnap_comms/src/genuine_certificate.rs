@@ -348,6 +348,14 @@ mod test {
         let verified_cert = verify_certificate(&certificate, factory_keypair.public_key()).unwrap();
 
         std::dbg!(verified_cert.serial_number());
+
+        let mut tampered = certificate;
+        let CertificateBody::Frontier { ds_public_key, .. } = &mut tampered.body;
+        *ds_public_key = DsPublicKeyDer(vec![9; 3]);
+        assert_eq!(
+            verify_certificate_detailed(&tampered, factory_keypair.public_key()),
+            Err(GenuineError::CertificateSignatureInvalid)
+        );
     }
 
     /// The derived enum `CaseColor` was before it gained `Other`.

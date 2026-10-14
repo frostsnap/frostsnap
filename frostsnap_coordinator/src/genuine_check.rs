@@ -638,6 +638,12 @@ mod test {
             victim.id,
             victim.answer(genuine_request(&challenge_for_victim)),
         );
+        assert!(check
+            .recv(
+                victim.id,
+                attacker.factory_attest(genuine_request(&challenge_for_victim).challenge(), forged),
+            )
+            .is_none());
 
         let changes = check.take_changes();
         assert!(changes.iter().all(|(_, status)| !matches!(
