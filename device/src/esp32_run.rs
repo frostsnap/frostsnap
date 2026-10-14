@@ -772,7 +772,11 @@ impl<'a> DeviceLoop<'a> {
 }
 
 /// Main event loop for the device
+#[cfg_attr(feature = "hwlab", allow(unreachable_code))]
 pub fn run<'a>(resources: &'a mut Resources<'a>) -> ! {
+    #[cfg(feature = "hwlab")]
+    crate::hwlab::experiment::run(resources);
+
     let mut device_loop = DeviceLoop::new(resources);
     loop {
         device_loop.poll();

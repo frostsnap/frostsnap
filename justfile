@@ -122,6 +122,10 @@ provision COLOR:
 genuine-check:
     cargo run -p frostsnap_factory -- genuine-check
 
+# Camera-read hardware experiments on an allowlisted dev device (see hwlab/hwlab.py)
+hwlab +ARGS:
+    python3 hwlab/hwlab.py {{ARGS}}
+
 build-deterministic:
     cd device && ./deterministic-build.sh
 

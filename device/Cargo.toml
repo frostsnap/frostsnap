@@ -16,6 +16,8 @@ prefill-words = []
 stack_guard = []
 # FIXME: remove this feature when v2.rs is deleted (only used in legacy factory code)
 genuine_device = []
+# test-only firmware for camera-read hardware experiments (see hwlab/)
+hwlab = ["dep:qrcodegen-no-heap"]
 
 [dependencies]
 frostsnap_core = { workspace = true }
@@ -44,6 +46,7 @@ micromath = "2"
 reed-solomon = "0.2.1"
 frostsnap_widgets = { workspace = true }
 frostsnap_macros = { path = "../macros" }
+qrcodegen-no-heap = { version = "1.8", optional = true }
 
 [[bin]]
 name = "legacy"

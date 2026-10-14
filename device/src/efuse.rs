@@ -216,7 +216,11 @@ impl EfuseController {
         }
     }
 
+    #[cfg_attr(feature = "hwlab", allow(unreachable_code))]
     unsafe fn send_write_command(&self, block_number: u8) {
+        #[cfg(feature = "hwlab")]
+        panic!("hwlab: eFuse programming is disabled (block {block_number})");
+
         let efuse = EFUSE::regs();
 
         // Send opcode, blknum and write command

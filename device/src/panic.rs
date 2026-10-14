@@ -9,6 +9,7 @@ const FONT_WIDTH: u32 = 6;
 ///
 /// This function handles panics by displaying the panic information on the screen
 /// with a green background and white text.
+#[cfg_attr(feature = "hwlab", allow(unreachable_code))]
 pub fn handle_panic(info: &core::panic::PanicInfo) -> ! {
     use core::fmt::Write;
     use embedded_graphics::pixelcolor::Rgb565;
@@ -22,6 +23,9 @@ pub fn handle_panic(info: &core::panic::PanicInfo) -> ! {
         // handler otherwise and clobber the first panic message.
         critical_section::acquire();
     }
+
+    #[cfg(feature = "hwlab")]
+    crate::hwlab::panic_card(info);
 
     let peripherals = unsafe { Peripherals::steal() };
 

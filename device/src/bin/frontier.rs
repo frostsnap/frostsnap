@@ -11,6 +11,7 @@ use frostsnap_device::{esp32_run, peripherals::DevicePeripherals, resources::Res
 esp_bootloader_esp_idf::esp_app_desc!();
 
 #[main]
+#[cfg_attr(feature = "hwlab", allow(unreachable_code))]
 fn main() -> ! {
     // Initialize heap
     esp_alloc::heap_allocator!(size: 256 * 1024);
@@ -24,6 +25,8 @@ fn main() -> ! {
 
     // Check if the device needs factory provisioning
     if device.needs_factory_provisioning() {
+        #[cfg(feature = "hwlab")]
+        panic!("hwlab: refusing to run factory provisioning");
         // Run factory provisioning - this will reset the device
         let config = frostsnap_device::factory::init::ProvisioningConfig {
             read_protect: true, // Production devices should have read protection

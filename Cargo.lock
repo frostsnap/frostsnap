@@ -2051,6 +2051,7 @@ dependencies = [
  "micromath",
  "mipidsi",
  "nb 1.1.0",
+ "qrcodegen-no-heap",
  "rand_chacha 0.3.1",
  "rand_core 0.6.4",
  "reed-solomon",
@@ -3738,6 +3739,12 @@ checksum = "7f6d64c71eb498fe9eae14ce4ec935c555749aef511cca85b5568910d6e48001"
 dependencies = [
  "bytemuck",
 ]
+
+[[package]]
+name = "qrcodegen-no-heap"
+version = "1.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d0e2c0bf8be8a1c4a4f48973dabf26943f05da2bfc2d3180aae62409dbba6f0c"
 
 [[package]]
 name = "quick-error"

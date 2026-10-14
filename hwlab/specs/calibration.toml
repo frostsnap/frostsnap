@@ -1,0 +1,20 @@
+id = "calibration"
+property = "The camera reads the card's QR code byte for byte"
+expect = "read close to 100% of snaps in both variants, and calibrate reports 0 decoded but wrong"
+timeout_secs = 300
+stall_secs = 15
+snap_secs = 0.5
+
+[params]
+BEATS = 90
+
+[limits]
+LEN = 120
+
+# The smallest code the card draws.
+[variants.control]
+params = { LEN = 0 }
+
+# The payload size real experiments will use.
+[variants.test]
+params = { LEN = 100 }

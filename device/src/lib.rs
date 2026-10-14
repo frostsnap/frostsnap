@@ -63,6 +63,8 @@ pub mod factory;
 pub mod firmware_size;
 pub mod flash;
 pub mod frosty_ui;
+#[cfg(feature = "hwlab")]
+pub mod hwlab;
 pub mod io;
 pub mod ota;
 pub mod panic;
