@@ -16,3 +16,5 @@ mod partition;
 pub use partition::*;
 mod nonce_slots;
 pub use nonce_slots::*;
+pub mod crypto_engine;
+pub mod local_queue;

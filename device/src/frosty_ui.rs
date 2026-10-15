@@ -259,7 +259,7 @@ impl<'a> UserInteraction for FrostyUi<'a> {
         self.widget.inner_mut().switch_to(new_page);
     }
 
-    fn poll(&mut self) -> Option<UiEvent> {
+    fn poll(&mut self) {
         let now = Instant::now();
         let now_ms =
             frostsnap_widgets::Instant::from_millis(now.duration_since_epoch().as_millis());
@@ -282,8 +282,9 @@ impl<'a> UserInteraction for FrostyUi<'a> {
             // Draw the UI stack (includes debug stats overlay)
             let _ = self.widget.draw(&mut self.display, now_ms);
         }
+    }
 
-        // Check widget states and generate UI events
+    fn take_event(&mut self) -> Option<UiEvent> {
         match self.widget.inner_mut().current_mut() {
             WidgetTree::KeygenCheck {
                 widget: keygen_check,

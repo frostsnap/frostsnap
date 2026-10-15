@@ -54,8 +54,8 @@ macro_rules! log_and_redraw {
     }};
 }
 
+pub mod crypto;
 pub mod device_config;
-pub mod ds;
 pub mod efuse;
 pub mod erase;
 pub mod esp32_run;

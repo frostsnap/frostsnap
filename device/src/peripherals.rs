@@ -1,7 +1,6 @@
 //! Device peripheral initialization and management
 
-use alloc::{boxed::Box, rc::Rc};
-use core::cell::RefCell;
+use alloc::boxed::Box;
 use embedded_graphics::{pixelcolor::Rgb565, prelude::*};
 use esp_hal::{
     delay::Delay,
@@ -136,8 +135,7 @@ pub struct DevicePeripherals<'a> {
     /// SHA256 hardware accelerator
     pub sha256: esp_hal::sha::Sha<'a>,
 
-    /// HMAC hardware module (Rc for shared ownership)
-    pub hmac: Rc<RefCell<Hmac<'a>>>,
+    pub hmac: Hmac<'a>,
 
     /// Digital Signature peripheral
     pub ds: DS<'a>,
@@ -264,7 +262,7 @@ impl<'a> DevicePeripherals<'a> {
 
         // Initialize other crypto peripherals
         let efuse = EfuseController::new();
-        let hmac = Rc::new(RefCell::new(Hmac::new(peripherals.HMAC)));
+        let hmac = Hmac::new(peripherals.HMAC);
 
         // Initialize JTAG
         let jtag = UsbSerialJtag::new(peripherals.USB_DEVICE);

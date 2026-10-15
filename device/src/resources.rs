@@ -7,8 +7,7 @@ use frostsnap_comms::{Downstream, Upstream};
 use rand_chacha::ChaCha20Rng;
 
 use crate::{
-    ds::HardwareDs,
-    efuse::EfuseHmacKeys,
+    crypto::{EspCrypto, HmacKey, HmacKeyIds},
     flash::FactoryDataHandle,
     frosty_ui::FrostyUi,
     io::SerialInterface,
@@ -20,22 +19,16 @@ use crate::{
 /// Type alias for serial interfaces
 type Serial<'a, D> = SerialInterface<'a, D>;
 use esp_hal::{
-    gpio::Input, rsa::Rsa, sha::Sha, uart::Uart, usb::usb_serial_jtag::UsbSerialJtag, Blocking,
+    gpio::Input, hmac::KeyId, uart::Uart, usb::usb_serial_jtag::UsbSerialJtag, Blocking,
 };
+use rand_core::{RngCore, SeedableRng};
 
 /// Device resources containing provisioned state and runtime partitions
 pub struct Resources<'a> {
     /// Provisioned RNG with device entropy mixed in
     pub rng: ChaCha20Rng,
 
-    /// HMAC keys from efuses
-    pub hmac_keys: EfuseHmacKeys<'a>,
-
-    /// Hardware Ds for attestation (None for dev devices)
-    pub ds: Option<HardwareDs<'a>>,
-
-    /// RSA hardware accelerator
-    pub rsa: Rsa<'a, Blocking>,
+    pub hmac_keys: HmacKeyIds<KeyId>,
 
     /// NVS partition for mutation log
     pub nvs: EspFlashPartition<'a>,
@@ -50,7 +43,6 @@ pub struct Resources<'a> {
     pub ui: Box<FrostyUi<'a>>,
 
     // Runtime peripherals needed by esp32_run
-    pub sha256: Sha<'a>,
     pub upstream_serial: Serial<'a, Upstream>,
     pub downstream_serial: Serial<'a, Downstream>,
     pub downstream_detect: Input<'a>,
@@ -81,7 +73,7 @@ impl<'a> Resources<'a> {
     }
     /// Initialize resources for production device
     /// Factory data is required for production devices
-    pub fn init_production(peripherals: Box<DevicePeripherals<'a>>) -> Box<Self> {
+    pub fn init_production(peripherals: Box<DevicePeripherals<'a>>) -> (Box<Self>, EspCrypto<'a>) {
         // Production devices must be provisioned at the factory
         if !peripherals.efuse.has_hmac_keys_initialized() {
             panic!("Production device must be provisioned at the factory!");
@@ -109,39 +101,37 @@ impl<'a> Resources<'a> {
         let (partitions, factory_data) = Self::read_flash_data(flash);
         let factory_data = factory_data.expect("Production device must have factory data");
 
-        // Load existing keys using the moved hmac
-        let mut hmac_keys = EfuseHmacKeys::load(&efuse, hmac.clone())
+        let hmac_keys = efuse
+            .hmac_key_ids()
             .expect("Failed to load HMAC keys from efuses");
-        let rng: ChaCha20Rng = hmac_keys.fixed_entropy.mix_in_rng(&mut initial_rng);
+        let mut crypto = EspCrypto::new(sha256, hmac, rsa, ds, Some(factory_data));
+        let rng = mix_in_rng(
+            &mut HmacKey::new(&mut crypto, hmac_keys.fixed_entropy),
+            &mut initial_rng,
+        );
 
         let ui = Box::new(FrostyUi::new(display, touch_receiver));
-
-        let ds = Some(HardwareDs::new(ds, factory_data));
-
-        let rsa = Rsa::new(rsa);
 
         // Create serial interfaces
         let (upstream_serial, downstream_serial) =
             Self::create_serial_interfaces(uart_upstream, uart_downstream, jtag, &upstream_detect);
 
-        Box::new(Self {
+        let resources = Box::new(Self {
             rng,
             hmac_keys,
-            ds,
-            rsa,
             nvs: partitions.nvs,
             ota: partitions.ota,
             ui,
-            sha256,
             upstream_serial,
             downstream_serial,
             downstream_detect,
-        })
+        });
+        (resources, crypto)
     }
 
     /// Initialize resources for development device
     /// Factory data is optional for dev devices
-    pub fn init_dev(peripherals: Box<DevicePeripherals<'a>>) -> Box<Self> {
+    pub fn init_dev(peripherals: Box<DevicePeripherals<'a>>) -> (Box<Self>, EspCrypto<'a>) {
         // Dev devices must be provisioned before reaching this point
         if !peripherals.efuse.has_hmac_keys_initialized() {
             panic!("Dev device must be provisioned before initialization!");
@@ -168,34 +158,32 @@ impl<'a> Resources<'a> {
 
         let (partitions, factory_data) = Self::read_flash_data(flash);
 
-        // Load existing keys using the moved hmac
-        let mut hmac_keys = EfuseHmacKeys::load(&efuse, hmac.clone())
+        let hmac_keys = efuse
+            .hmac_key_ids()
             .expect("Failed to load HMAC keys from efuses");
-        let rng: ChaCha20Rng = hmac_keys.fixed_entropy.mix_in_rng(&mut initial_rng);
+        let mut crypto = EspCrypto::new(sha256, hmac, rsa, ds, factory_data);
+        let rng = mix_in_rng(
+            &mut HmacKey::new(&mut crypto, hmac_keys.fixed_entropy),
+            &mut initial_rng,
+        );
 
         let ui = Box::new(FrostyUi::new(display, touch_receiver));
-
-        let ds = factory_data.map(|factory_data| HardwareDs::new(ds, factory_data));
-
-        let rsa = Rsa::new(rsa);
 
         // Create serial interfaces
         let (upstream_serial, downstream_serial) =
             Self::create_serial_interfaces(uart_upstream, uart_downstream, jtag, &upstream_detect);
 
-        Box::new(Self {
+        let resources = Box::new(Self {
             rng,
             hmac_keys,
-            ds,
-            rsa,
             nvs: partitions.nvs,
             ota: partitions.ota,
             ui,
-            sha256,
             upstream_serial,
             downstream_serial,
             downstream_detect,
-        })
+        });
+        (resources, crypto)
     }
 
     /// Read flash partitions and data common to both dev and prod
@@ -210,4 +198,10 @@ impl<'a> Resources<'a> {
 
         (partitions, factory_data)
     }
+}
+
+fn mix_in_rng(fixed_entropy: &mut HmacKey<'_, '_>, rng: &mut impl RngCore) -> ChaCha20Rng {
+    let mut entropy = [0u8; 64];
+    rng.fill_bytes(&mut entropy);
+    ChaCha20Rng::from_seed(fixed_entropy.hash("mix-in-rng", &entropy))
 }
