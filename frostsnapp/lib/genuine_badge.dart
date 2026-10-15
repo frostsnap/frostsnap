@@ -8,8 +8,14 @@ import 'package:frostsnap/theme.dart';
 
 /// Whether a genuine certificate key was compiled into this build. Read once: it is
 /// a compile-time constant on the Rust side, so calling across FFI on every badge
-/// build would be a round-trip per device per frame.
-final bool genuineCheckEnabled = coord.genuineCheckEnabled();
+/// build would be a round-trip per device per frame. Assignable only so widget tests, which have
+/// no coordinator, can choose it before its first read.
+bool genuineCheckEnabled = coord.genuineCheckEnabled();
+
+/// [device]'s genuine status, or `null` when this build cannot check: with no check attempted, any
+/// status — even a neutral one — would imply we looked.
+GenuineStatus? checkedGenuineStatus(ConnectedDevice device) =>
+    genuineCheckEnabled ? device.genuine : null;
 
 enum GenuineLook { genuine, updateToVerify, unverified }
 

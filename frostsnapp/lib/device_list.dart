@@ -3,8 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:frostsnap/contexts.dart';
 import 'package:frostsnap/device.dart';
 import 'package:frostsnap/device_action_upgrade.dart';
-import 'package:frostsnap/device_colors.dart';
-import 'package:frostsnap/genuine_badge.dart';
+import 'package:frostsnap/device_identity_art.dart';
 import 'package:frostsnap/src/rust/api/device_list.dart';
 import 'package:frostsnap/theme.dart';
 import 'package:frostsnap/wallet_device_list.dart';
@@ -58,56 +57,58 @@ class _DeviceListPageState extends State<DeviceListPage> {
     final hasWallet = walletName != null;
     final hasKey = device.name != null;
 
-    return DeviceGlowCard(
-      margin: EdgeInsets.symmetric(vertical: 8),
-      caseColor: device.caseColor,
-      child: ListTile(
-        title: Text(
-          device.name ?? 'Unnamed',
-          overflow: TextOverflow.ellipsis,
-          style: monospaceTextStyle.copyWith(
-            color: hasKey ? null : theme.disabledColor,
-          ),
-        ),
-        subtitle: Text(
-          device.name == null
-              ? '~'
-              : walletName == null
-              ? 'Wallet available for recovery'
-              : walletName,
-          style: TextStyle(
-            color: hasKey && hasWallet ? null : theme.disabledColor,
-          ),
-        ),
-        leading: Icon(Icons.key, color: device.caseColor?.swatch?.color),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          spacing: 8,
-          children: [
-            GenuineBadge(status: device.genuine),
-            upgradeEligibility.when(
-              upToDate: () => SizedBox.shrink(),
-              canUpgrade: () => Icon(
-                Icons.system_update_alt,
-                color: theme.colorScheme.primary,
-              ),
-              cannotUpgrade: (reason) => Tooltip(
-                message: reason,
-                child: Icon(Icons.warning, color: theme.colorScheme.onSurface),
-              ),
+    return DeviceArtCard(
+      art: DeviceIdentityArt.forDevice(device),
+      main: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        spacing: 4,
+        children: [
+          switch (device.name) {
+            final name? => DeviceNameText(name),
+            null => const DevicePlaceholderText('Unnamed'),
+          },
+          Text(
+            device.name == null
+                ? '~'
+                : walletName == null
+                ? 'Wallet available for recovery'
+                : walletName,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: hasKey && hasWallet
+                  ? theme.colorScheme.onSurfaceVariant
+                  : theme.disabledColor,
             ),
-            Icon(Icons.chevron_right),
-          ],
-        ),
-        contentPadding: EdgeInsets.symmetric(horizontal: 16),
-        onTap: () async => await showBottomSheetOrDialog(
-          context,
-          title: Text('Device Details'),
-          builder: (context, controller) => homeCtx.wrap(
-            DeviceDetails(
-              deviceId: device.id,
-              firmwareUpgrade: _upgradeController.run,
+          ),
+        ],
+      ),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        spacing: 8,
+        children: [
+          upgradeEligibility.when(
+            upToDate: () => SizedBox.shrink(),
+            canUpgrade: () =>
+                Icon(Icons.system_update_alt, color: theme.colorScheme.primary),
+            cannotUpgrade: (reason) => Tooltip(
+              message: reason,
+              child: Icon(Icons.warning, color: theme.colorScheme.onSurface),
             ),
+          ),
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: Icon(Icons.chevron_right),
+          ),
+        ],
+      ),
+      onTap: () async => await showBottomSheetOrDialog(
+        context,
+        title: Text('Device Details'),
+        builder: (context, controller) => homeCtx.wrap(
+          DeviceDetails(
+            deviceId: device.id,
+            firmwareUpgrade: _upgradeController.run,
           ),
         ),
       ),
