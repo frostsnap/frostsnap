@@ -134,20 +134,26 @@ pub struct QrEncoder(ur::Encoder<'static>);
 impl QrEncoder {
     #[frb(sync)]
     pub fn new(bytes: Vec<u8>) -> Self {
-        // CBOR byte string header (major type 2) with the shortest length encoding
-        let len = bytes.len();
-        let mut encode_bytes = match len {
-            0..=23 => vec![0x40 | len as u8],
-            24..=0xff => vec![0x58, len as u8],
-            0x100..=0xffff => vec![0x59, (len >> 8) as u8, len as u8],
-            _ => [&[0x5a][..], &(len as u32).to_be_bytes()].concat(),
-        };
+        let mut encode_bytes = cbor_bytes_header(bytes.len());
         encode_bytes.extend_from_slice(&bytes);
 
         QrEncoder(ur::Encoder::new(&encode_bytes, 400, "crypto-psbt").unwrap())
     }
     pub fn next_part(&mut self) -> String {
         self.0.next_part().unwrap().to_uppercase()
+    }
+}
+
+// CBOR byte string header (major type 2) with the shortest length encoding
+fn cbor_bytes_header(len: usize) -> Vec<u8> {
+    match len {
+        0..=23 => vec![0x40 | len as u8],
+        24..=0xff => vec![0x58, len as u8],
+        0x100..=0xffff => vec![0x59, (len >> 8) as u8, len as u8],
+        _ => {
+            let [a, b, c, d] = (len as u32).to_be_bytes();
+            vec![0x5a, a, b, c, d]
+        }
     }
 }
 
@@ -205,4 +211,25 @@ pub enum QrDecoderStatus {
     Progress { progress: f32 },
     Decoded(Vec<u8>),
     Failed(String),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cbor_header_boundaries() {
+        for (len, header) in [
+            (0, vec![0x40]),
+            (23, vec![0x57]),
+            (24, vec![0x58, 24]),
+            (100, vec![0x58, 100]),
+            (255, vec![0x58, 0xff]),
+            (256, vec![0x59, 0x01, 0x00]),
+            (65535, vec![0x59, 0xff, 0xff]),
+            (65536, vec![0x5a, 0x00, 0x01, 0x00, 0x00]),
+        ] {
+            assert_eq!(cbor_bytes_header(len), header, "len {len}");
+        }
+    }
 }
