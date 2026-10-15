@@ -29,16 +29,6 @@ impl EfuseController {
         discovered.share_encryption.is_some() && discovered.fixed_entropy.is_some()
     }
 
-    pub fn hmac_key_ids(&self) -> Result<HmacKeyIds<esp_hal::hmac::KeyId>, EfuseError> {
-        let discovered = self.discover_efuses();
-        Ok(HmacKeyIds {
-            share_encryption: discovered
-                .share_encryption
-                .ok_or(EfuseError::EfuseReadError)?,
-            fixed_entropy: discovered.fixed_entropy.ok_or(EfuseError::EfuseReadError)?,
-        })
-    }
-
     /// Discover which key slots contain which keys based on their purposes
     pub fn discover_efuses(&self) -> DiscoveredEfuses {
         use esp_hal::hmac::KeyId;
@@ -290,6 +280,15 @@ pub struct DiscoveredEfuses {
     pub share_encryption: Option<esp_hal::hmac::KeyId>,
     pub fixed_entropy: Option<esp_hal::hmac::KeyId>,
     pub ds: Option<esp_hal::hmac::KeyId>,
+}
+
+impl DiscoveredEfuses {
+    pub fn hmac_key_ids(&self) -> Result<HmacKeyIds<esp_hal::hmac::KeyId>, EfuseError> {
+        Ok(HmacKeyIds {
+            share_encryption: self.share_encryption.ok_or(EfuseError::EfuseReadError)?,
+            fixed_entropy: self.fixed_entropy.ok_or(EfuseError::EfuseReadError)?,
+        })
+    }
 }
 
 /// Builder for writing multiple efuse keys with their purposes in a single operation

@@ -7,7 +7,7 @@ use frostsnap_comms::{Downstream, Upstream};
 use rand_chacha::ChaCha20Rng;
 
 use crate::{
-    crypto::{EspCrypto, HmacKey, HmacKeyIds},
+    crypto::{DsKey, EspCrypto, HmacKey, HmacKeyIds},
     flash::FactoryDataHandle,
     frosty_ui::FrostyUi,
     io::SerialInterface,
@@ -101,10 +101,15 @@ impl<'a> Resources<'a> {
         let (partitions, factory_data) = Self::read_flash_data(flash);
         let factory_data = factory_data.expect("Production device must have factory data");
 
-        let hmac_keys = efuse
+        let efuses = efuse.discover_efuses();
+        let hmac_keys = efuses
             .hmac_key_ids()
             .expect("Failed to load HMAC keys from efuses");
-        let mut crypto = EspCrypto::new(sha256, hmac, rsa, ds, Some(factory_data));
+        let ds_key = DsKey {
+            factory_data,
+            efuse_key: efuses.ds.expect("Production device must have a DS key"),
+        };
+        let mut crypto = EspCrypto::new(sha256, hmac, rsa, ds, Some(ds_key));
         let rng = mix_in_rng(
             &mut HmacKey::new(&mut crypto, hmac_keys.fixed_entropy),
             &mut initial_rng,
@@ -158,10 +163,20 @@ impl<'a> Resources<'a> {
 
         let (partitions, factory_data) = Self::read_flash_data(flash);
 
-        let hmac_keys = efuse
+        let efuses = efuse.discover_efuses();
+        let hmac_keys = efuses
             .hmac_key_ids()
             .expect("Failed to load HMAC keys from efuses");
-        let mut crypto = EspCrypto::new(sha256, hmac, rsa, ds, factory_data);
+        if factory_data.is_some() && efuses.ds.is_none() {
+            log!("factory data but no DS eFuse key; the genuine check will get no reply");
+        }
+        let ds_key = factory_data
+            .zip(efuses.ds)
+            .map(|(factory_data, efuse_key)| DsKey {
+                factory_data,
+                efuse_key,
+            });
+        let mut crypto = EspCrypto::new(sha256, hmac, rsa, ds, ds_key);
         let rng = mix_in_rng(
             &mut HmacKey::new(&mut crypto, hmac_keys.fixed_entropy),
             &mut initial_rng,

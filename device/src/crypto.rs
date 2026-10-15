@@ -30,7 +30,14 @@ pub struct EspCrypto<'d> {
     hmac: Hmac<'d>,
     rsa: Rsa<'d, Blocking>,
     ds: DS<'d>,
-    factory_data: Option<FactoryDataHandle<'d>>,
+    ds_key: Option<DsKey<'d>>,
+}
+
+/// The DS key's encrypted parameters, and the eFuse key the HMAC decrypts them with.
+#[derive(Clone, Copy)]
+pub struct DsKey<'d> {
+    pub factory_data: FactoryDataHandle<'d>,
+    pub efuse_key: KeyId,
 }
 
 impl<'d> EspCrypto<'d> {
@@ -40,9 +47,9 @@ impl<'d> EspCrypto<'d> {
         hmac: Hmac<'d>,
         rsa: RSA<'d>,
         ds: DS<'d>,
-        factory_data: Option<FactoryDataHandle<'d>>,
+        ds_key: Option<DsKey<'d>>,
     ) -> Self {
-        if factory_data.is_some() {
+        if ds_key.is_some() {
             enable_ds();
         }
         // The DS reset also resets the MPI block, so the RSA driver is made after it.
@@ -52,7 +59,7 @@ impl<'d> EspCrypto<'d> {
             hmac,
             rsa,
             ds,
-            factory_data,
+            ds_key,
         }
     }
 }
@@ -81,7 +88,7 @@ impl<'d> CryptoHardware for EspCrypto<'d> {
     type SecureBootError = SecureBootError<'static>;
 
     fn factory_data(&self) -> Option<FactoryDataHandle<'d>> {
-        self.factory_data
+        self.ds_key.map(|ds_key| ds_key.factory_data)
     }
 
     fn sha256(&mut self, message: &[u8]) -> [u8; 32] {
@@ -113,14 +120,17 @@ impl<'d> CryptoHardware for EspCrypto<'d> {
     }
 
     fn ds_start(&mut self, block: &PaddedMessageBlock) -> Result<(), FactoryDataUnreadable> {
-        let factory_data = self
-            .factory_data
-            .ok_or(FactoryDataUnreadable)?
-            .read()
-            .map_err(|_| {
-                log!("DS parameters unreadable; attestation dropped");
-                FactoryDataUnreadable
-            })?;
+        let ds_key = self.ds_key.ok_or(FactoryDataUnreadable)?;
+        let factory_data = ds_key.factory_data.read().map_err(|_| {
+            log!("DS parameters unreadable; attestation dropped");
+            FactoryDataUnreadable
+        })?;
+        // The DS takes its key from the HMAC, which must be configured for the DS eFuse key first,
+        // as ESP-IDF's esp_ds_start_sign does. Without this the DS failed its parameter check
+        // after a reset.
+        self.hmac.init();
+        block!(self.hmac.configure(HmacPurpose::ToDs, ds_key.efuse_key))
+            .expect("eFuse key purpose is DS");
         start_exponentiation(&self.ds, &factory_data.ds_encrypted_params, block);
         Ok(())
     }
