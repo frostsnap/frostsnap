@@ -17,6 +17,15 @@
 //! that attestation's digest, so a relayed identity attestation cannot pair with another device's
 //! certificate. Relaying a challenge to the real device only proves that device's key is present.
 //!
+//! A DS key belongs to one piece of hardware, so once a device proves its identity, every other
+//! device id's factory attestation naming the same DS key is deleted and that id's check is
+//! dropped. A device reset or reseeded under a new id therefore does not leave its old id genuine.
+//! A factory attestation alone supersedes nothing: until its device proves its identity, it sits
+//! alongside the old id's, which stays genuine. Superseding needs the DS key to sign for the new
+//! id, and anyone holding that key can already pass as that hardware. A superseded id that
+//! connects again has no attestation on file, so it starts over, and if it proves itself it
+//! supersedes in turn.
+//!
 //! Cosmetic: nothing waits on it and a failed attestation is ignored.
 
 use crate::firmware::FirmwareVersion;
@@ -185,6 +194,7 @@ impl GenuineCheck {
                     Ok(()) => {
                         session.outstanding = None;
                         session.proven = true;
+                        self.supersede(from);
                         self.push_status(from);
                     }
                     Err(error) => ignore(from, error),
@@ -219,6 +229,41 @@ impl GenuineCheck {
 
     pub fn take_changes(&mut self) -> Vec<(DeviceId, GenuineStatus)> {
         core::mem::take(&mut self.changes)
+    }
+
+    fn supersede(&mut self, id: DeviceId) {
+        let mut superseded = vec![];
+        let mut db = self.db.lock().unwrap();
+        let persisted = self
+            .certs
+            .lock()
+            .unwrap()
+            .mutate2(&mut *db, |certs, update| {
+                superseded = certs.supersede(id, update);
+                Ok(())
+            });
+        drop(db);
+        if let Err(error) = persisted {
+            event!(
+                Level::ERROR,
+                device = id.to_string(),
+                error = error.to_string(),
+                "failed to persist removing superseded genuine factory attestations"
+            );
+        }
+        for old_id in superseded {
+            event!(
+                Level::INFO,
+                device = id.to_string(),
+                superseded = old_id.to_string(),
+                "superseded another device id's factory attestation for the same DS key"
+            );
+            if let Some(session) = self.sessions.get_mut(&old_id) {
+                session.proven = false;
+                session.outstanding = None;
+            }
+            self.push_status(old_id);
+        }
     }
 
     fn push_status(&mut self, id: DeviceId) {
@@ -860,5 +905,161 @@ mod test {
         assert!(reloaded.get(other.id).is_none());
         assert!(reloaded.get(device.id).is_none());
         Ok(())
+    }
+
+    fn stored_ids(check: &GenuineCheck) -> Vec<DeviceId> {
+        stored_rows(check).into_iter().map(|(id, _)| id).collect()
+    }
+
+    fn sorted(mut ids: Vec<DeviceId>) -> Vec<DeviceId> {
+        ids.sort();
+        ids
+    }
+
+    #[test]
+    fn a_new_id_proven_with_the_same_ds_key_supersedes_the_old_one() -> anyhow::Result<()> {
+        let old = TestDevice::new(40);
+        let new = TestDevice::new(41);
+        let mut check = new_check();
+        prove(&mut check, &old);
+        assert!(is_genuine(&check, old.id));
+        check.take_changes();
+
+        let attest = check.connected(new.id, supported()).unwrap();
+        let challenge = check
+            .recv(new.id, new.answer(genuine_request(&attest)))
+            .unwrap();
+        assert!(is_genuine(&check, old.id));
+        assert!(matches!(
+            check.status(new.id),
+            Some(GenuineStatus::Attested { .. })
+        ));
+        assert_eq!(stored_ids(&check), sorted(vec![old.id, new.id]));
+        check.take_changes();
+
+        check.recv(new.id, new.answer(genuine_request(&challenge)));
+        assert!(is_genuine(&check, new.id));
+        assert_eq!(
+            check.status(old.id),
+            Some(GenuineStatus::Unattested {
+                firmware_supports_check: true
+            })
+        );
+        assert!(check.certs.lock().unwrap().get(old.id).is_none());
+        assert_eq!(stored_ids(&check), vec![new.id]);
+        let changes = check.take_changes();
+        assert!(changes.contains(&(
+            old.id,
+            GenuineStatus::Unattested {
+                firmware_supports_check: true
+            }
+        )));
+        assert!(matches!(
+            changes.last(),
+            Some((id, GenuineStatus::Genuine { .. })) if *id == new.id
+        ));
+
+        let reloaded = reload(&check)?;
+        assert!(reloaded.get(old.id).is_none());
+        assert!(reloaded.get(new.id).is_some());
+        Ok(())
+    }
+
+    #[test]
+    fn a_candidate_that_never_proves_its_identity_supersedes_nothing() {
+        let old = TestDevice::new(42);
+        let new = TestDevice::new(43);
+        let impostor = TestDevice::new(44);
+        let mut check = new_check();
+        prove(&mut check, &old);
+        check.take_changes();
+        let old_row = stored_rows(&check);
+
+        check.connected(new.id, supported()).unwrap();
+        let mut elsewhere = new_check();
+        let replayed = new.answer(genuine_request(
+            &elsewhere.connected(new.id, supported()).unwrap(),
+        ));
+        assert!(check.recv(new.id, replayed).is_none());
+        assert_eq!(stored_rows(&check), old_row);
+
+        let attest = check.connected(new.id, supported()).unwrap();
+        let challenge = check
+            .recv(new.id, new.answer(genuine_request(&attest)))
+            .unwrap();
+        check.recv(
+            new.id,
+            impostor.identity_attest(
+                genuine_request(&challenge).challenge(),
+                new.attested().digest(),
+            ),
+        );
+        assert!(!is_genuine(&check, new.id));
+
+        assert!(is_genuine(&check, old.id));
+        assert!(check.certs.lock().unwrap().get(old.id).is_some());
+        assert_eq!(stored_ids(&check), sorted(vec![old.id, new.id]));
+        assert!(check.take_changes().iter().all(|(id, _)| *id != old.id));
+    }
+
+    #[test]
+    fn a_superseded_ids_late_identity_attestation_does_not_make_it_genuine() {
+        let old = TestDevice::new(45);
+        let new = TestDevice::new(46);
+        let mut check = attested_check(&old);
+
+        let in_flight = check.connected(old.id, supported()).unwrap();
+        let late = old.answer(genuine_request(&in_flight));
+        prove(&mut check, &new);
+
+        check.recv(old.id, late);
+        assert!(!is_genuine(&check, old.id));
+        assert!(is_genuine(&check, new.id));
+        assert_eq!(stored_ids(&check), vec![new.id]);
+    }
+
+    #[test]
+    fn a_superseded_id_that_reconnects_attests_again_and_supersedes_in_turn() {
+        let old = TestDevice::new(47);
+        let new = TestDevice::new(48);
+        let mut check = attested_check(&old);
+        prove(&mut check, &new);
+        check.disconnected(new.id);
+
+        let sent = prove(&mut check, &old);
+        assert!(matches!(
+            sent.as_slice(),
+            [
+                genuine_check::CoordinatorMessage::RequestFactoryAttestation { .. },
+                genuine_check::CoordinatorMessage::RequestIdentityAttestation { .. }
+            ]
+        ));
+        assert!(is_genuine(&check, old.id));
+        assert_eq!(stored_ids(&check), vec![old.id]);
+    }
+
+    #[test]
+    fn reproving_the_same_id_supersedes_nothing() {
+        let device = TestDevice::new(49);
+        let mut check = attested_check(&device);
+        let stored = stored_rows(&check);
+
+        prove(&mut check, &device);
+        prove(&mut check, &device);
+        assert!(is_genuine(&check, device.id));
+        assert_eq!(stored_rows(&check), stored);
+    }
+
+    #[test]
+    fn devices_with_distinct_ds_keys_stay_genuine_together() {
+        let device = TestDevice::new(50);
+        let other = TestDevice::certified(51, &OTHER_DS_KEY, CaseColor::Red);
+        let mut check = new_check();
+
+        prove(&mut check, &device);
+        prove(&mut check, &other);
+        assert!(is_genuine(&check, device.id));
+        assert!(is_genuine(&check, other.id));
+        assert_eq!(stored_ids(&check), sorted(vec![device.id, other.id]));
     }
 }

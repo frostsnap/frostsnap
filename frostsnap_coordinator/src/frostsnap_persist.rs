@@ -278,6 +278,12 @@ pub struct GenuineCerts {
     certs: HashMap<DeviceId, (FactoryAttestation, CertificateBody)>,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub enum GenuineCertsMutation {
+    Insert(Box<FactoryAttestation>),
+    Remove(DeviceId),
+}
+
 impl GenuineCerts {
     pub fn get(&self, device_id: DeviceId) -> Option<&CertificateBody> {
         self.certs.get(&device_id).map(|(_, body)| body)
@@ -294,16 +300,40 @@ impl GenuineCerts {
         &mut self,
         attestation: FactoryAttestation,
         body: CertificateBody,
-        update: &mut VecDeque<FactoryAttestation>,
+        update: &mut VecDeque<GenuineCertsMutation>,
     ) {
-        update.push_back(attestation.clone());
+        update.push_back(GenuineCertsMutation::Insert(Box::new(attestation.clone())));
         self.certs
             .insert(attestation.attested.device_id(), (attestation, body));
+    }
+
+    /// Removes the attestation of every other device whose certificate names the same DS public key
+    /// as `device_id`'s, and returns those devices.
+    pub(crate) fn supersede(
+        &mut self,
+        device_id: DeviceId,
+        update: &mut VecDeque<GenuineCertsMutation>,
+    ) -> Vec<DeviceId> {
+        let Some((_, body)) = self.certs.get(&device_id) else {
+            return vec![];
+        };
+        let ds_public_key = body.ds_public_key().clone();
+        let superseded: Vec<DeviceId> = self
+            .certs
+            .iter()
+            .filter(|(id, (_, body))| **id != device_id && *body.ds_public_key() == ds_public_key)
+            .map(|(id, _)| *id)
+            .collect();
+        for id in &superseded {
+            self.certs.remove(id);
+            update.push_back(GenuineCertsMutation::Remove(*id));
+        }
+        superseded
     }
 }
 
 impl Persist<rusqlite::Connection> for GenuineCerts {
-    type Update = VecDeque<FactoryAttestation>;
+    type Update = VecDeque<GenuineCertsMutation>;
     type LoadParams = Point<EvenY>;
 
     fn migrate(conn: &mut rusqlite::Connection) -> anyhow::Result<()> {
@@ -368,15 +398,25 @@ impl Persist<rusqlite::Connection> for GenuineCerts {
         conn: &mut rusqlite::Connection,
         update: Self::Update,
     ) -> anyhow::Result<()> {
-        for attestation in update {
-            conn.execute(
-                "INSERT OR REPLACE INTO fs_genuine_attested_devices (id, attestation) \
-                 VALUES (?1, ?2)",
-                params![
-                    attestation.attested.device_id(),
-                    BincodeWrapper(attestation)
-                ],
-            )?;
+        for mutation in update {
+            match mutation {
+                GenuineCertsMutation::Insert(attestation) => {
+                    conn.execute(
+                        "INSERT OR REPLACE INTO fs_genuine_attested_devices (id, attestation) \
+                         VALUES (?1, ?2)",
+                        params![
+                            attestation.attested.device_id(),
+                            BincodeWrapper(*attestation)
+                        ],
+                    )?;
+                }
+                GenuineCertsMutation::Remove(device_id) => {
+                    conn.execute(
+                        "DELETE FROM fs_genuine_attested_devices WHERE id = ?1",
+                        params![device_id],
+                    )?;
+                }
+            }
         }
         Ok(())
     }
