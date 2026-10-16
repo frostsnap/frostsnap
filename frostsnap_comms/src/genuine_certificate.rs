@@ -9,21 +9,39 @@ use frostsnap_core::{
     Versioned,
 };
 
-pub const CERTIFICATE_BINCODE_CONFIG: bincode::config::Configuration<
-    bincode::config::LittleEndian,
-    bincode::config::Fixint,
-    bincode::config::NoLimit,
-> = bincode::config::standard().with_fixed_int_encoding();
-
 #[derive(bincode::Encode, bincode::Decode, Debug, Clone, PartialEq)]
 pub enum CertificateBody {
     Frontier {
-        ds_public_key: Vec<u8>,
+        ds_public_key: DsPublicKeyDer,
         case_color: CaseColor,
         revision: String,
         serial: String,
         timestamp: u64,
     },
+}
+
+/// PKCS#1 DER encoding of a device's RSA-3072 DS public key.
+#[derive(bincode::Encode, bincode::Decode, Debug, Clone, PartialEq, Eq)]
+pub struct DsPublicKeyDer(pub Vec<u8>);
+
+impl DsPublicKeyDer {
+    #[cfg(feature = "coordinator")]
+    pub fn to_rsa(&self) -> Result<rsa::RsaPublicKey, GenuineError> {
+        use rsa::pkcs1::DecodeRsaPublicKey;
+        rsa::RsaPublicKey::from_pkcs1_der(&self.0).map_err(|_| GenuineError::MalformedDsKey)
+    }
+}
+
+#[cfg(feature = "rsa")]
+impl From<&rsa::RsaPublicKey> for DsPublicKeyDer {
+    fn from(key: &rsa::RsaPublicKey) -> Self {
+        use rsa::pkcs1::EncodeRsaPublicKey;
+        DsPublicKeyDer(
+            key.to_pkcs1_der()
+                .expect("an RSA public key always has a DER encoding")
+                .to_vec(),
+        )
+    }
 }
 
 impl CertificateBody {
@@ -40,9 +58,28 @@ impl CertificateBody {
         }
     }
 
-    pub fn ds_public_key(&self) -> &Vec<u8> {
+    pub fn ds_public_key(&self) -> &DsPublicKeyDer {
         match &self {
             CertificateBody::Frontier { ds_public_key, .. } => ds_public_key,
+        }
+    }
+
+    pub fn case_color(&self) -> CaseColor {
+        match self {
+            CertificateBody::Frontier { case_color, .. } => *case_color,
+        }
+    }
+
+    pub fn revision(&self) -> &str {
+        match self {
+            CertificateBody::Frontier { revision, .. } => revision,
+        }
+    }
+
+    /// Unix seconds, UTC.
+    pub fn provisioned_at(&self) -> u64 {
+        match self {
+            CertificateBody::Frontier { timestamp, .. } => *timestamp,
         }
     }
 }
@@ -66,22 +103,66 @@ impl Certificate {
     }
 }
 
-#[derive(bincode::Encode, bincode::Decode, Debug, Copy, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum CaseColor {
     Black,
     Orange,
     Silver,
     Blue,
     Red,
-    Unused0,
-    Unused1,
-    Unused2,
-    Unused3,
-    Unused4,
-    Unused5,
-    Unused6,
-    Unused8,
-    Unused9,
+    /// A colour this build has no name for.
+    Other(u32),
+}
+
+impl CaseColor {
+    fn index(self) -> u32 {
+        match self {
+            CaseColor::Black => 0,
+            CaseColor::Orange => 1,
+            CaseColor::Silver => 2,
+            CaseColor::Blue => 3,
+            CaseColor::Red => 4,
+            CaseColor::Other(index) => index,
+        }
+    }
+
+    fn from_index(index: u32) -> Self {
+        match index {
+            0 => CaseColor::Black,
+            1 => CaseColor::Orange,
+            2 => CaseColor::Silver,
+            3 => CaseColor::Blue,
+            4 => CaseColor::Red,
+            index => CaseColor::Other(index),
+        }
+    }
+}
+
+// Encoded as the bare `u32` variant index, exactly as the derived unit-variant enum this replaced,
+// so issued certificates still verify.
+impl bincode::Encode for CaseColor {
+    fn encode<E: bincode::enc::Encoder>(
+        &self,
+        encoder: &mut E,
+    ) -> Result<(), bincode::error::EncodeError> {
+        self.index().encode(encoder)
+    }
+}
+
+impl<Context> bincode::Decode<Context> for CaseColor {
+    fn decode<D: bincode::de::Decoder<Context = Context>>(
+        decoder: &mut D,
+    ) -> Result<Self, bincode::error::DecodeError> {
+        Ok(Self::from_index(u32::decode(decoder)?))
+    }
+}
+
+impl<'de, Context> bincode::BorrowDecode<'de, Context> for CaseColor {
+    fn borrow_decode<D: bincode::de::BorrowDecoder<'de, Context = Context>>(
+        decoder: &mut D,
+    ) -> Result<Self, bincode::error::DecodeError> {
+        Ok(Self::from_index(u32::borrow_decode(decoder)?))
+    }
 }
 
 impl core::fmt::Display for CaseColor {
@@ -92,7 +173,7 @@ impl core::fmt::Display for CaseColor {
             CaseColor::Silver => "Silver",
             CaseColor::Blue => "Blue",
             CaseColor::Red => "Red",
-            _ => "Black",
+            CaseColor::Other(_) => "Unknown",
         };
         write!(f, "{}", s)
     }
@@ -116,23 +197,11 @@ impl core::str::FromStr for CaseColor {
 /// Sign a new genuine certificate using the factory keypair
 pub fn sign_certificate<NG: NonceGen>(
     schnorr: Schnorr<Sha256, NG>,
-    ds_public_key: Vec<u8>,
-    case_color: CaseColor,
-    revision: String,
-    serial: String,
-    timestamp: u64,
+    certificate_body: CertificateBody,
     factory_keypair: KeyPair<EvenY>,
 ) -> Certificate {
-    let certificate_body = CertificateBody::Frontier {
-        ds_public_key,
-        case_color,
-        timestamp,
-        revision,
-        serial,
-    };
-
     let certificate_bytes =
-        bincode::encode_to_vec(&certificate_body, CERTIFICATE_BINCODE_CONFIG).unwrap();
+        bincode::encode_to_vec(&certificate_body, crate::SIGNING_BINCODE_CONFIG).unwrap();
     let message = Message::new("frostsnap-genuine-key", &certificate_bytes);
     let factory_signature = FrostsnapFactorySignature {
         factory_key: factory_keypair.public_key(),
@@ -157,7 +226,7 @@ pub fn verify_certificate(
             }
 
             let certificate_bytes =
-                bincode::encode_to_vec(&certificate.body, CERTIFICATE_BINCODE_CONFIG).unwrap();
+                bincode::encode_to_vec(&certificate.body, crate::SIGNING_BINCODE_CONFIG).unwrap();
             let message = Message::new("frostsnap-genuine-key", &certificate_bytes);
             let schnorr = Schnorr::<Sha256>::verify_only();
             schnorr
@@ -167,38 +236,77 @@ pub fn verify_certificate(
     }
 }
 
-/// Verify a certificate and its challenge-response in one step.
-/// Returns the verified certificate body on success.
-#[cfg(feature = "coordinator")]
-pub fn verify_genuine(
-    certificate: &Certificate,
-    factory_key: Point<EvenY>,
-    challenge: crate::GenuineChallenge,
-    signature: &[u8; 384],
-) -> Option<CertificateBody> {
-    let body = verify_certificate(certificate, factory_key)?;
-    verify_challenge(&body, challenge, signature).ok()?;
-    Some(body)
+/// A signature from a device's DS (RSA-3072) key.
+#[derive(Clone, PartialEq, Eq)]
+pub struct DsSignature(pub [u8; 384]);
+
+frostsnap_core::impl_display_debug_serialize! {
+    fn to_bytes(signature: &DsSignature) -> [u8;384] {
+        signature.0
+    }
 }
 
-/// Verify the RSA challenge-response signature from a device.
-/// The device signs SHA256(challenge) with its DS private key.
-#[cfg(feature = "coordinator")]
-pub fn verify_challenge(
-    certificate_body: &CertificateBody,
-    challenge: crate::GenuineChallenge,
-    signature: &[u8; 384],
-) -> Result<(), alloc::boxed::Box<dyn core::error::Error>> {
-    use rsa::pkcs1::DecodeRsaPublicKey;
-    use sha2::Digest;
+frostsnap_core::impl_fromstr_deserialize! {
+    name => "DS signature",
+    fn from_bytes(bytes: [u8;384]) -> DsSignature {
+        DsSignature(bytes)
+    }
+}
 
-    let ds_public_key = rsa::RsaPublicKey::from_pkcs1_der(certificate_body.ds_public_key())?;
-    let padding = rsa::Pkcs1v15Sign::new::<sha2::Sha256>();
-    let message_digest: [u8; 32] = sha2::Sha256::digest(challenge.0).into();
-    ds_public_key
-        .verify(padding, &message_digest, signature.as_ref())
-        .map_err(|e| alloc::format!("Challenge signature verification failed: {e}"))?;
-    Ok(())
+#[cfg(feature = "coordinator")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GenuineError {
+    DeviceIdMismatch,
+    UnknownFactoryKey,
+    CertificateSignatureInvalid,
+    MalformedDsKey,
+    FactoryAttestationSignatureInvalid,
+    IdentityAttestationSignatureInvalid,
+}
+
+#[cfg(feature = "coordinator")]
+impl core::fmt::Display for GenuineError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        let s = match self {
+            GenuineError::DeviceIdMismatch => "factory attestation is for another device",
+            GenuineError::UnknownFactoryKey => "certificate signed by an unknown factory key",
+            GenuineError::CertificateSignatureInvalid => "factory certificate signature invalid",
+            GenuineError::MalformedDsKey => "malformed DS public key in certificate",
+            GenuineError::FactoryAttestationSignatureInvalid => {
+                "factory attestation signature invalid"
+            }
+            GenuineError::IdentityAttestationSignatureInvalid => {
+                "identity attestation signature invalid"
+            }
+        };
+        write!(f, "{s}")
+    }
+}
+
+#[cfg(feature = "coordinator")]
+impl core::error::Error for GenuineError {}
+
+#[cfg(feature = "coordinator")]
+pub fn verify_certificate_detailed(
+    certificate: &Certificate,
+    factory_key: Point<EvenY>,
+) -> Result<CertificateBody, GenuineError> {
+    match &certificate.factory_signature {
+        frostsnap_core::Versioned::V0(factory_signature) => {
+            if factory_key != factory_signature.factory_key {
+                return Err(GenuineError::UnknownFactoryKey);
+            }
+            let certificate_bytes =
+                bincode::encode_to_vec(&certificate.body, crate::SIGNING_BINCODE_CONFIG).unwrap();
+            let message = Message::new("frostsnap-genuine-key", &certificate_bytes);
+            let schnorr = Schnorr::<Sha256>::verify_only();
+            if schnorr.verify(&factory_key, message, &factory_signature.signature) {
+                Ok(certificate.body.clone())
+            } else {
+                Err(GenuineError::CertificateSignatureInvalid)
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -210,7 +318,6 @@ mod test {
     use frostsnap_core::{schnorr_fun, sha2};
     use rand_chacha::rand_core::SeedableRng;
     use rand_chacha::ChaCha20Rng;
-    use rsa::pkcs1::EncodeRsaPublicKey;
     use rsa::RsaPrivateKey;
 
     #[test]
@@ -228,16 +335,109 @@ mod test {
 
         let certificate = sign_certificate(
             schnorr,
-            ds_public_key.to_pkcs1_der().unwrap().to_vec(),
-            CaseColor::Orange,
-            "2.7-1625".to_string(), // BOARD_REVISION
-            "220825002".to_string(),
-            1971,
+            CertificateBody::Frontier {
+                ds_public_key: DsPublicKeyDer::from(&ds_public_key),
+                case_color: CaseColor::Orange,
+                revision: "2.7-1625".to_string(), // BOARD_REVISION
+                serial: "220825002".to_string(),
+                timestamp: 1971,
+            },
             factory_keypair,
         );
 
         let verified_cert = verify_certificate(&certificate, factory_keypair.public_key()).unwrap();
 
         std::dbg!(verified_cert.serial_number());
+
+        let mut tampered = certificate;
+        let CertificateBody::Frontier { ds_public_key, .. } = &mut tampered.body;
+        *ds_public_key = DsPublicKeyDer(vec![9; 3]);
+        assert_eq!(
+            verify_certificate_detailed(&tampered, factory_keypair.public_key()),
+            Err(GenuineError::CertificateSignatureInvalid)
+        );
+    }
+
+    /// The derived enum `CaseColor` was before it gained `Other`.
+    #[derive(bincode::Encode, bincode::Decode, Debug, Copy, Clone, PartialEq)]
+    enum LegacyCaseColor {
+        Black,
+        Orange,
+        Silver,
+        Blue,
+        Red,
+        Unused0,
+        Unused1,
+        Unused2,
+        Unused3,
+        Unused4,
+        Unused5,
+        Unused6,
+        Unused8,
+        Unused9,
+    }
+
+    const LEGACY: [(LegacyCaseColor, CaseColor); 14] = [
+        (LegacyCaseColor::Black, CaseColor::Black),
+        (LegacyCaseColor::Orange, CaseColor::Orange),
+        (LegacyCaseColor::Silver, CaseColor::Silver),
+        (LegacyCaseColor::Blue, CaseColor::Blue),
+        (LegacyCaseColor::Red, CaseColor::Red),
+        (LegacyCaseColor::Unused0, CaseColor::Other(5)),
+        (LegacyCaseColor::Unused1, CaseColor::Other(6)),
+        (LegacyCaseColor::Unused2, CaseColor::Other(7)),
+        (LegacyCaseColor::Unused3, CaseColor::Other(8)),
+        (LegacyCaseColor::Unused4, CaseColor::Other(9)),
+        (LegacyCaseColor::Unused5, CaseColor::Other(10)),
+        (LegacyCaseColor::Unused6, CaseColor::Other(11)),
+        (LegacyCaseColor::Unused8, CaseColor::Other(12)),
+        (LegacyCaseColor::Unused9, CaseColor::Other(13)),
+    ];
+
+    fn both_configs<T: bincode::Encode>(value: T) -> [Vec<u8>; 2] {
+        [
+            bincode::encode_to_vec(&value, crate::SIGNING_BINCODE_CONFIG).unwrap(),
+            bincode::encode_to_vec(&value, crate::BINCODE_CONFIG).unwrap(),
+        ]
+    }
+
+    fn decode_both(encodings: [Vec<u8>; 2]) -> [CaseColor; 2] {
+        let [fixint, varint] = encodings;
+        [
+            bincode::decode_from_slice(&fixint, crate::SIGNING_BINCODE_CONFIG)
+                .unwrap()
+                .0,
+            bincode::decode_from_slice(&varint, crate::BINCODE_CONFIG)
+                .unwrap()
+                .0,
+        ]
+    }
+
+    #[test]
+    fn case_color_encodes_as_the_legacy_derived_enum() {
+        for (legacy, color) in LEGACY {
+            assert_eq!(both_configs(color), both_configs(legacy), "{legacy:?}");
+            assert_eq!(decode_both(both_configs(legacy)), [color; 2]);
+        }
+        assert_eq!(both_configs(CaseColor::Red), [vec![4, 0, 0, 0], vec![4]]);
+        assert_eq!(
+            both_configs(CaseColor::Other(13)),
+            [vec![13, 0, 0, 0], vec![13]]
+        );
+    }
+
+    #[test]
+    fn unknown_case_color_round_trips() {
+        for index in [14u32, 99, 300] {
+            let encodings = both_configs(index);
+            assert_eq!(decode_both(encodings.clone()), [CaseColor::Other(index); 2]);
+            assert_eq!(both_configs(CaseColor::Other(index)), encodings);
+        }
+    }
+
+    #[test]
+    fn ds_public_key_der_encodes_as_bare_bytes() {
+        let der = vec![0xd5u8; 300];
+        assert_eq!(both_configs(DsPublicKeyDer(der.clone())), both_configs(der));
     }
 }

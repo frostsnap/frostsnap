@@ -28,8 +28,8 @@ fn main() -> ! {
         frostsnap_device::factory::run_dev_provisioning(device);
     } else {
         // Device is already provisioned - proceed with normal boot
-        let resources = alloc::boxed::Box::leak(Resources::init_dev(device));
-        esp32_run::run(resources);
+        let (resources, crypto) = Resources::init_dev(device);
+        esp32_run::run(alloc::boxed::Box::leak(resources), crypto);
     }
 }
 

@@ -83,6 +83,7 @@ flutter:
   uses-material-design: true
   assets:
     - assets/icons/
+    - assets/devices/
     - assets/google_fonts/
     - assets/frostsnap-logo.svg
     - assets/frostsnap-logo-trimmed.png

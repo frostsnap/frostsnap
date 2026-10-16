@@ -8,7 +8,6 @@ use frostsnap_core::schnorr_fun::fun::Point;
 use frostsnap_core::sha2::Sha256;
 use rand::rngs::ThreadRng;
 use rand::{CryptoRng, RngCore};
-use rsa::pkcs1::EncodeRsaPublicKey;
 use rsa::RsaPublicKey;
 use std::collections::HashMap;
 use std::time::{self, Instant};
@@ -307,7 +306,6 @@ fn process_factory_connection<D: crate::db::FactoryDatabase>(
         } => {
             match connection.port.try_read_message() {
                 Ok(Some(ReceiveSerial::Message(DeviceFactorySend::ReceivedDsKey))) => {
-                    let rsa_der_bytes = ds_public_key.to_pkcs1_der().unwrap().to_vec();
                     let schnorr = schnorr_fun::new_with_synthetic_nonces::<Sha256, ThreadRng>();
 
                     let timestamp = time::SystemTime::now()
@@ -317,11 +315,13 @@ fn process_factory_connection<D: crate::db::FactoryDatabase>(
 
                     let genuine_certificate = genuine_certificate::sign_certificate(
                         schnorr,
-                        rsa_der_bytes,
-                        factory_state.target_color,
-                        factory_state.revision.clone(),
-                        provisioned_serial.to_string(),
-                        timestamp,
+                        genuine_certificate::CertificateBody::Frontier {
+                            ds_public_key: ds_public_key.into(),
+                            case_color: factory_state.target_color,
+                            revision: factory_state.revision.clone(),
+                            serial: provisioned_serial.to_string(),
+                            timestamp,
+                        },
                         factory_state.genuine_keypair,
                     );
 

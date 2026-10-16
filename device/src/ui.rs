@@ -19,7 +19,11 @@ pub trait UserInteraction {
     fn go_to_default(&mut self);
     fn set_busy_task(&mut self, task: BusyTask);
     fn clear_busy_task(&mut self);
-    fn poll(&mut self) -> Option<UiEvent>;
+    /// Touch and redraw only. It never produces an event, so it may run every iteration.
+    fn poll(&mut self);
+    /// The next event the user has confirmed. One not taken stays latched in its widget until a
+    /// later call.
+    fn take_event(&mut self) -> Option<UiEvent>;
     fn force_redraw(&mut self);
 }
 
@@ -53,8 +57,12 @@ impl<T: UserInteraction + ?Sized> UserInteraction for Box<T> {
         (**self).clear_busy_task()
     }
 
-    fn poll(&mut self) -> Option<UiEvent> {
+    fn poll(&mut self) {
         (**self).poll()
+    }
+
+    fn take_event(&mut self) -> Option<UiEvent> {
+        (**self).take_event()
     }
 
     fn force_redraw(&mut self) {
