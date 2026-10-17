@@ -1,6 +1,6 @@
 // USB CDC vid and pid
-const USB_VID: u16 = 12346;
-const USB_PID: u16 = 4097;
+pub(crate) const USB_VID: u16 = 12346;
+pub(crate) const USB_PID: u16 = 4097;
 
 // The genuine check as currently implemented is vulnerable to a MITM:
 // a malicious device can forward a received challenge to a genuine

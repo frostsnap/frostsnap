@@ -249,26 +249,39 @@ impl Serial for DesktopSerial {
             });
         }
 
+        // Simulated devices are offered with the real VID and PID, so only debug builds read them.
+        #[cfg(debug_assertions)]
+        if let Ok(sim_ports) = std::env::var(FROSTSNAP_SIM_PORTS_ENV) {
+            ports.extend(parse_sim_ports(&sim_ports));
+        }
+
         ports
     }
 
     fn open_device_port(&self, id: &str, baud_rate: u32) -> Result<SerialPort, PortOpenError> {
-        serialport::new(id, baud_rate)
+        let res = serialport::new(id, baud_rate)
             // This timeout should never be hit in any normal circumstance but it's important to
             // have in case a device is bisbehaving. Note: 10ms is too low and leads to errors when
             // writing.
             .timeout(Duration::from_millis(5_000))
-            .open()
-            .map_err(|e| {
-                let msg = e.to_string();
-                if msg == "Device or resource busy" {
-                    PortOpenError::DeviceBusy
-                } else if msg == "Permission denied" {
-                    PortOpenError::PermissionDenied
-                } else {
-                    PortOpenError::Other(Box::new(e))
-                }
-            })
+            .open();
+        let res = match res {
+            Err(e) if baud_rate > 0 => serialport::new(id, 0)
+                .timeout(Duration::from_millis(5_000))
+                .open()
+                .or(Err(e)),
+            other => other,
+        };
+        res.map_err(|e| {
+            let msg = e.to_string();
+            if msg == "Device or resource busy" {
+                PortOpenError::DeviceBusy
+            } else if msg == "Permission denied" {
+                PortOpenError::PermissionDenied
+            } else {
+                PortOpenError::Other(Box::new(e))
+            }
+        })
     }
 }
 
@@ -283,5 +296,62 @@ impl<T: Serial + Sync> Serial for std::sync::Arc<T> {
         baud_rate: u32,
     ) -> Result<SerialPort, PortOpenError> {
         self.as_ref().open_device_port(unique_id, baud_rate)
+    }
+}
+
+pub const FROSTSNAP_SIM_PORTS_ENV: &str = "FROSTSNAP_SIM_PORTS";
+
+pub fn parse_sim_ports(env_val: &str) -> Vec<PortDesc> {
+    parse_sim_ports_with(env_val, |path| std::path::Path::new(path).exists())
+}
+
+pub fn parse_sim_ports_with(env_val: &str, path_exists: impl Fn(&str) -> bool) -> Vec<PortDesc> {
+    env_val
+        .split(',')
+        .map(str::trim)
+        .filter(|path| !path.is_empty() && path_exists(path))
+        .map(|path| PortDesc {
+            id: path.to_string(),
+            vid: crate::usb_serial_manager::USB_VID,
+            pid: crate::usb_serial_manager::USB_PID,
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_sim_ports_with_filter() {
+        let input = " /dev/pts/1, , /dev/pts/2 , /dev/nonexistent ";
+        let ports = parse_sim_ports_with(input, |p| p == "/dev/pts/1" || p == "/dev/pts/2");
+        assert_eq!(ports.len(), 2);
+        assert_eq!(ports[0].id, "/dev/pts/1");
+        assert_eq!(ports[0].vid, crate::usb_serial_manager::USB_VID);
+        assert_eq!(ports[0].pid, crate::usb_serial_manager::USB_PID);
+        assert_eq!(ports[1].id, "/dev/pts/2");
+        assert_eq!(ports[1].vid, crate::usb_serial_manager::USB_VID);
+        assert_eq!(ports[1].pid, crate::usb_serial_manager::USB_PID);
+    }
+
+    #[test]
+    fn test_parse_sim_ports_filesystem_check() {
+        let temp_dir = tempfile::tempdir().expect("create temp dir");
+        let existing_path = temp_dir.path().join("sim_port_1");
+        std::fs::File::create(&existing_path).expect("create temp file");
+        let missing_path = temp_dir.path().join("sim_port_missing");
+
+        let env_val = format!(
+            "{}, {}",
+            existing_path.to_str().unwrap(),
+            missing_path.to_str().unwrap()
+        );
+
+        let ports = parse_sim_ports(&env_val);
+        assert_eq!(ports.len(), 1);
+        assert_eq!(ports[0].id, existing_path.to_str().unwrap());
+        assert_eq!(ports[0].vid, crate::usb_serial_manager::USB_VID);
+        assert_eq!(ports[0].pid, crate::usb_serial_manager::USB_PID);
     }
 }
