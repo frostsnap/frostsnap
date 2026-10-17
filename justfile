@@ -362,6 +362,10 @@ backup +ARGS="":
 simulate +ARGS="":
     (cd tools/widget_simulator && cargo run -- {{ARGS}}; )
 
+
+# Run desktop device simulator
+sim-device STATE +ARGS="":
+    cargo run -p device_simulator -- --state {{STATE}} --firmware target/riscv32imc-unknown-none-elf/release/{{env}}-frontier.bin {{ARGS}}
 stack-check +ARGS="stacks --max-pct 25":
     cargo run -p stack_check -- {{ARGS}}
 
