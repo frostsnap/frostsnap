@@ -13,6 +13,7 @@ members = [
     "frostsnap_fonts",
     "frostsnap_widgets",
     "tools/widget_simulator",
+    "tools/device_simulator",
     "tools/stack_check",
     "cst816s",
     "frostsnapp/desktop_camera",
