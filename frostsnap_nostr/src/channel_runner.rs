@@ -341,7 +341,10 @@ impl ChannelRunner {
     pub async fn run(
         mut self,
         client: Client,
-    ) -> Result<(ChannelRunnerHandle, mpsc::Receiver<ChannelRunnerEvent>)> {
+    ) -> Result<(
+        ChannelRunnerHandle,
+        mpsc::UnboundedReceiver<ChannelRunnerEvent>,
+    )> {
         let signing = self.signing.take().expect(
             "ChannelRunner::run called before with_identity or with_ephemeral_signing_keys",
         );
@@ -395,7 +398,7 @@ impl ChannelRunner {
             }
         }
 
-        let (event_tx, event_rx) = mpsc::channel::<ChannelRunnerEvent>(64);
+        let (event_tx, event_rx) = mpsc::unbounded_channel::<ChannelRunnerEvent>();
         let (cmd_tx, mut cmd_rx) = mpsc::channel::<RunnerCmd>(32);
         let (profile_tx, mut profile_rx) = mpsc::channel::<(PublicKey, NostrProfile)>(32);
         // Shutdown signal held by every `ChannelRunnerHandle` clone.
@@ -613,8 +616,7 @@ impl ChannelRunner {
                                 .send(ChannelRunnerEvent::Channel(ChannelInfraEvent::Members {
                                     members: members_snapshot(&state),
                                     change: MembersChange::ProfileUpdated(pubkey),
-                                }))
-                                .await;
+                                }));
                         }
                     }
                     Some(()) = sync_done_rx.recv() => {
@@ -997,7 +999,7 @@ async fn process_inner_event_once(
     state: &Arc<Mutex<ChannelState>>,
     client: &Client,
     profile_tx: &mpsc::Sender<(PublicKey, NostrProfile)>,
-    event_tx: &mpsc::Sender<ChannelRunnerEvent>,
+    event_tx: &mpsc::UnboundedSender<ChannelRunnerEvent>,
     ack: Option<oneshot::Sender<()>>,
 ) {
     if !seen_inner_ids.insert(inner.id) {
@@ -1017,7 +1019,7 @@ async fn process_inner_event(
     state: &Arc<Mutex<ChannelState>>,
     client: &Client,
     profile_tx: &mpsc::Sender<(PublicKey, NostrProfile)>,
-    event_tx: &mpsc::Sender<ChannelRunnerEvent>,
+    event_tx: &mpsc::UnboundedSender<ChannelRunnerEvent>,
     ack: Option<oneshot::Sender<()>>,
 ) {
     let author: PublicKey = inner.pubkey.into();
@@ -1032,12 +1034,10 @@ async fn process_inner_event(
     };
     if is_new_member {
         spawn_profile_fetch(author, client.clone(), profile_tx.clone());
-        let _ = event_tx
-            .send(ChannelRunnerEvent::Channel(ChannelInfraEvent::Members {
-                members: members_snapshot(state),
-                change: MembersChange::MemberAdded(author),
-            }))
-            .await;
+        let _ = event_tx.send(ChannelRunnerEvent::Channel(ChannelInfraEvent::Members {
+            members: members_snapshot(state),
+            change: MembersChange::MemberAdded(author),
+        }));
     }
 
     if inner.kind == Kind::Metadata {
@@ -1077,12 +1077,10 @@ async fn process_inner_event(
             None => None,
         };
         if updated.is_some() {
-            let _ = event_tx
-                .send(ChannelRunnerEvent::Channel(ChannelInfraEvent::Members {
-                    members: members_snapshot(state),
-                    change: MembersChange::ProfileUpdated(author),
-                }))
-                .await;
+            let _ = event_tx.send(ChannelRunnerEvent::Channel(ChannelInfraEvent::Members {
+                members: members_snapshot(state),
+                change: MembersChange::ProfileUpdated(author),
+            }));
         }
         if let Some(ack) = ack {
             let _ = ack.send(());
@@ -1094,9 +1092,7 @@ async fn process_inner_event(
                 s.creation_event = Some(inner.clone());
             }
         }
-        let _ = event_tx
-            .send(ChannelRunnerEvent::CreationEventReceived)
-            .await;
+        let _ = event_tx.send(ChannelRunnerEvent::CreationEventReceived);
         // `CreationEventReceived` has no `ack` field, so signal the
         // dispatch-ack (if any) right after queueing — the runner's
         // own state was updated synchronously above, and consumer-
@@ -1106,15 +1102,13 @@ async fn process_inner_event(
         }
     } else if inner.kind == Kind::ChannelMessage {
         let reply_to = extract_e_tag(inner);
-        let _ = event_tx
-            .send(ChannelRunnerEvent::ChatMessage {
-                message_id: inner.id.into(),
-                author,
-                content: inner.content.clone(),
-                timestamp: inner.created_at.as_secs(),
-                reply_to,
-            })
-            .await;
+        let _ = event_tx.send(ChannelRunnerEvent::ChatMessage {
+            message_id: inner.id.into(),
+            author,
+            content: inner.content.clone(),
+            timestamp: inner.created_at.as_secs(),
+            reply_to,
+        });
         // Chat messages route around the dispatch-ack: chat uses
         // its own optimistic-insert flow (see the `publish` path on
         // the handle). If this ever fires via `Dispatch` we still
@@ -1123,12 +1117,10 @@ async fn process_inner_event(
             let _ = ack.send(());
         }
     } else {
-        let _ = event_tx
-            .send(ChannelRunnerEvent::AppEvent {
-                inner_event: inner.clone(),
-                ack,
-            })
-            .await;
+        let _ = event_tx.send(ChannelRunnerEvent::AppEvent {
+            inner_event: inner.clone(),
+            ack,
+        });
     }
 }
 
