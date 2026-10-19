@@ -107,8 +107,10 @@ impl State {
     }
 
     pub fn all_used_nonce_streams(&self) -> BTreeSet<crate::nonce_stream::NonceStreamId> {
+        // A completed session already consumed its nonces, so its stream is free again.
         self.remote_sign_sessions
             .values()
+            .filter(|r| !matches!(r.status, RemoteSignStatus::Completed { .. }))
             .map(|r| r.nonce_state.stream_id)
             .collect()
     }

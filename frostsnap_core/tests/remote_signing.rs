@@ -167,6 +167,54 @@ fn two_coordinator_remote_signing() {
 }
 
 #[test]
+fn completed_remote_signing_frees_its_nonce_stream() {
+    let mut rng = ChaCha20Rng::from_seed([42u8; 32]);
+    let mut env = RemoteSigningEnv::default();
+    let mut run = Run::start_after_remote_keygen(
+        &[1, 1],
+        2,
+        "remote sign key",
+        KeyPurpose::Test,
+        &mut env,
+        &mut rng,
+    );
+    // One stream per device, so a second round needs the first one's stream back.
+    run.replenish_all_nonces(1, &mut env, &mut rng);
+
+    let access_structure_ref = run.participants[0]
+        .coordinator
+        .iter_access_structures()
+        .next()
+        .unwrap()
+        .access_structure_ref();
+
+    for round in 0..2u8 {
+        let id = RemoteSignSessionId::new([round; 32]);
+        let sign_task = WireSignTask::Test {
+            message: format!("round {round}"),
+        };
+        let mut all_binonces = vec![];
+        for i in 0..2 {
+            let device_id = *run.participants[i].devices.keys().next().unwrap();
+            let offer = run.participants[i]
+                .coordinator
+                .offer_to_sign(id, access_structure_ref, sign_task.clone(), device_id)
+                .unwrap();
+            all_binonces.push(offer.participant_binonces.clone());
+        }
+        for i in 0..2 {
+            let device_id = *run.participants[i].devices.keys().next().unwrap();
+            let sign_req = run.participants[i]
+                .coordinator
+                .sign_with_nonce_reservation(id, device_id, &all_binonces, TEST_ENCRYPTION_KEY)
+                .unwrap();
+            run.extend_from_coordinator(i, sign_req);
+        }
+        run.run_until_finished(&mut env, &mut rng).unwrap();
+    }
+}
+
+#[test]
 fn cancel_remote_sign_session_reuses_nonces() {
     let mut env = TestEnv::default();
     let mut rng = ChaCha20Rng::from_seed([42u8; 32]);
