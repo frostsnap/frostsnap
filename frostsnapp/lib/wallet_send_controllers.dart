@@ -220,6 +220,15 @@ class AmountInputController with ChangeNotifier {
 
   /// Update state by applying an [text] from user input.
   set amountText(String text) {
+    if (text.isEmpty) {
+      _amount = null;
+      _textError = null;
+      _customError = null;
+      state.clearAmount(recipient: 0);
+      notifyListeners();
+      return;
+    }
+
     int? newAmount;
     String? newError;
 
@@ -247,6 +256,7 @@ class AmountInputController with ChangeNotifier {
         }
     }
 
+    _amount = newAmount;
     if (newAmount != null) {
       state.setAmount(recipient: 0, amount: newAmount);
     } else {
