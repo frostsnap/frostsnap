@@ -3,3 +3,4 @@ rust_root: rust/
 dart_output: lib/src/rust
 stop_on_error: true
 type_64bit_int: true
+dart_preamble: "import 'package:frostsnap/stream_ext.dart';"

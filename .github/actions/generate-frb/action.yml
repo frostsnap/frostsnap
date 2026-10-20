@@ -8,6 +8,13 @@ inputs:
 runs:
   using: "composite"
   steps:
+    - uses: taiki-e/install-action@just
+
+    - name: Hash FRB Inputs
+      id: frb-inputs
+      shell: bash
+      run: echo "hash=$(just frb-input-hashes | sha256sum | cut -d ' ' -f1)" >> "$GITHUB_OUTPUT"
+
     - name: Cache Generated FRB Files
       id: generate-frb
       uses: actions/cache@v4
@@ -16,7 +23,7 @@ runs:
           ./frostsnapp/binding-rerun.sha256
           ./frostsnapp/lib/src/rust
           ./frostsnapp/rust/src/frb_generated.rs
-        key: frb-files-${{ inputs.version }}-${{ hashFiles('frostsnapp/rust/src/api/**') }}
+        key: frb-files-${{ inputs.version }}-${{ steps.frb-inputs.outputs.hash }}
 
     - uses: dtolnay/rust-toolchain@stable
       if: steps.generate-frb.outputs.cache-hit != 'true'
@@ -35,9 +42,6 @@ runs:
       with:
         flutter-version-file: frostsnapp/.fvmrc
         cache: true
-
-    - uses: taiki-e/install-action@just
-      if: steps.generate-frb.outputs.cache-hit != 'true'
 
     - uses: ./.github/actions/install-cargo-bins
       if: steps.generate-frb.outputs.cache-hit != 'true'
