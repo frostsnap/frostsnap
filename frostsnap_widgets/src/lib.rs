@@ -66,6 +66,7 @@ mod super_draw_target;
 pub mod swipe_up_chevron;
 pub mod switcher;
 pub mod text;
+pub mod touch_calibration;
 pub mod touch_listener;
 pub mod translate;
 pub mod vec_framebuffer;
