@@ -1,6 +1,6 @@
 use embedded_graphics::pixelcolor::Rgb565;
 use embedded_graphics::prelude::Point;
-use frostsnap_cst816s::{interrupt::TouchReceiver, TouchGesture};
+use frostsnap_cst816s::{interrupt::TouchReceiver, TouchEvent, TouchGesture};
 use frostsnap_widgets::{debug::OverlayDebug, DynWidget, Widget};
 
 use crate::touch_calibration::adjust_touch_point;
@@ -18,48 +18,68 @@ pub fn process_all_touch_events<W>(
     while let Some(touch_event) = touch_receiver.dequeue() {
         // Apply touch calibration adjustments
         let touch_point = adjust_touch_point(Point::new(touch_event.x, touch_event.y));
-        let lift_up = touch_event.action == 1;
-        let gesture = touch_event.gesture;
+        process_touch_event(
+            touch_point,
+            touch_event,
+            widget,
+            last_touch,
+            current_widget_index,
+            now_ms,
+        );
+    }
+}
 
-        let is_vertical_drag = matches!(gesture, TouchGesture::SlideUp | TouchGesture::SlideDown);
-        let is_horizontal_swipe =
-            matches!(gesture, TouchGesture::SlideLeft | TouchGesture::SlideRight);
+/// Process one touch event whose point is already in screen coordinates
+pub fn process_touch_event<W>(
+    touch_point: Point,
+    touch_event: TouchEvent,
+    widget: &mut OverlayDebug<W>,
+    last_touch: &mut Option<Point>,
+    current_widget_index: &mut usize,
+    now_ms: frostsnap_widgets::Instant,
+) where
+    W: Widget<Color = Rgb565>,
+{
+    let lift_up = touch_event.action == 1;
+    let gesture = touch_event.gesture;
 
-        // Handle horizontal swipes to switch between widgets
-        if is_horizontal_swipe && lift_up {
-            match gesture {
-                TouchGesture::SlideLeft if *current_widget_index == 0 => {
-                    *current_widget_index = 1;
-                    widget.show_logs();
-                }
-                TouchGesture::SlideRight if *current_widget_index == 1 => {
-                    *current_widget_index = 0;
-                    widget.show_main();
-                }
-                _ => {}
+    let is_vertical_drag = matches!(gesture, TouchGesture::SlideUp | TouchGesture::SlideDown);
+    let is_horizontal_swipe = matches!(gesture, TouchGesture::SlideLeft | TouchGesture::SlideRight);
+
+    // Handle horizontal swipes to switch between widgets
+    if is_horizontal_swipe && lift_up {
+        match gesture {
+            TouchGesture::SlideLeft if *current_widget_index == 0 => {
+                *current_widget_index = 1;
+                widget.show_logs();
             }
+            TouchGesture::SlideRight if *current_widget_index == 1 => {
+                *current_widget_index = 0;
+                widget.show_main();
+            }
+            _ => {}
         }
+    }
 
-        // Handle vertical drag for widgets that support it
-        if is_vertical_drag {
-            widget.handle_vertical_drag(
-                last_touch.map(|point| point.y as u32),
-                touch_point.y as u32,
-                lift_up,
-            );
-        }
+    // Handle vertical drag for widgets that support it
+    if is_vertical_drag {
+        widget.handle_vertical_drag(
+            last_touch.map(|point| point.y as u32),
+            touch_point.y as u32,
+            lift_up,
+        );
+    }
 
-        if !is_vertical_drag || lift_up {
-            // Always handle touch events (for both press and release)
-            // This is important so that lift_up is processed after drag
-            widget.handle_touch(touch_point, now_ms, lift_up);
-        }
+    if !is_vertical_drag || lift_up {
+        // Always handle touch events (for both press and release)
+        // This is important so that lift_up is processed after drag
+        widget.handle_touch(touch_point, now_ms, lift_up);
+    }
 
-        // Store last touch for drag calculations
-        if lift_up {
-            *last_touch = None;
-        } else {
-            *last_touch = Some(touch_point);
-        }
+    // Store last touch for drag calculations
+    if lift_up {
+        *last_touch = None;
+    } else {
+        *last_touch = Some(touch_point);
     }
 }

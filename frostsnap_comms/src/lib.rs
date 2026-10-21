@@ -227,6 +227,18 @@ pub enum CoordinatorSendBody {
     Upgrade(CoordinatorUpgradeMessage),
     DataErase,
     Challenge(Box<GenuineChallenge>),
+    /// A synthetic touch for remote hardware labs. Only `remote-touch` firmware acts on it.
+    Touch(RemoteTouch),
+}
+
+/// Screen coordinates (240x280) with the same `action` and `gesture` codes as the CST816S.
+#[derive(Encode, Decode, Debug, Clone, Copy)]
+pub struct RemoteTouch {
+    pub x: i16,
+    pub y: i16,
+    /// 0 down, 1 lift, 2 contact
+    pub action: u8,
+    pub gesture: u8,
 }
 
 impl From<CoordinatorSendBody> for WireCoordinatorSendBody {

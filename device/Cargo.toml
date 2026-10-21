@@ -18,6 +18,8 @@ stack_guard = []
 genuine_device = []
 # test-only firmware for camera-read hardware experiments (see hwlab/)
 hwlab = ["dep:qrcodegen-no-heap"]
+# test-only firmware that accepts touches from the coordinator (remote hardware lab)
+remote-touch = []
 
 [dependencies]
 frostsnap_core = { workspace = true }

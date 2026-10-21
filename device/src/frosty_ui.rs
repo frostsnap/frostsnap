@@ -43,6 +43,8 @@ pub struct FrostyUi<'a> {
     pub busy_task: Option<BusyTask>,
     pub current_widget_index: usize,
     default_workflow: Option<Workflow>,
+    #[cfg(feature = "remote-touch")]
+    injected_touches: alloc::collections::VecDeque<frostsnap_cst816s::TouchEvent>,
 }
 
 impl<'a> FrostyUi<'a> {
@@ -77,7 +79,24 @@ impl<'a> FrostyUi<'a> {
             current_widget_index: 0,
             busy_task: Default::default(),
             default_workflow: None,
+            #[cfg(feature = "remote-touch")]
+            injected_touches: Default::default(),
         }
+    }
+
+    /// Queue a touch from the coordinator to be handled like a hardware one
+    #[cfg(feature = "remote-touch")]
+    pub fn inject_touch(&mut self, touch: frostsnap_comms::RemoteTouch) {
+        self.injected_touches
+            .push_back(frostsnap_cst816s::TouchEvent {
+                x: touch.x.into(),
+                y: touch.y.into(),
+                gesture: touch.gesture.into(),
+                action: touch.action,
+                finger_id: 0,
+                pressure: 0,
+                area: 0,
+            });
     }
 }
 
@@ -272,6 +291,19 @@ impl<'a> UserInteraction for FrostyUi<'a> {
             &mut self.current_widget_index,
             now_ms,
         );
+
+        #[cfg(feature = "remote-touch")]
+        while let Some(touch_event) = self.injected_touches.pop_front() {
+            // Injected points are already in screen coordinates, so skip calibration
+            touch_handler::process_touch_event(
+                Point::new(touch_event.x, touch_event.y),
+                touch_event,
+                &mut self.widget,
+                &mut self.last_touch,
+                &mut self.current_widget_index,
+                now_ms,
+            );
+        }
 
         // Only redraw if enough time has passed since last redraw
         let elapsed_ms = (now - self.last_redraw_time).as_millis();

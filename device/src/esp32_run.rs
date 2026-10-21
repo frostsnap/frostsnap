@@ -496,6 +496,8 @@ impl<'a> DeviceLoop<'a> {
                 CoordinatorSendBody::AnnounceAck => {
                     self.upstream_connection
                         .set_state(UpstreamConnectionState::EstablishedAndCoordAck, self.ui);
+                    #[cfg(feature = "remote-touch")]
+                    self.upstream_connection.send_debug("remote-touch enabled");
                 }
                 CoordinatorSendBody::Naming(naming) => match naming {
                     frostsnap_comms::NameCommand::Preview(preview_name) => {
@@ -567,6 +569,10 @@ impl<'a> DeviceLoop<'a> {
                         ]);
                     }
                 }
+                #[cfg(feature = "remote-touch")]
+                CoordinatorSendBody::Touch(touch) => self.ui.inject_touch(*touch),
+                #[cfg(not(feature = "remote-touch"))]
+                CoordinatorSendBody::Touch(_) => {}
             }
         }
         self.inbox = inbox;
