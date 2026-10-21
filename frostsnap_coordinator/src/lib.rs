@@ -7,6 +7,8 @@ pub mod firmware;
 pub mod firmware_upgrade;
 pub mod keygen;
 pub mod nonce_replenish;
+#[cfg(feature = "remote-serial")]
+pub mod remote_serial;
 mod serial_port;
 pub mod signing;
 mod ui_protocol;
