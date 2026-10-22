@@ -469,6 +469,7 @@ macro_rules! demo_widget {
                     silent_payment_recipients: $crate::alloc::vec![],
                     fee: bitcoin::Amount::from_sat(80_000), // 0.00080 BTC (>5% fee triggers warning)
                     fee_rate_sats_per_vbyte: Some(12.5), // Example: 12.5 sats/vB fee rate
+                    outputs_fingerprint: [0xab; 32],
                 };
 
                 // Create the sign prompt widget
@@ -500,6 +501,7 @@ macro_rules! demo_widget {
                     ],
                     fee: bitcoin::Amount::from_sat(15_000),
                     fee_rate_sats_per_vbyte: Some(8.5),
+                    outputs_fingerprint: [0xab; 32],
                 };
 
                 let widget = SignTxPrompt::new(prompt);
@@ -529,6 +531,7 @@ macro_rules! demo_widget {
                     ],
                     fee: bitcoin::Amount::from_sat(15_000),
                     fee_rate_sats_per_vbyte: Some(8.5),
+                    outputs_fingerprint: [0xab; 32],
                 };
 
                 let widget = SignTxPrompt::new_sp_ecdh(prompt, 0);

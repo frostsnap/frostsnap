@@ -1,5 +1,9 @@
 use alloc::vec::Vec;
-use alloc::{boxed::Box, collections::BTreeMap, string::String};
+use alloc::{
+    boxed::Box,
+    collections::BTreeMap,
+    string::{String, ToString},
+};
 use bitcoin::{
     consensus::Encodable,
     hashes::{sha256d, Hash},
@@ -7,12 +11,32 @@ use bitcoin::{
     sighash::SighashCache,
     OutPoint, Script, ScriptBuf, TapSighash, TxOut, Txid,
 };
+use schnorr_fun::fun::hash::Tag;
+use sha2::{Digest, Sha256};
 
 use crate::{
     silent_payments::SilentPaymentRecipient,
     tweak::{AppTweak, BitcoinBip32Path},
     MasterAppkey,
 };
+
+const OUTPUT_IS_ADDRESS: u8 = 0x00;
+const OUTPUT_IS_SCRIPT_HEX: u8 = 0x01;
+
+/// The first 16 bytes of an outputs fingerprint as eight groups of hex, e.g.
+/// `ab12 cd34 ef56 7890 ...`, for the user to compare between the app and the device.
+///
+/// This is a convenience, not a security guarantee. An app that builds both the outputs it
+/// shows and the outputs it signs controls free details (change index, change amount, order),
+/// so with a truncated code it only needs a collision. The device's own review of the outputs
+/// is the security boundary.
+pub fn fingerprint_code(fp: &[u8; 32]) -> String {
+    fp[..16]
+        .chunks(2)
+        .map(|c| alloc::format!("{:02x}{:02x}", c[0], c[1]))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
 
 /// Invalid state free representation of a transaction
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode, Eq, PartialEq, Hash)]
@@ -298,6 +322,26 @@ impl TransactionTemplate {
             })
     }
 
+    /// A hash of every output's index, value and address on `network`, in order. A silent
+    /// payment output contributes the address it was given, so the fingerprint stays the same
+    /// once its script is filled in.
+    pub fn outputs_fingerprint(&self, network: bitcoin::Network) -> [u8; 32] {
+        let mut hash = Sha256::default().tag(b"frostsnap/outputs/v2");
+        for (i, output) in self.outputs.iter().enumerate() {
+            let (form, text) = match &output.owner {
+                SpkOwner::SilentPayment(sp) => (OUTPUT_IS_ADDRESS, sp.address.clone()),
+                SpkOwner::Foreign(spk) => address_or_script_hex(spk, network),
+                SpkOwner::Local(local) => address_or_script_hex(&local.spk(), network),
+            };
+            hash.update((i as u32).to_le_bytes());
+            hash.update(output.value.to_le_bytes());
+            hash.update([form]);
+            hash.update((text.len() as u64).to_le_bytes());
+            hash.update(text.as_bytes());
+        }
+        hash.finalize().into()
+    }
+
     pub fn user_prompt(&self, network: bitcoin::Network) -> PromptSignBitcoinTx {
         let fee = bitcoin::Amount::from_sat(
             self.fee()
@@ -333,7 +377,16 @@ impl TransactionTemplate {
             silent_payment_recipients,
             fee,
             fee_rate_sats_per_vbyte,
+            outputs_fingerprint: self.outputs_fingerprint(network),
         }
+    }
+}
+
+/// An address for `spk` on `network`, or the hex of the script when it has no address form.
+fn address_or_script_hex(spk: &Script, network: bitcoin::Network) -> (u8, String) {
+    match bitcoin::Address::from_script(spk, network) {
+        Ok(address) => (OUTPUT_IS_ADDRESS, address.to_string()),
+        Err(_) => (OUTPUT_IS_SCRIPT_HEX, alloc::format!("{spk:x}")),
     }
 }
 
@@ -346,9 +399,14 @@ pub struct PromptSignBitcoinTx {
     pub fee: bitcoin::Amount,
     /// Fee rate in sats/vB
     pub fee_rate_sats_per_vbyte: Option<f64>,
+    pub outputs_fingerprint: [u8; 32],
 }
 
 impl PromptSignBitcoinTx {
+    pub fn fingerprint_code(&self) -> String {
+        fingerprint_code(&self.outputs_fingerprint)
+    }
+
     /// Calculate the total amount being sent to foreign and silent payment recipients
     pub fn total_sent(&self) -> bitcoin::Amount {
         self.foreign_recipients
@@ -504,5 +562,143 @@ impl SpkOwner {
             SpkOwner::Foreign(_) | SpkOwner::SilentPayment(_) => None,
             SpkOwner::Local(owner) => Some(owner),
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use bitcoin::{Address, Amount, Network};
+    use core::str::FromStr;
+    use schnorr_fun::fun::{marker::*, Scalar, G};
+
+    fn dummy_sp_recipient(scan: u8, spend: u8) -> (SilentPaymentRecipient, String) {
+        let scan_s = Scalar::<Secret, Zero>::from_bytes_mod_order([scan; 32])
+            .non_zero()
+            .unwrap();
+        let spend_s = Scalar::<Secret, Zero>::from_bytes_mod_order([spend; 32])
+            .non_zero()
+            .unwrap();
+        let recipient = SilentPaymentRecipient {
+            scan_key: schnorr_fun::fun::g!(scan_s * G)
+                .normalize()
+                .non_zero()
+                .unwrap(),
+            spend_key: schnorr_fun::fun::g!(spend_s * G)
+                .normalize()
+                .non_zero()
+                .unwrap(),
+        };
+        let addr = recipient.address(Network::Bitcoin).unwrap();
+        (recipient, addr)
+    }
+
+    fn mainnet_address(s: &str) -> Address {
+        Address::from_str(s)
+            .unwrap()
+            .require_network(Network::Bitcoin)
+            .unwrap()
+    }
+
+    #[test]
+    fn outputs_fingerprint_fixed_vector() {
+        let mut template = TransactionTemplate::new();
+        template.push_foreign_output(TxOut {
+            value: Amount::from_sat(100_000),
+            script_pubkey: mainnet_address("bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4")
+                .script_pubkey(),
+        });
+        template.push_foreign_output(TxOut {
+            value: Amount::from_sat(250_000),
+            script_pubkey: mainnet_address(
+                "bc1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3qccfmv3",
+            )
+            .script_pubkey(),
+        });
+
+        let fp = template.outputs_fingerprint(Network::Bitcoin);
+        let code = fingerprint_code(&fp);
+        // Eight groups of four hex characters, separated by spaces.
+        assert_eq!(code.len(), 39);
+        assert_eq!(code.split(' ').count(), 8);
+        assert!(code.split(' ').all(|g| g.len() == 4));
+
+        assert_eq!(code, "1a50 e39a 473d 614f ffd1 dade fd42 85bb");
+    }
+
+    #[test]
+    fn outputs_fingerprint_stable_across_with_sp_scripts() {
+        let mut template = TransactionTemplate::new();
+        template.push_foreign_output(TxOut {
+            value: Amount::from_sat(100_000),
+            script_pubkey: mainnet_address("bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4")
+                .script_pubkey(),
+        });
+        let (recipient, sp_addr) = dummy_sp_recipient(1, 2);
+        template.push_silent_payment_output(Amount::from_sat(50_000), recipient, sp_addr);
+
+        let fp_before = template.outputs_fingerprint(Network::Bitcoin);
+
+        let mut shared_secrets = BTreeMap::new();
+        shared_secrets.insert(recipient.scan_key, G.normalize());
+        let template_with_sp = template.with_sp_scripts(&shared_secrets).unwrap();
+
+        assert_eq!(
+            fp_before,
+            template_with_sp.outputs_fingerprint(Network::Bitcoin)
+        );
+    }
+
+    #[test]
+    fn outputs_fingerprint_changes_on_amount_or_address_or_order() {
+        let addr1 = mainnet_address("bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4");
+        let addr2 =
+            mainnet_address("bc1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3qccfmv3");
+
+        let make_template = |val1: u64, addr1: &Address, val2: u64, addr2: &Address| {
+            let mut template = TransactionTemplate::new();
+            template.push_foreign_output(TxOut {
+                value: Amount::from_sat(val1),
+                script_pubkey: addr1.script_pubkey(),
+            });
+            template.push_foreign_output(TxOut {
+                value: Amount::from_sat(val2),
+                script_pubkey: addr2.script_pubkey(),
+            });
+            template
+        };
+
+        let base_fp =
+            make_template(100_000, &addr1, 250_000, &addr2).outputs_fingerprint(Network::Bitcoin);
+
+        let changed = [
+            make_template(100_001, &addr1, 250_000, &addr2),
+            make_template(100_000, &addr1, 250_001, &addr2),
+            make_template(100_000, &addr2, 250_000, &addr2),
+            make_template(250_000, &addr2, 100_000, &addr1),
+        ];
+        for template in changed {
+            assert_ne!(base_fp, template.outputs_fingerprint(Network::Bitcoin));
+        }
+
+        let (rec, sp_addr) = dummy_sp_recipient(1, 2);
+        let mut sp_base = TransactionTemplate::new();
+        sp_base.push_silent_payment_output(Amount::from_sat(100_000), rec, sp_addr.clone());
+        let sp_base_fp = sp_base.outputs_fingerprint(Network::Bitcoin);
+
+        let mut sp_changed_amt = TransactionTemplate::new();
+        sp_changed_amt.push_silent_payment_output(Amount::from_sat(100_001), rec, sp_addr);
+        assert_ne!(
+            sp_base_fp,
+            sp_changed_amt.outputs_fingerprint(Network::Bitcoin)
+        );
+
+        let (rec2, sp_addr2) = dummy_sp_recipient(3, 4);
+        let mut sp_changed_addr = TransactionTemplate::new();
+        sp_changed_addr.push_silent_payment_output(Amount::from_sat(100_000), rec2, sp_addr2);
+        assert_ne!(
+            sp_base_fp,
+            sp_changed_addr.outputs_fingerprint(Network::Bitcoin)
+        );
     }
 }
