@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:frostsnap/animated_gradient_card.dart';
 import 'package:frostsnap/device_action_fullscreen_dialog.dart';
 import 'package:frostsnap/device_action_upgrade.dart';
+import 'package:frostsnap/device_identity_art.dart';
 import 'package:frostsnap/hex.dart';
 import 'package:frostsnap/secure_key_provider.dart';
 import 'package:frostsnap/settings.dart';
@@ -17,6 +18,7 @@ import 'package:frostsnap/bullet_list.dart';
 import 'package:frostsnap/copy_feedback.dart';
 import 'package:frostsnap/src/rust/api/bitcoin.dart';
 import 'package:frostsnap/src/rust/api/device_list.dart';
+import 'package:frostsnap/src/rust/api/firmware.dart';
 import 'package:frostsnap/src/rust/api/keygen.dart';
 import 'package:frostsnap/src/rust/api/name.dart';
 import 'package:frostsnap/src/rust/api/nonce_replenish.dart';
@@ -753,74 +755,15 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
       children: [
         SliverDeviceList(
           deviceBuilder: (context, device) {
-            final cs = Theme.of(context).colorScheme;
-
-            if (device.name != null) {
-              return _deviceRow(
-                context: context,
-                title: Text(
-                  device.name!,
-                  style: monospaceTextStyle.copyWith(
-                    color: cs.onSurfaceVariant,
-                  ),
-                ),
-                trailing: buildDeviceTrailingInfo(
-                  context,
-                  text: 'Already holds a key',
-                  subText: 'Unplug to continue',
-                  icon: Icons.warning_rounded,
-                  color: cs.error,
-                ),
-                enabled: false,
-              );
-            }
-
-            return device.firmwareUpgradeEligibility().when(
-              upToDate: () => _deviceRow(
-                context: context,
-                title: _inlineNameField(context, device),
-                // The name field it focuses is itself a Tab stop.
-                trailing: ExcludeFocusTraversal(
-                  child: IconButton(
-                    icon: Icon(
-                      Icons.edit_rounded,
-                      color: cs.onSurfaceVariant,
-                      size: 20,
-                    ),
-                    tooltip: 'Edit device name',
-                    onPressed: () => _nameFocusNodes
-                        .putIfAbsent(device.id, () => FocusNode())
-                        .requestFocus(),
-                  ),
-                ),
-                onTap: () => _nameFocusNodes
-                    .putIfAbsent(device.id, () => FocusNode())
-                    .requestFocus(),
-              ),
-              canUpgrade: () => _deviceRow(
-                context: context,
-                title: const SizedBox.shrink(),
-                trailing: buildDeviceTrailingInfo(
-                  context,
-                  text: 'Old firmware',
-                  subText: 'Tap to upgrade',
-                  icon: Icons.system_update_alt_rounded,
-                  color: Colors.orange,
-                ),
-                onTap: () async => await _upgradeController.run(parentCtx),
-              ),
-              cannotUpgrade: (reason) => _deviceRow(
-                context: context,
-                title: const SizedBox.shrink(),
-                trailing: buildDeviceTrailingInfo(
-                  context,
-                  text: 'Incompatible firmware',
-                  subText: reason,
-                  icon: Icons.warning_rounded,
-                  color: cs.error,
-                ),
-                enabled: false,
-              ),
+            void focusName() => _nameFocusNodes
+                .putIfAbsent(device.id, () => FocusNode())
+                .requestFocus();
+            return AddDeviceRow(
+              device: device,
+              eligibility: device.firmwareUpgradeEligibility(),
+              nameEditor: (context) => _inlineNameField(context, device),
+              onEditName: focusName,
+              onUpgrade: () async => await _upgradeController.run(parentCtx),
             );
           },
         ),
@@ -887,97 +830,18 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
     );
   }
 
-  Widget _deviceRow({
-    required BuildContext context,
-    required Widget title,
-    required Widget trailing,
-    VoidCallback? onTap,
-    bool enabled = true,
-  }) {
-    final cs = Theme.of(context).colorScheme;
-    return Card.filled(
-      margin: const EdgeInsets.symmetric(vertical: 4),
-      color: cs.surfaceContainerHigh,
-      clipBehavior: Clip.hardEdge,
-      child: ListTile(
-        onTap: onTap,
-        enabled: enabled,
-        leading: Icon(
-          Icons.key,
-          color: enabled
-              ? cs.onSurfaceVariant
-              : cs.onSurfaceVariant.withValues(alpha: 0.5),
-        ),
-        title: title,
-        trailing: trailing,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-      ),
-    );
-  }
-
-  Widget buildDeviceTrailingInfo(
-    BuildContext context, {
-    String? text,
-    String? subText,
-    IconData? icon,
-    Color? color,
-  }) => Row(
-    mainAxisSize: MainAxisSize.min,
-    spacing: 8,
-    children: [
-      Flexible(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            if (text != null)
-              Text(
-                text,
-                style: Theme.of(
-                  context,
-                ).textTheme.titleSmall?.copyWith(color: color),
-              ),
-            if (subText != null)
-              Text(
-                subText,
-                style: Theme.of(
-                  context,
-                ).textTheme.labelSmall?.copyWith(color: color),
-              ),
-          ],
-        ),
-      ),
-      if (icon != null) Icon(icon, color: color),
-    ],
-  );
-
   final Map<DeviceId, TextEditingController> _nameControllers = {};
   final Map<DeviceId, FocusNode> _nameFocusNodes = {};
 
   Widget _inlineNameField(BuildContext context, ConnectedDevice device) {
-    final cs = Theme.of(context).colorScheme;
     final currentName = _controller.form.deviceNames[device.id] ?? '';
-    final textController = _nameControllers.putIfAbsent(
-      device.id,
-      () => TextEditingController(text: currentName),
-    );
-    final isDuplicate = _controller.duplicateNamedDeviceIds.contains(device.id);
-    return TextField(
-      controller: textController,
-      focusNode: _nameFocusNodes.putIfAbsent(device.id, () => FocusNode()),
-      style: monospaceTextStyle,
-      maxLength: DeviceName.maxLength(),
-      inputFormatters: [nameInputFormatter],
-      textCapitalization: TextCapitalization.sentences,
-      decoration: InputDecoration(
-        hintText: 'Enter device name',
-        hintStyle: monospaceTextStyle.copyWith(color: cs.onSurfaceVariant),
-        border: InputBorder.none,
-        isDense: true,
-        contentPadding: EdgeInsets.zero,
-        counterText: '',
-        errorText: isDuplicate ? 'Name already used in this wallet' : null,
+    return DeviceNameField(
+      controller: _nameControllers.putIfAbsent(
+        device.id,
+        () => TextEditingController(text: currentName),
       ),
+      focusNode: _nameFocusNodes.putIfAbsent(device.id, () => FocusNode()),
+      isDuplicate: _controller.duplicateNamedDeviceIds.contains(device.id),
       onChanged: (name) => _controller.setDeviceName(device.id, name),
     );
   }
@@ -1705,5 +1569,198 @@ class _LargeCircularProgressIndicatorState
   void dispose() {
     _controller.dispose();
     super.dispose();
+  }
+}
+
+/// One connected device on Add devices: its art, its name, and anything stopping it from joining
+/// the wallet.
+class AddDeviceRow extends StatelessWidget {
+  const AddDeviceRow({
+    super.key,
+    required this.device,
+    required this.eligibility,
+    required this.nameEditor,
+    required this.onEditName,
+    required this.onUpgrade,
+  });
+
+  final ConnectedDevice device;
+  final FirmwareUpgradeEligibility eligibility;
+
+  /// Built only for a device that can be named here.
+  final WidgetBuilder nameEditor;
+  final VoidCallback onEditName;
+  final VoidCallback onUpgrade;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final art = DeviceIdentityArt.forDevice(device, focusable: false);
+
+    if (device.name case final name?) {
+      return DeviceArtCard(
+        focusable: false,
+        art: art,
+        main: DeviceNameText(name),
+        notice: DeviceNotice(
+          icon: Icons.warning_rounded,
+          title: 'Already holds a key',
+          detail: 'Unplug to continue',
+          color: cs.error,
+        ),
+      );
+    }
+
+    return switch (eligibility) {
+      FirmwareUpgradeEligibility_UpToDate() => DeviceArtCard(
+        focusable: false,
+        art: art,
+        main: nameEditor(context),
+        // The name field it focuses is itself a Tab stop.
+        trailing: ExcludeFocusTraversal(
+          child: IconButton(
+            icon: Icon(
+              Icons.edit_rounded,
+              color: cs.onSurfaceVariant,
+              size: 20,
+            ),
+            tooltip: 'Edit device name',
+            onPressed: onEditName,
+          ),
+        ),
+        onTap: onEditName,
+      ),
+      FirmwareUpgradeEligibility_CanUpgrade() => DeviceArtCard(
+        focusable: false,
+        art: art,
+        main: const DevicePlaceholderText('Name it after upgrading'),
+        notice: const DeviceNotice(
+          icon: Icons.system_update_alt_rounded,
+          title: 'Old firmware',
+          detail: 'Tap to upgrade',
+          color: Colors.orange,
+        ),
+        onTap: onUpgrade,
+      ),
+      FirmwareUpgradeEligibility_CannotUpgrade(:final reason) => DeviceArtCard(
+        focusable: false,
+        art: art,
+        main: const DevicePlaceholderText("Can't join this wallet"),
+        notice: DeviceNotice(
+          icon: Icons.warning_rounded,
+          title: 'Incompatible firmware',
+          detail: reason,
+          color: cs.error,
+        ),
+      ),
+    };
+  }
+}
+
+/// The name a device will be given in the new wallet. Continue needs every device named, so an
+/// empty field is outlined and says so.
+class DeviceNameField extends StatelessWidget {
+  const DeviceNameField({
+    super.key,
+    required this.controller,
+    required this.focusNode,
+    required this.isDuplicate,
+    required this.onChanged,
+  });
+
+  final TextEditingController controller;
+  final FocusNode focusNode;
+  final bool isDuplicate;
+  final ValueChanged<String> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    return ListenableBuilder(
+      listenable: controller,
+      builder: (context, _) {
+        final empty = controller.text.trim().isEmpty;
+        const radius = BorderRadius.all(Radius.circular(8));
+        final nameStyle = DeviceNameText.styleOf(context);
+        OutlineInputBorder solid(Color color) => OutlineInputBorder(
+          borderRadius: radius,
+          borderSide: BorderSide(color: color),
+        );
+
+        // Pulls the outline into the gutter so the typed name lines up with read-only names.
+        return Transform.translate(
+          offset: const Offset(-9, 0),
+          child: TextField(
+            controller: controller,
+            focusNode: focusNode,
+            style: nameStyle,
+            maxLength: DeviceName.maxLength(),
+            inputFormatters: [nameInputFormatter],
+            textCapitalization: TextCapitalization.sentences,
+            decoration: InputDecoration(
+              hintText: 'Enter device name',
+              hintStyle: nameStyle?.copyWith(color: cs.onSurfaceVariant),
+              isDense: true,
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 8,
+                vertical: 6,
+              ),
+              counterText: '',
+              enabledBorder: empty
+                  ? _DashedOutlineInputBorder(
+                      borderRadius: radius,
+                      borderSide: BorderSide(color: cs.outline),
+                    )
+                  : solid(Colors.transparent),
+              focusedBorder: solid(cs.primary.withValues(alpha: 0.6)),
+              errorBorder: solid(cs.error),
+              focusedErrorBorder: solid(cs.error),
+              helperText: empty ? 'Name it to continue' : null,
+              helperStyle: theme.textTheme.bodySmall?.copyWith(
+                color: cs.onSurfaceVariant,
+              ),
+              errorText: isDuplicate
+                  ? 'Name already used in this wallet'
+                  : null,
+            ),
+            onChanged: onChanged,
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _DashedOutlineInputBorder extends OutlineInputBorder {
+  const _DashedOutlineInputBorder({super.borderSide, super.borderRadius});
+
+  @override
+  _DashedOutlineInputBorder copyWith({
+    BorderSide? borderSide,
+    BorderRadius? borderRadius,
+    double? gapPadding,
+  }) => _DashedOutlineInputBorder(
+    borderSide: borderSide ?? this.borderSide,
+    borderRadius: borderRadius ?? this.borderRadius,
+  );
+
+  @override
+  void paint(
+    Canvas canvas,
+    Rect rect, {
+    double? gapStart,
+    double gapExtent = 0.0,
+    double gapPercentage = 0.0,
+    TextDirection? textDirection,
+  }) {
+    final outline = Path()
+      ..addRRect(borderRadius.toRRect(rect).deflate(borderSide.width / 2));
+    final paint = borderSide.toPaint();
+    for (final metric in outline.computeMetrics()) {
+      for (var at = 0.0; at < metric.length; at += 7) {
+        canvas.drawPath(metric.extractPath(at, at + 4), paint);
+      }
+    }
   }
 }
