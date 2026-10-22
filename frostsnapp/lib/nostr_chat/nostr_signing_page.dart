@@ -226,6 +226,7 @@ class _NostrSigningPageState extends State<NostrSigningPage> {
         allBinonces: sealed.binonces(),
         targets: devices,
         gotSignatures: completedIds,
+        sp: sealed.sp(),
       );
     } catch (e) {
       debugPrint('[nostr-signing] subRemoteSignSession failed: $e');

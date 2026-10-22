@@ -1132,7 +1132,7 @@ impl FfiCoordinator {
         Ok(())
     }
 
-    fn block_for_to_user_message(
+    pub(crate) fn block_for_to_user_message(
         &self,
         devices: impl IntoIterator<Item = DeviceId>,
         f: impl FnMut(CoordinatorToUserMessage) -> bool + Send + 'static,

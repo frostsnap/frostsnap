@@ -23,7 +23,8 @@ import 'package:frostsnap/src/rust/api/signing.dart'
         SigningDetails_Transaction,
         wireSignTaskBitcoinTransaction,
         wireSignTaskTest;
-import 'package:frostsnap/src/rust/lib.dart' show WireSignTask;
+import 'package:frostsnap/src/rust/lib.dart'
+    show ParticipantBinonces, WireSignTask;
 import 'package:frostsnap/wallet_send.dart';
 import 'package:frostsnap/src/rust/api/super_wallet.dart';
 import 'package:frostsnap/src/rust/api.dart';
@@ -714,6 +715,7 @@ class _ChatPageBodyState extends State<ChatPageBody> {
               requestId: event.requestId,
               signTask: event.signTask,
               binonces: binonces,
+              sp: event.sp,
             );
             final subsetEventIds = event.subset.map((e) => e.eventId).toList();
             state.setRoundConfirmed(sealed, subsetEventIds);

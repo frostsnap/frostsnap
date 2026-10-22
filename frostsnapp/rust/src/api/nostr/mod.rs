@@ -14,7 +14,9 @@ use frostsnap_core::{
     message::EncodedSignature,
     AccessStructureId, AccessStructureRef, KeyId, SignSessionId, SymmetricKey, WireSignTask,
 };
+
 use frostsnap_macros::broadcast_handle;
+
 pub use frostsnap_nostr::NostrProfile;
 use frostsnap_nostr::{
     channel::{parse_frostsnap_link, parse_keygen_link},
@@ -508,6 +510,20 @@ impl ChannelHandle {
         let keys = inner.runner_handle.signing_keys().clone();
         inner.send_sign_offer(&keys, request_id, binonces).await
     }
+    pub async fn send_sp_sign_offer(
+        &self,
+        request_id: EventId,
+        offers: Vec<super::signing::SpSignOffer>,
+    ) -> Result<EventId> {
+        let inner = self.require_inner()?;
+        let keys = inner.runner_handle.signing_keys().clone();
+        let binonces: Vec<ParticipantBinonces> =
+            offers.iter().map(|o| o.binonces.clone()).collect();
+        let sp_ecdh: Vec<_> = offers.into_iter().flat_map(|o| o.sp_ecdh).collect();
+        inner
+            .send_sp_sign_offer(&keys, request_id, binonces, sp_ecdh)
+            .await
+    }
 
     pub async fn send_sign_partial(
         &self,
@@ -552,12 +568,14 @@ impl ChannelHandle {
         request_id: EventId,
         sign_task: &WireSignTask,
         binonces: Vec<RustAutoOpaque<ParticipantBinonces>>,
+        sp: Option<RustAutoOpaque<SpSubset>>,
     ) -> Result<SealedSigningData> {
         Ok(SealedSigningData {
             request_id: request_id.into(),
             sign_task: sign_task.clone(),
             binonces: binonces.iter().map(|b| b.blocking_read().clone()).collect(),
             key_context: self.key_context.clone(),
+            sp: sp.map(|sp| sp.blocking_read().clone()),
         })
     }
 
@@ -1252,6 +1270,14 @@ pub fn offer_share_indices(binonces: Vec<RustAutoOpaque<ParticipantBinonces>>) -
         .map(|b| u32::try_from(b.blocking_read().share_index).expect("share index fits in u32"))
         .collect()
 }
+#[frb(sync)]
+pub fn sign_task_is_silent_payment(sign_task: &WireSignTask) -> bool {
+    if let WireSignTask::BitcoinTransaction(template) = sign_task {
+        template.has_silent_payment_outputs()
+    } else {
+        false
+    }
+}
 
 /// Opaque bundle of round data needed to combine signatures standalone.
 /// Built on demand by `ChannelHandle::seal_round_confirmed(...)` when a
@@ -1264,12 +1290,18 @@ pub struct SealedSigningData {
     pub(crate) sign_task: WireSignTask,
     pub(crate) binonces: Vec<ParticipantBinonces>,
     pub(crate) key_context: KeyContext,
+    pub(crate) sp: Option<SpSubset>,
 }
 
 impl SealedSigningData {
+    /// The task devices sign: for a silent payment send, the template completed with the
+    /// confirmed subset's ECDH shares.
     #[frb(sync)]
     pub fn sign_task(&self) -> WireSignTask {
-        self.sign_task.clone()
+        match &self.sp {
+            Some(sp) => sp.completed_task.clone(),
+            None => self.sign_task.clone(),
+        }
     }
 
     #[frb(sync)]
@@ -1283,10 +1315,15 @@ impl SealedSigningData {
     }
 
     #[frb(sync)]
+    pub fn sp(&self) -> Option<SpSubset> {
+        self.sp.clone()
+    }
+
+    #[frb(sync)]
     pub fn sign_session_id(&self) -> SignSessionId {
         use frostsnap_core::message::GroupSignReq;
         GroupSignReq::from_binonces(
-            self.sign_task.clone(),
+            self.sign_task(),
             self.key_context.access_structure_id(),
             &self.binonces,
         )
@@ -1304,7 +1341,7 @@ impl SealedSigningData {
             .collect();
         let share_refs: Vec<&ParticipantSignatureShares> = guards.iter().map(|g| &**g).collect();
         Ok(frostsnap_core::coordinator::signing::combine_signatures(
-            self.sign_task.clone(),
+            self.sign_task(),
             &self.key_context,
             &self.binonces,
             &share_refs,
