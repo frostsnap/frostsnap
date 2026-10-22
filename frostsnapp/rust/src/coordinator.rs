@@ -17,8 +17,9 @@ use frostsnap_coordinator::frostsnap_comms::{
     CoordinatorSendBody, CoordinatorSendMessage, Destination, Sha256Digest,
 };
 use frostsnap_coordinator::frostsnap_persist::DeviceNames;
+use frostsnap_coordinator::genuine_check::GenuineCheck;
 use frostsnap_coordinator::nonce_replenish::NonceReplenishState;
-use frostsnap_coordinator::persist::Persisted;
+use frostsnap_coordinator::persist::{Persist, Persisted, TakeStaged};
 use frostsnap_coordinator::signing::SigningState;
 use frostsnap_coordinator::verify_address::{VerifyAddressProtocol, VerifyAddressProtocolState};
 use frostsnap_coordinator::wait_for_single_device::{
@@ -36,6 +37,7 @@ use frostsnap_core::coordinator::{
     FrostCoordinator, NonceReplenishRequest,
 };
 use frostsnap_core::device::KeyPurpose;
+use frostsnap_core::schnorr_fun::fun::{marker::EvenY, Point};
 use frostsnap_core::{
     message, schnorr_fun::frost::ShareIndex, AccessStructureRef, DeviceId, KeyId, KeygenId,
     RestorationId, SignSessionId, SymmetricKey, WireSignTask,
@@ -63,6 +65,8 @@ pub struct FfiCoordinator {
     // // persisted things
     pub(crate) db: Arc<Mutex<rusqlite::Connection>>,
     device_names: Arc<Mutex<Persisted<DeviceNames>>>,
+    /// `None` in a build with no factory key.
+    genuine_check: Option<Arc<Mutex<Persisted<GenuineCheck>>>>,
     pub(crate) coordinator: Arc<Mutex<Persisted<FrostCoordinator>>>,
     // backup management
     pub(crate) backup_state: Arc<Mutex<Persisted<BackupState>>>,
@@ -75,6 +79,7 @@ impl FfiCoordinator {
     pub fn new(
         db: Arc<Mutex<rusqlite::Connection>>,
         usb_manager: UsbSerialManager,
+        genuine_cert_key: Option<Point<EvenY>>,
     ) -> anyhow::Result<Self> {
         let mut db_ = db.lock().unwrap();
 
@@ -82,6 +87,14 @@ impl FfiCoordinator {
         let coordinator = Persisted::<FrostCoordinator>::new(&mut db_, ())?;
         event!(Level::DEBUG, "loading device names");
         let device_names = Persisted::<DeviceNames>::new(&mut db_, ())?;
+        let genuine_check = match genuine_cert_key {
+            Some(factory_key) => {
+                event!(Level::DEBUG, "loading genuine certificates");
+                let check = Persisted::<GenuineCheck>::new(&mut db_, factory_key)?;
+                Some(Arc::new(Mutex::new(check)))
+            }
+            None => None,
+        };
         event!(Level::DEBUG, "loading backup state");
         let backup_state = Persisted::<BackupState>::new(&mut db_, ())?;
 
@@ -105,6 +118,7 @@ impl FfiCoordinator {
             db,
             coordinator: Arc::new(Mutex::new(coordinator)),
             device_names: Arc::new(Mutex::new(device_names)),
+            genuine_check,
             backup_state: Arc::new(Mutex::new(backup_state)),
             backup_run_streams: Default::default(),
         })
@@ -134,6 +148,7 @@ impl FfiCoordinator {
         let firmware_upgrade_progress = self.firmware_upgrade_progress.clone();
         let device_list = self.device_list.clone();
         let device_list_stream = self.device_list_stream.clone();
+        let genuine_check = self.genuine_check.clone();
 
         let handle = std::thread::spawn(move || {
             loop {
@@ -189,13 +204,33 @@ impl FfiCoordinator {
                 let mut messages_from_devices = vec![];
                 let mut db = db_loop.lock().unwrap();
                 let mut ui_stack = ui_stack.lock().unwrap();
+                let mut genuine = genuine_check.as_ref().map(|g| g.lock().unwrap());
+                let mut genuine_outbox = vec![];
 
                 // process new messages from devices
                 {
                     let mut device_list = device_list.lock().unwrap();
                     for change in device_changes {
-                        device_list.consume_manager_event(change.clone());
+                        device_list.consume_manager_event(change.clone(), |id| {
+                            genuine.as_ref().and_then(|g| g.status(id))
+                        });
                         match change {
+                            DeviceChange::Connected {
+                                id,
+                                firmware_digest,
+                                ..
+                            } => {
+                                if let Some(g) = &mut genuine {
+                                    if let Some(request) = g.MUTATE_NO_PERSIST().connected(
+                                        id,
+                                        FirmwareVersion::new(firmware_digest),
+                                        &mut rand::thread_rng(),
+                                    ) {
+                                        genuine_outbox
+                                            .push(CoordinatorSendMessage::to(id, request.into()));
+                                    }
+                                }
+                            }
                             DeviceChange::Registered { id, .. } => {
                                 let pending = coordinator.pending_physical_consolidations(id);
                                 if !pending.is_empty() {
@@ -228,6 +263,9 @@ impl FfiCoordinator {
                             }
                             DeviceChange::Disconnected { id } => {
                                 ui_stack.disconnected(id);
+                                if let Some(g) = &mut genuine {
+                                    g.MUTATE_NO_PERSIST().disconnected(id);
+                                }
                             }
                             DeviceChange::NameChange { id, name } => {
                                 let mut device_names = device_names.lock().unwrap();
@@ -258,15 +296,38 @@ impl FfiCoordinator {
                             DeviceChange::NeedsName { id } => {
                                 ui_stack.connected(id, DeviceMode::Blank);
                             }
-                            DeviceChange::GenuineDevice { id, certificate } => {
-                                event!(
-                                    Level::INFO,
-                                    device = id.to_string(),
-                                    serial = certificate.serial_number(),
-                                    "device passed genuine check"
-                                );
+                            DeviceChange::GenuineCheck { from, message } => {
+                                if let Some(g) = &mut genuine {
+                                    let result = g.mutate2(&mut *db, |check, update| {
+                                        if let Some(request) = check.recv(
+                                            from,
+                                            message,
+                                            update,
+                                            &mut rand::thread_rng(),
+                                        ) {
+                                            genuine_outbox.push(CoordinatorSendMessage::to(
+                                                from,
+                                                request.into(),
+                                            ));
+                                        }
+                                        Ok(())
+                                    });
+                                    if let Err(e) = result {
+                                        event!(
+                                            Level::ERROR,
+                                            device = from.to_string(),
+                                            error = e.to_string(),
+                                            "failed to persist the genuine check"
+                                        );
+                                    }
+                                }
                             }
-                            _ => { /* ignore rest */ }
+                        }
+                    }
+
+                    if let Some(g) = &mut genuine {
+                        for (id, status) in g.MUTATE_NO_PERSIST().take_events() {
+                            device_list.set_genuine(id, status);
                         }
                     }
 
@@ -315,8 +376,13 @@ impl FfiCoordinator {
                     }
                 }
 
+                drop(genuine);
                 drop(coordinator);
                 drop(db);
+
+                for message in genuine_outbox {
+                    usb_sender.send(message);
+                }
 
                 while let Some(message) = coordinator_outbox.pop_front() {
                     match message {
@@ -643,6 +709,15 @@ impl FfiCoordinator {
 
     pub fn get_device_name(&self, id: DeviceId) -> Option<String> {
         self.device_names.lock().unwrap().get(id)
+    }
+
+    pub fn get_device_case_color(&self, id: DeviceId) -> Option<api::device_list::CaseColor> {
+        let genuine_check = self.genuine_check.as_ref()?.lock().unwrap();
+        Some(genuine_check.certificate(id)?.case_color())
+    }
+
+    pub fn genuine_check_enabled(&self) -> bool {
+        self.genuine_check.is_some()
     }
 
     /// Persist a user-typed device name into the coord's local `device_names` store without

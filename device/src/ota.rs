@@ -1,3 +1,4 @@
+use crate::crypto::NormalMode;
 use crate::{
     io::SerialIo,
     partitions::{EspFlashPartition, PartitionExt},
@@ -6,10 +7,7 @@ use crate::{
 };
 use alloc::boxed::Box;
 use bincode::config::{Fixint, LittleEndian};
-use esp_hal::rsa::Rsa;
-use esp_hal::sha::Sha;
 use esp_hal::time::{Duration, Instant};
-use esp_hal::Blocking;
 use frostsnap_comms::{
     firmware_version, CommsMisc, DeviceSendBody, Sha256Digest, BAUDRATE,
     FIRMWARE_NEXT_CHUNK_READY_SIGNAL, FIRMWARE_UPGRADE_CHUNK_LEN,
@@ -48,11 +46,10 @@ impl core::fmt::Display for RefuseReason {
 /// more than one thing is wrong the reason follows the check order below,
 /// most fundamental first; that only picks the reason shown, never whether it
 /// commits.
-fn decide_upgrade(
-    partition: &EspFlashPartition<'_>,
+fn decide_upgrade<'a>(
+    partition: &EspFlashPartition<'a>,
     announced_digest: &Sha256Digest,
-    sha: &mut Sha<'_>,
-    rsa: &mut Rsa<Blocking>,
+    firmware: &mut NormalMode<'_, 'a>,
 ) -> UpgradeVerdict {
     let Ok((firmware_size, _)) = partition.firmware_size() else {
         return UpgradeVerdict::Refuse(RefuseReason::UnparseableFirmware);
@@ -62,14 +59,12 @@ fn decide_upgrade(
     // full-image digest instead, but anything they'd push is superseded
     // firmware this device refuses anyway — mismatching them early just picks
     // a different refusal reason.
-    let body_digest = partition.sha256_digest(sha, Some(firmware_size));
+    let body_digest = firmware.digest(partition, Some(firmware_size));
     if body_digest != *announced_digest {
         return UpgradeVerdict::Refuse(RefuseReason::DigestMismatch);
     }
 
-    if secure_boot::is_secure_boot_enabled()
-        && secure_boot::verify_secure_boot(partition, rsa, sha).is_err()
-    {
+    if secure_boot::is_secure_boot_enabled() && firmware.verify_secure_boot(partition).is_err() {
         return UpgradeVerdict::Refuse(RefuseReason::SecureBootInvalid);
     }
 
@@ -283,7 +278,7 @@ pub enum UpgradeOutcome {
     Rejected,
 }
 
-impl FirmwareUpgradeMode<'_> {
+impl<'a> FirmwareUpgradeMode<'a> {
     pub fn poll(&mut self, ui: &mut impl crate::ui::UserInteraction) -> Option<DeviceSendBody> {
         match self {
             FirmwareUpgradeMode::Upgrading {
@@ -373,8 +368,7 @@ impl FirmwareUpgradeMode<'_> {
         upstream_io: &mut SerialIo<'_>,
         mut downstream_io: Option<&mut SerialIo<'_>>,
         ui: &mut impl UserInteraction,
-        sha: &mut Sha<'_>,
-        rsa: &mut Rsa<Blocking>,
+        firmware: &mut NormalMode<'_, 'a>,
     ) -> UpgradeOutcome {
         match self {
             FirmwareUpgradeMode::Upgrading { state, .. } => {
@@ -496,7 +490,7 @@ impl FirmwareUpgradeMode<'_> {
             // here, against the bytes actually written. Any refusal leaves the active
             // slot unchanged and returns Rejected; the running firmware survives and
             // boots again on the power cycle the refusal screen asks for.
-            match decide_upgrade(partition, expected_digest, sha, rsa) {
+            match decide_upgrade(partition, expected_digest, firmware) {
                 UpgradeVerdict::Commit => ota.switch_partition(*ota_slot, OtaMetadata {}),
                 UpgradeVerdict::Refuse(reason) => {
                     ui.set_workflow(ui::Workflow::FirmwareUpgrade(

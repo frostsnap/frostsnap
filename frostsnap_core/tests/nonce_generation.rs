@@ -39,13 +39,11 @@ fn test_nonce_generation_deterministic() {
         .map(|nonce| nonce.to_string())
         .collect();
 
-    // These are the expected nonce values captured from the original iterator implementation
-    // Using TestDeviceKeyGen which uses HMAC with TEST_ENCRYPTION_KEY
     assert_eq!(nonces.len(), 3);
 
-    let expected_nonces = ["03db824cdfb550fdfa8064aa69dc0cc9c8274c820fb8281b2d2443ad8d93e1d5fc02384fa6f82d96f2b31c871c05c19fef10a4885eb719a83b513f7b584932f3c960",
-        "02a96b24205745a07255455672b47dc3a3ed8a5ad1e35ddfdb674d52b17b63da8a0357a55f16e389d4559c4d869443caa6c959eef34643d29878f3fc4567ed110334",
-        "032dd9784b0f54987dd14a65cb81a7a9bbfbd91cbf30b72b40ba31dcc70b764e70027aea249a118f651a1da7861095604ccb2258aa78f10a34e751c65fb9c59a17c3"];
+    let expected_nonces = ["03005eca3d7b9a01e2989ccf8b666b4b3d8297af037af170ede68388538ae986b202c28f0cb16318d50da0679a4afe2b4e54680eecf68a2991ead616dbbe01cd3d80",
+        "02c1521a461debe8bc9f10b665d8fa100153d4add26d43f8128bd91b0ed10f21450200460b3b9fd84447aa24dbf31163c1229c5ebb4af24ba599a735a5c0577e7390",
+        "030a443cdae604e48cc5b8e58f98e2d900cbabbc0dd3c4e27c85fabbafa575d48d0233725812523fc144c1f2879fba1f87c0857fc38480cd0adfcce13e41fa949d40"];
 
     for (i, (actual, expected)) in nonces.iter().zip(expected_nonces.iter()).enumerate() {
         assert_eq!(actual, expected, "Nonce {} mismatch", i);

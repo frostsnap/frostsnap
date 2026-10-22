@@ -1,6 +1,6 @@
 use crate::device_nonces::{self, AbSlots, MemoryNonceSlot, NonceStreamSlot};
 use crate::nonce_stream::CoordNonceStreamState;
-use crate::symmetric_encryption::{Ciphertext, SymmetricKey};
+use crate::symmetric_encryption::Ciphertext;
 use crate::tweak::{self, Xpub};
 use crate::{
     bitcoin_transaction, message::*, AccessStructureId, AccessStructureKind, AccessStructureRef,
@@ -25,8 +25,10 @@ use sha2::Sha256;
 mod device_to_user;
 pub mod keygen;
 pub mod restoration;
+mod secret_derivation;
 pub use device_to_user::*;
 pub use keygen::{KeyGenPhase1, KeyGenPhase2, KeyGenPhase3, KeyGenPhase4};
+pub use secret_derivation::*;
 
 /// The number of nonces the device will give out at a time.
 pub const NONCE_BATCH_SIZE: u32 = 30;
@@ -604,22 +606,6 @@ pub enum Mutation {
     Keygen(keys::KeyMutation),
     #[delegate_kind]
     Restoration(restoration::RestorationMutation),
-}
-
-pub trait DeviceSecretDerivation {
-    fn get_share_encryption_key(
-        &mut self,
-        access_structure_ref: AccessStructureRef,
-        party_index: ShareIndex,
-        coord_key: CoordShareDecryptionContrib,
-    ) -> SymmetricKey;
-
-    fn derive_nonce_seed(
-        &mut self,
-        nonce_stream_id: crate::nonce_stream::NonceStreamId,
-        index: u32,
-        seed_material: &[u8; 32],
-    ) -> [u8; 32];
 }
 
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode, PartialEq)]
