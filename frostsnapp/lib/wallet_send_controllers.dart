@@ -18,10 +18,12 @@ class AddressInputController with ChangeNotifier {
   late final TextEditingController controller;
   late final BuildTxState state;
 
+  final bool remoteSigning;
+
   String? _errorText;
   String? _lastSubmitted;
 
-  AddressInputController(BuildTxState state) {
+  AddressInputController(BuildTxState state, {required this.remoteSigning}) {
     controller = TextEditingController();
     controller.addListener(onTextEdit);
     this.state = state;
@@ -46,6 +48,15 @@ class AddressInputController with ChangeNotifier {
 
     try {
       state.setRecipientWithUri(recipient: recipient, uri: controller.text);
+      // Local signing cannot produce the silent payment ECDH shares, so only
+      // remote wallets can pay these addresses.
+      if (!remoteSigning &&
+          (state.recipient(recipient: recipient)?.isSilentPayment() ?? false)) {
+        state.clearAddress(recipient: recipient);
+        _errorText =
+            'Silent payment addresses can only be paid from a remote wallet';
+        return false;
+      }
     } on String catch (e) {
       _errorText = e;
       return false;

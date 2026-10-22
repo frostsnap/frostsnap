@@ -88,7 +88,10 @@ class _WalletSendPageState extends State<WalletSendPage> {
       (_) => mounted ? setState(() {}) : null,
     );
 
-    addrController = AddressInputController(state);
+    addrController = AddressInputController(
+      state,
+      remoteSigning: widget.remoteSigning,
+    );
     amountController = AmountInputController(state: state);
   }
 

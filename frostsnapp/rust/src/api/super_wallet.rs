@@ -278,6 +278,7 @@ impl SuperWallet {
                 recipients: Vec::new(),
                 access_id: None,
                 signers: HashSet::new(),
+                silent_payment_recipients: Default::default(),
             })),
         };
         Some(state)
