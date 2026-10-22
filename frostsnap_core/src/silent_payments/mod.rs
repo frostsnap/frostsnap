@@ -7,6 +7,7 @@
 //! share image, and [`combine_ecdh_shares`] turns any threshold of those into the same point the
 //! sender would compute from the summed input secret.
 
+mod address;
 mod dleq;
 
 pub use dleq::{dleq_prove, dleq_verify};

@@ -3,7 +3,7 @@ use std::{
     str::FromStr,
 };
 
-use bitcoin::{hashes::Hash, OutPoint, Txid};
+use bitcoin::{hashes::Hash, Network, OutPoint, Txid};
 use frostsnap_core::{
     silent_payments::{
         combine_ecdh_shares, dleq_prove, dleq_verify, input_hash, output_keys,
@@ -456,4 +456,38 @@ fn multi_input_ecdh_matches_sum_of_input_secrets() {
         &[(share_index(1), duplicate), (share_index(1), duplicate)],
     )
     .is_none());
+}
+
+/// Every recipient in the BIP352 sending vectors has the address the vector gives for its keys.
+#[test]
+fn recipient_addresses_match_bip352_vectors() {
+    let cases: Value =
+        serde_json::from_str(include_str!("data/bip352_sending_vectors.json")).unwrap();
+    let point =
+        |value: &Value| Point::from_slice(&hex::decode(value.as_str().unwrap()).unwrap()).unwrap();
+    let mut checked = 0;
+    for case in cases.as_array().unwrap() {
+        for sending in case["sending"].as_array().unwrap() {
+            for entry in sending["given"]["recipients"].as_array().unwrap() {
+                let address = entry["address"].as_str().unwrap();
+                let network = if address.starts_with("tsp1") {
+                    Network::Testnet
+                } else {
+                    Network::Bitcoin
+                };
+                let recipient = SilentPaymentRecipient {
+                    scan_key: point(&entry["scan_pub_key"]),
+                    spend_key: point(&entry["spend_pub_key"]),
+                };
+                assert_eq!(
+                    recipient.address(network).as_deref(),
+                    Some(address),
+                    "{}",
+                    case["comment"]
+                );
+                checked += 1;
+            }
+        }
+    }
+    assert!(checked > 0);
 }
