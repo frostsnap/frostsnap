@@ -8,16 +8,17 @@ use crate::{
     MasterAppkey, MessageResult, RestorationId, SessionHash, ShareImage, SignTask,
 };
 use crate::{
-    message::signing::SpEcdhSessionId,
+    bitcoin_transaction::TransactionTemplate,
+    message::signing::{SpEcdhSessionId, SpProofBundle},
     sign_task::SpScripts,
-    silent_payments::{self, EcdhShare},
+    silent_payments::{self, verify_ecdh_share, EcdhShare},
     tweak::BitcoinAccount,
 };
 use crate::{DeviceId, SignSessionId};
 use alloc::boxed::Box;
 use alloc::string::ToString as _;
 use alloc::{
-    collections::{BTreeMap, VecDeque},
+    collections::{BTreeMap, BTreeSet, VecDeque},
     string::String,
     vec::Vec,
 };
@@ -232,6 +233,96 @@ impl SignPhase1 {
     }
 }
 
+/// Checks the silent payment outputs of a sign request against the proofs sent with it. A request
+/// with silent payment outputs needs proofs, and proofs are only accepted with such outputs.
+fn check_sp_proofs_present(
+    sign_task: &CheckedSignTask,
+    access_structure_id: AccessStructureId,
+    sp_proofs: Option<&SpProofBundle>,
+) -> Result<(), String> {
+    let SignTask::BitcoinTransaction { tx_template, .. } = &sign_task.inner else {
+        return match sp_proofs {
+            None => Ok(()),
+            Some(_) => {
+                Err("silent payment proofs for a task that is not a bitcoin transaction".into())
+            }
+        };
+    };
+
+    match (tx_template.has_silent_payment_outputs(), sp_proofs) {
+        (false, None) => Ok(()),
+        (false, Some(_)) => {
+            Err("silent payment proofs for a transaction with no silent payment outputs".into())
+        }
+        (true, None) => Err("silent payment outputs without their proofs".into()),
+        (true, Some(bundle)) => verify_sp_proof_bundle(
+            sign_task.master_appkey,
+            tx_template,
+            access_structure_id,
+            bundle,
+        ),
+    }
+}
+
+fn verify_sp_proof_bundle(
+    master_appkey: MasterAppkey,
+    tx_template: &TransactionTemplate,
+    access_structure_id: AccessStructureId,
+    bundle: &SpProofBundle,
+) -> Result<(), String> {
+    if AccessStructureId::from_app_poly(&bundle.app_poly) != access_structure_id {
+        return Err("app polynomial does not match the access structure".into());
+    }
+    let app_shared_key = SharedKey::from_poly(bundle.app_poly.clone())
+        .non_zero()
+        .ok_or("app polynomial is zero")?;
+    let master_xpub = master_appkey.to_xpub();
+    if app_shared_key.public_key() != master_xpub.key {
+        return Err("app polynomial does not commit to the root key".into());
+    }
+
+    let threshold = app_shared_key.threshold();
+
+    // Every party's account share image, derived from the polynomial rather than trusted.
+    let account = BitcoinAccount::default()
+        .derive_account_key(&Xpub::new(app_shared_key, master_xpub.chaincode));
+    let (input_hash, _) = tx_template
+        .sp_ecdh_inputs(master_appkey)
+        .ok_or("silent payment inputs are not this key's coins")?;
+
+    for share in &bundle.shares {
+        let image = account.key().share_image(share.share_index).image;
+        if !verify_ecdh_share(image, input_hash, share) {
+            return Err("silent payment ECDH share has a bad proof".into());
+        }
+    }
+
+    // A combination of fewer shares is still a valid point, and scripts derived from it would
+    // match, but it is not the wallet's ECDH and the recipient could not find the output.
+    for scan_key in tx_template.silent_payment_scan_keys() {
+        let share_indices = bundle
+            .shares
+            .iter()
+            .filter(|share| share.scan_key == scan_key)
+            .map(|share| share.share_index)
+            .collect::<BTreeSet<_>>();
+        if share_indices.len() < threshold {
+            return Err("fewer silent payment ECDH shares than the threshold".into());
+        }
+    }
+
+    let shared_secrets = tx_template
+        .sp_shared_secrets(master_appkey, &bundle.shares)
+        .ok_or("silent payment ECDH shares do not combine")?;
+    let derived = tx_template
+        .with_sp_scripts(&shared_secrets)
+        .ok_or("silent payment outputs cannot be derived")?;
+    if derived != *tx_template {
+        return Err("silent payment output scripts do not match the ECDH shares".into());
+    }
+    Ok(())
+}
+
 impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
     pub fn new(keypair: KeyPair, nonce_slots: AbSlots<S>) -> Self {
         Self {
@@ -434,6 +525,7 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
         message: &CoordinatorToDeviceMessage,
         group_sign_req: GroupSignReq,
         device_sign_req: DeviceSignReq,
+        sp_proofs: Option<SpProofBundle>,
     ) -> MessageResult<Vec<DeviceSend>> {
         let session_id = group_sign_req.session_id();
         let key_id = KeyId::from_rootkey(device_sign_req.rootkey);
@@ -494,6 +586,13 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
                     coord_req_nonces.stream_id
                 ),
             ))?;
+
+        check_sp_proofs_present(
+            &group_sign_req.sign_task,
+            *access_structure_id,
+            sp_proofs.as_ref(),
+        )
+        .map_err(|reason| Error::signer_invalid_message(message, reason))?;
 
         // Removed are_nonces_available check - let the signing system handle it
         let phase = SignPhase1 {
@@ -728,12 +827,23 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
             Signing(signing::CoordinatorSigning::RequestSpEcdh(request)) => {
                 self.recv_sp_ecdh_request(&message, *request)
             }
+            Signing(signing::CoordinatorSigning::RequestSpSign(request)) => {
+                let signing::RequestSpSign {
+                    request_sign:
+                        self::RequestSign {
+                            group_sign_req,
+                            device_sign_req,
+                        },
+                    sp_proofs,
+                } = *request;
+                self.recv_sign_request(&message, group_sign_req, device_sign_req, Some(sp_proofs))
+            }
             Signing(signing::CoordinatorSigning::RequestSign(request_sign)) => {
                 let self::RequestSign {
                     group_sign_req,
                     device_sign_req,
                 } = *request_sign;
-                self.recv_sign_request(&message, group_sign_req, device_sign_req)
+                self.recv_sign_request(&message, group_sign_req, device_sign_req, None)
             }
             ScreenVerify(screen_verify::ScreenVerify::VerifyAddress {
                 master_appkey,

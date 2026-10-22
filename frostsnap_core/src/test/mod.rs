@@ -11,6 +11,7 @@
 //! them over nostr), while still using `Run` for the coordinator↔device routing.
 
 pub mod env;
+pub mod silent_payments;
 
 pub use env::TestEnv;
 
@@ -205,6 +206,15 @@ pub trait Env {
                     .sign_ack(*phase, &mut TestDeviceKeyGen)
                     .unwrap();
                 run.extend_from_device(from, sign_ack);
+            }
+            DeviceToUserMessage::SpEcdhRequest { phase } => {
+                let ack = run.participants[ci]
+                    .devices
+                    .get_mut(&from)
+                    .unwrap()
+                    .sp_ecdh_ack(*phase, &mut TestDeviceKeyGen, rng)
+                    .unwrap();
+                run.extend_from_device(from, ack);
             }
             DeviceToUserMessage::Restoration(restoration) => {
                 use crate::device::restoration::ToUserRestoration::*;

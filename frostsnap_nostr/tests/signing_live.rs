@@ -320,6 +320,7 @@ async fn run_signing_test(device_counts: &[usize], threshold: u16, seed: u64) {
                 nonce_reservation_id,
                 device_id,
                 &binonces_for_signing,
+                None,
                 TEST_ENCRYPTION_KEY,
             )
             .unwrap();

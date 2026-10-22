@@ -354,6 +354,27 @@ fn test_all_coordinator_mutations() {
         Mutation::RemoteSigning(RemoteSigningMutation::CancelRemoteSignSession {
             id: RemoteSignSessionId::from_binonces(&[test_nonce]),
         }),
+        Mutation::RemoteSigning(RemoteSigningMutation::NewRemoteSpSignSession {
+            id: RemoteSignSessionId::from_binonces(&[test_nonce]),
+            device_id: DeviceId([6u8; 33]),
+            session: RemoteSignSession {
+                access_structure_ref: AccessStructureRef {
+                    key_id: KeyId([3u8; 32]),
+                    access_structure_id: AccessStructureId([4u8; 32]),
+                },
+                sign_task: WireSignTask::Test {
+                    message: "sp".to_string(),
+                },
+                binonces: vec![test_nonce],
+                nonce_state: CoordNonceStreamState {
+                    stream_id: NonceStreamId([7u8; 16]),
+                    index: 3,
+                    remaining: 10,
+                },
+                status: RemoteSignStatus::Open,
+            },
+            sp_ecdh: vec![ecdh_share],
+        }),
         // Silent payment ECDH mutations
         Mutation::Signing(SigningMutation::NewSpEcdhSession(SpEcdhSession {
             session_id: SpEcdhSessionId([17u8; 32]),
@@ -486,6 +507,12 @@ fn test_all_coordinator_mutations() {
                 assert_bincode_hex_eq!(
                     mutation,
                     "01050c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c"
+                );
+            }
+            Mutation::RemoteSigning(RemoteSigningMutation::NewRemoteSpSignSession { .. }) => {
+                assert_bincode_hex_eq!(
+                    mutation,
+                    "0304a15626c386bac025b773664e8a7584d47a746a997aeabd960806a8111865cce9060606060606060606060606060606060606060606060606060606060606060606030303030303030303030303030303030303030303030303030303030303030304040404040404040404040404040404040404040404040404040404040404040002737001036d2b085e9e382ed10b69fc311a03f8641ccfff21574de0927513a49d9a688a00026a245bf6dc698504c89a20cfded60853152b695336c28063b61c65cbd269e6b407070707070707070707070707070707030a0001025cbdf0646e5db4eaa398f365f2ea7a0e3d419b7e0330e39ce92bddedcac4f9bc000000000000000000000000000000000000000000000000000000000000000103acd484e2f0c7f65309ad178a9f559abde09796974c57e714c35f110dfc27ccbe10101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010"
                 );
             }
             Mutation::Signing(SigningMutation::NewSpEcdhSession(_)) => {

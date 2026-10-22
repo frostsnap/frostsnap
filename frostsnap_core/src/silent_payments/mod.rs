@@ -10,8 +10,12 @@
 mod address;
 mod dleq;
 mod template;
+#[cfg(feature = "coordinator")]
+mod verify;
 
 pub use dleq::{dleq_prove, dleq_verify};
+#[cfg(feature = "coordinator")]
+pub use verify::{complete_sp_task, verify_sp_ecdh_shares};
 
 use alloc::{
     collections::{BTreeMap, BTreeSet},

@@ -4,7 +4,7 @@ use crate::{
     device::{KeyPurpose, NONCE_BATCH_SIZE},
     map_ext::*,
     message::{
-        signing::{OpenNonceStreams, RequestSpEcdh, SpEcdhSessionId},
+        signing::{OpenNonceStreams, RequestSpEcdh, SpEcdhSessionId, SpProofBundle},
         *,
     },
     nonce_stream::{CoordNonceStreamState, NonceStreamId, SigningReqSubSegment},
@@ -1533,6 +1533,7 @@ impl FrostCoordinator {
         RequestDeviceSign {
             device_id,
             request_sign,
+            sp_proofs: None,
         }
     }
 
@@ -2150,6 +2151,14 @@ pub enum StartSignError {
         key_id: KeyId,
     },
     NotSilentPayment,
+    NoSuchSilentPaymentSession,
+    /// A remote offer's or subset's silent payment ECDH shares were missing or did not verify.
+    SilentPaymentShares(&'static str),
+    /// The task a signer was handed is not the committed template completed from the subset's
+    /// ECDH shares.
+    SilentPaymentTaskMismatch,
+    /// The device's ECDH shares for this remote offer have not arrived.
+    SilentPaymentSharesMissing,
     DeviceNotPartOfKey {
         device_id: DeviceId,
     },
@@ -2188,6 +2197,19 @@ impl fmt::Display for StartSignError {
             }
             StartSignError::NotSilentPayment => {
                 write!(f, "the transaction has no silent payment outputs")
+            }
+            StartSignError::NoSuchSilentPaymentSession => {
+                write!(f, "no silent payment ECDH session with that id")
+            }
+            StartSignError::SilentPaymentShares(reason) => {
+                write!(f, "silent payment ECDH shares were refused: {reason}")
+            }
+            StartSignError::SilentPaymentTaskMismatch => write!(
+                f,
+                "the task is not the committed template completed from the subset's ECDH shares"
+            ),
+            StartSignError::SilentPaymentSharesMissing => {
+                write!(f, "the device's silent payment ECDH shares have not arrived")
             }
             StartSignError::NotEnoughNoncesForDevice(not_enough_nonces) => not_enough_nonces.fmt(f),
             StartSignError::DeviceNotPartOfKey { device_id } => {
@@ -2400,16 +2422,25 @@ pub struct StartSign {
 pub struct RequestDeviceSign {
     pub request_sign: RequestSign,
     pub device_id: DeviceId,
+    /// Set for a silent payment send, whose outputs the device checks against these.
+    pub sp_proofs: Option<SpProofBundle>,
 }
 
 impl From<RequestDeviceSign> for CoordinatorSend {
     fn from(value: RequestDeviceSign) -> Self {
-        CoordinatorSend::ToDevice {
-            message: CoordinatorToDeviceMessage::Signing(
-                crate::message::signing::CoordinatorSigning::RequestSign(Box::new(
-                    value.request_sign,
-                )),
+        let message = match value.sp_proofs {
+            None => crate::message::signing::CoordinatorSigning::RequestSign(Box::new(
+                value.request_sign,
+            )),
+            Some(sp_proofs) => crate::message::signing::CoordinatorSigning::RequestSpSign(
+                Box::new(crate::message::signing::RequestSpSign {
+                    request_sign: value.request_sign,
+                    sp_proofs,
+                }),
             ),
+        };
+        CoordinatorSend::ToDevice {
+            message: CoordinatorToDeviceMessage::Signing(message),
             destinations: [value.device_id].into(),
         }
     }
