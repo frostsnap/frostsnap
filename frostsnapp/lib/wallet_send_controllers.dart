@@ -14,6 +14,9 @@ import 'package:frostsnap/theme.dart';
 
 const satoshisInOneBtc = 100000000;
 
+const silentPaymentLocalSendError =
+    'Silent payment addresses can only be paid from a remote wallet';
+
 class AddressInputController with ChangeNotifier {
   late final TextEditingController controller;
   late final BuildTxState state;
@@ -53,8 +56,7 @@ class AddressInputController with ChangeNotifier {
       if (!remoteSigning &&
           (state.recipient(recipient: recipient)?.isSilentPayment() ?? false)) {
         state.clearAddress(recipient: recipient);
-        _errorText =
-            'Silent payment addresses can only be paid from a remote wallet';
+        _errorText = silentPaymentLocalSendError;
         return false;
       }
     } on String catch (e) {

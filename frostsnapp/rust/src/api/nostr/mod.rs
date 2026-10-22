@@ -1322,6 +1322,18 @@ pub fn send_recipients(
         .collect()
 }
 
+/// The outputs check code of a bitcoin transaction sign task, for the user to compare with the
+/// code the device shows. `None` for other kinds of sign task.
+#[frb(sync)]
+pub fn outputs_check_code(sign_task: &WireSignTask, network: BitcoinNetwork) -> Option<String> {
+    let WireSignTask::BitcoinTransaction(template) = sign_task else {
+        return None;
+    };
+    Some(frostsnap_core::bitcoin_transaction::fingerprint_code(
+        &template.outputs_fingerprint(network),
+    ))
+}
+
 /// Opaque bundle of round data needed to combine signatures standalone.
 /// Built on demand by `ChannelHandle::seal_round_confirmed(...)` when a
 /// `SigningEvent::RoundConfirmed` lands, since it carries the channel's

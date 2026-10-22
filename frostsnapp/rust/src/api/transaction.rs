@@ -4,11 +4,12 @@ use std::sync::{Arc, RwLock};
 
 use bitcoin::Address;
 use flutter_rust_bridge::frb;
+use frostsnap_coordinator::bitcoin::recipients_file;
 use frostsnap_coordinator::bitcoin::wallet::SendRecipient;
 use frostsnap_core::silent_payments::SilentPaymentRecipient;
 use frostsnap_core::{AccessStructureId, DeviceId, MasterAppkey};
 
-use crate::api::bitcoin::BitcoinNetworkExt;
+use crate::api::bitcoin::{BitcoinNetwork, BitcoinNetworkExt};
 use crate::api::broadcast::Broadcast;
 use crate::api::signing::UnsignedTx;
 use crate::frb_generated::RustAutoOpaque;
@@ -127,6 +128,17 @@ impl Recipient {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[frb(type_64bit_int)]
+pub struct RecipientLine {
+    /// The 1-based line of the file the recipient was read from.
+    pub line: u32,
+    pub label: Option<String>,
+    pub address: String,
+    pub amount_sat: u64,
+    pub is_silent_payment: bool,
+}
+
 pub(crate) struct BuildTxInner {
     /// Confirmation estimates.
     pub(crate) confirmation_estimates: Option<ConfirmationEstimates>,
@@ -140,16 +152,6 @@ pub(crate) struct BuildTxInner {
     pub(crate) signers: HashSet<DeviceId>,
     /// Silent payment recipients, parsed when they were set, by the address the user gave.
     pub(crate) silent_payment_recipients: HashMap<String, SilentPaymentRecipient>,
-}
-
-/// The dust limit of a silent payment output. Its script is not known until the signers' ECDH
-/// shares are in, but it is always P2TR, so a P2TR script with a zero key has the same limit.
-fn silent_payment_min_non_dust() -> u64 {
-    let mut script = vec![0x51, 0x20];
-    script.extend_from_slice(&[0u8; 32]);
-    bitcoin::ScriptBuf::from_bytes(script)
-        .minimal_non_dust()
-        .to_sat()
 }
 
 impl BuildTxInner {
@@ -550,6 +552,28 @@ impl BuildTxState {
     }
 
     #[frb(sync)]
+    pub fn set_recipients(&self, lines: Vec<RecipientLine>) -> Result<(), String> {
+        {
+            let mut inner = self.inner.write().unwrap();
+            inner.recipients.clear();
+        }
+        for (i, line) in lines.into_iter().enumerate() {
+            let idx = i as u32;
+            self.set_recipient_with_uri(idx, &line.address)?;
+            self.set_amount(idx, line.amount_sat);
+        }
+        self._trigger_changed();
+        Ok(())
+    }
+
+    #[frb(sync)]
+    pub fn clear_recipients(&self) {
+        let mut inner = self.inner.write().unwrap();
+        inner.recipients.clear();
+        self._trigger_changed();
+    }
+
+    #[frb(sync)]
     pub fn clear_amount(&self, recipient: u32) {
         let mut inner = self.inner.write().unwrap();
         if let Some(r) = inner.recipients.get_mut(recipient as usize) {
@@ -588,7 +612,7 @@ impl BuildTxState {
         };
 
         let min_non_dust = if r.as_ref().map_or(false, |rr| rr.is_silent_payment()) {
-            silent_payment_min_non_dust()
+            recipients_file::silent_payment_min_non_dust()
         } else {
             let addr = r
                 .and_then(|r| r.address.clone())
@@ -674,4 +698,25 @@ pub enum TryFinishTxError {
     MissingFeerate,
     IncompleteRecipientValues,
     InsufficientBalance,
+}
+
+/// Parses and checks a recipients file of `address,amount_sat[,label]` lines.
+#[frb(sync)]
+pub fn parse_recipients_file(
+    contents: String,
+    network: BitcoinNetwork,
+) -> Result<Vec<RecipientLine>, String> {
+    let entries = recipients_file::parse_csv(&contents)?;
+    recipients_file::validate(&entries, network)?;
+    Ok(entries
+        .into_iter()
+        .map(|entry| RecipientLine {
+            line: entry.line as u32,
+            is_silent_payment: SilentPaymentRecipient::from_address(&entry.address, network)
+                .is_some(),
+            label: entry.label,
+            address: entry.address,
+            amount_sat: entry.amount_sat,
+        })
+        .collect())
 }
