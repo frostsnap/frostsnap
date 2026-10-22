@@ -3,7 +3,7 @@ use alloc::{boxed::Box, string::String};
 use frost_backup::ShareBackup;
 use frostsnap_comms::{DeviceName, Sha256Digest};
 use frostsnap_core::{
-    device::{restoration::EnterBackupPhase, KeyGenPhase3, SignPhase1},
+    device::{restoration::EnterBackupPhase, KeyGenPhase3, SignPhase1, SpEcdhPhase},
     message::HeldShare2,
     schnorr_fun::frost::ShareIndex,
     tweak::BitcoinBip32Path,
@@ -114,6 +114,10 @@ pub enum Prompt {
         phase: Box<SignPhase1>,
         rand_seed: u32,
     },
+    SpEcdh {
+        phase: Box<SpEcdhPhase>,
+        rand_seed: u32,
+    },
     NewName {
         old_name: Option<DeviceName>,
         new_name: DeviceName,
@@ -129,6 +133,7 @@ pub enum Prompt {
 pub enum BusyTask {
     KeyGen,
     Signing,
+    SpEcdh,
     VerifyingShare,
     Loading,
     GeneratingNonces,
@@ -148,6 +153,9 @@ pub enum UiEvent {
     },
     SigningConfirm {
         phase: Box<SignPhase1>,
+    },
+    SpEcdhConfirm {
+        phase: Box<SpEcdhPhase>,
     },
     NameConfirm(frostsnap_comms::DeviceName),
     EnteredShareBackup {

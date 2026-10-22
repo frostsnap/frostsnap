@@ -43,6 +43,12 @@ pub struct SpEcdhPhase {
     sign_task: CheckedSignTask,
 }
 
+impl SpEcdhPhase {
+    pub fn sign_task(&self) -> &CheckedSignTask {
+        &self.sign_task
+    }
+}
+
 /// The number of nonces the device will give out at a time.
 pub const NONCE_BATCH_SIZE: u32 = 30;
 

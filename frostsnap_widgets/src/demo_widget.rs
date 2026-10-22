@@ -476,6 +476,64 @@ macro_rules! demo_widget {
 
                 $run_macro!(widget);
             }
+            "sp_sign_prompt" => {
+                use $crate::sign_prompt::SignTxPrompt;
+                use core::str::FromStr;
+                use frostsnap_core::bitcoin_transaction::PromptSignBitcoinTx;
+
+                let ordinary_address = bitcoin::Address::from_str(
+                    "bc1p5d7rjq7g6rdk2yhzks9smlaqtedr4dekq08ge8ztwac72sfr9rusxg3297",
+                )
+                .unwrap()
+                .assume_checked();
+
+                let sp_addr1 = "tsp1qq8p30wgx9mzp9dwpv6wu3q2m43fd4x9cxkksza8c9jhvyzwj9wxc3ah2hkd3y202ac3w5rwz5e3yd5dleafsg0smehwgl9r8f2myccasq8348jm".to_string();
+                let sp_addr2 = "tsp1qq2aqstxnvfh2q5lp8hn0r099lygg72smdvnehuu80wy4pwwqyrwyz4y03ldg7076vxxmkm6arxre4x0vvugmt3a0yuxrq9026l7der2cqcsajml".to_string();
+
+                let prompt = PromptSignBitcoinTx {
+                    foreign_recipients: $crate::alloc::vec![
+                        (ordinary_address, bitcoin::Amount::from_sat(100_000)),
+                    ],
+                    silent_payment_recipients: $crate::alloc::vec![
+                        (sp_addr1, bitcoin::Amount::from_sat(250_000)),
+                        (sp_addr2, bitcoin::Amount::from_sat(500_000)),
+                    ],
+                    fee: bitcoin::Amount::from_sat(15_000),
+                    fee_rate_sats_per_vbyte: Some(8.5),
+                };
+
+                let widget = SignTxPrompt::new(prompt);
+                $run_macro!(widget);
+            }
+            "sp_ecdh_prompt" => {
+                use $crate::sign_prompt::SignTxPrompt;
+                use core::str::FromStr;
+                use frostsnap_core::bitcoin_transaction::PromptSignBitcoinTx;
+
+                let ordinary_address = bitcoin::Address::from_str(
+                    "bc1p5d7rjq7g6rdk2yhzks9smlaqtedr4dekq08ge8ztwac72sfr9rusxg3297",
+                )
+                .unwrap()
+                .assume_checked();
+
+                let sp_addr1 = "tsp1qq8p30wgx9mzp9dwpv6wu3q2m43fd4x9cxkksza8c9jhvyzwj9wxc3ah2hkd3y202ac3w5rwz5e3yd5dleafsg0smehwgl9r8f2myccasq8348jm".to_string();
+                let sp_addr2 = "tsp1qq2aqstxnvfh2q5lp8hn0r099lygg72smdvnehuu80wy4pwwqyrwyz4y03ldg7076vxxmkm6arxre4x0vvugmt3a0yuxrq9026l7der2cqcsajml".to_string();
+
+                let prompt = PromptSignBitcoinTx {
+                    foreign_recipients: $crate::alloc::vec![
+                        (ordinary_address, bitcoin::Amount::from_sat(100_000)),
+                    ],
+                    silent_payment_recipients: $crate::alloc::vec![
+                        (sp_addr1, bitcoin::Amount::from_sat(250_000)),
+                        (sp_addr2, bitcoin::Amount::from_sat(500_000)),
+                    ],
+                    fee: bitcoin::Amount::from_sat(15_000),
+                    fee_rate_sats_per_vbyte: Some(8.5),
+                };
+
+                let widget = SignTxPrompt::new_sp_ecdh(prompt, 0);
+                $run_macro!(widget);
+            }
             "bitcoin_amount" => {
                 use $crate::{bitcoin_amount_display::BitcoinAmountDisplay, Column, MainAxisAlignment};
 
@@ -1386,7 +1444,7 @@ macro_rules! demo_widget {
                 $run_macro!(widget);
             }
             _ => {
-                panic!("Unknown demo: '{}'. Valid demos: hello_world, bip39_entry, log_touches, numeric_keyboard, hold_confirm, welcome, column_cross_axis, column_center, row_cross_axis, row_center, row_inside_column, bip39_backup, all_words, fade_in, fade_switcher, device_name, device_name_cursor, bobbing_icon, swipe_up_chevron, keygen_check, sign_prompt, bitcoin_amount, slide_in, firmware_upgrade_progress, firmware_upgrade_download, firmware_upgrade_erase, firmware_upgrade_passive, progress, firmware_upgrade, array_column, vec_column, word_selector, address, standby, standby_recovery, screen_test, multiline_string, logo_colors, standby_transitions, erase_device, aa_compare, border_iter, check_backup", $demo);
+                panic!("Unknown demo: '{}'. Valid demos: hello_world, bip39_entry, log_touches, numeric_keyboard, hold_confirm, welcome, column_cross_axis, column_center, row_cross_axis, row_center, row_inside_column, bip39_backup, all_words, fade_in, fade_switcher, device_name, device_name_cursor, bobbing_icon, swipe_up_chevron, keygen_check, sign_prompt, sp_sign_prompt, sp_ecdh_prompt, bitcoin_amount, slide_in, firmware_upgrade_progress, firmware_upgrade_download, firmware_upgrade_erase, firmware_upgrade_passive, progress, firmware_upgrade, array_column, vec_column, word_selector, address, standby, standby_recovery, screen_test, multiline_string, logo_colors, standby_transitions, erase_device, aa_compare, border_iter, check_backup", $demo);
             }
         }
     };

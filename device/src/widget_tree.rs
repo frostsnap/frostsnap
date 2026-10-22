@@ -1,6 +1,6 @@
 use alloc::boxed::Box;
 use frostsnap_core::{
-    device::{restoration::EnterBackupPhase, KeyGenPhase3, SignPhase1},
+    device::{restoration::EnterBackupPhase, KeyGenPhase3, SignPhase1, SpEcdhPhase},
     schnorr_fun::frost::ShareIndex,
     AccessStructureRef,
 };
@@ -35,6 +35,12 @@ pub enum WidgetTree {
     SignTxPrompt {
         widget: Box<SignTxPrompt>,
         phase: Option<Box<SignPhase1>>,
+    },
+
+    /// Silent payment ECDH confirmation prompt screen
+    SpEcdhPrompt {
+        widget: Box<SignTxPrompt>,
+        phase: Option<Box<SpEcdhPhase>>,
     },
 
     /// Sign test message prompt screen

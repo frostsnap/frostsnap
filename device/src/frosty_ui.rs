@@ -255,6 +255,28 @@ impl<'a> UserInteraction for FrostyUi<'a> {
                             }
                         }
                     }
+                    Prompt::SpEcdh { phase, rand_seed } => {
+                        let sign_task = phase.sign_task();
+                        match &sign_task.inner {
+                            frostsnap_core::SignTask::BitcoinTransaction {
+                                tx_template,
+                                network,
+                            } => {
+                                let prompt = tx_template.user_prompt(*network);
+                                let widget = Box::new(SignTxPrompt::new_sp_ecdh(prompt, rand_seed));
+                                WidgetTree::SpEcdhPrompt {
+                                    widget,
+                                    phase: Some(phase),
+                                }
+                            }
+                            // recv_sp_ecdh_request rejects other sign tasks, so this is not expected.
+                            _ => {
+                                let mut standby = Standby::new();
+                                standby.set_welcome();
+                                WidgetTree::Standby(Box::new(standby))
+                            }
+                        }
+                    }
                     Prompt::ConfirmFirmwareUpgrade {
                         firmware_digest,
                         size,
@@ -441,6 +463,19 @@ impl<'a> UserInteraction for FrostyUi<'a> {
                 if sign_prompt.is_confirmed() {
                     if let Some(phase_data) = phase.take() {
                         return Some(UiEvent::SigningConfirm { phase: phase_data });
+                    }
+                }
+                if phase.is_none() && sign_prompt.is_finished() {
+                    self.go_to_default();
+                }
+            }
+            WidgetTree::SpEcdhPrompt {
+                widget: sign_prompt,
+                phase,
+            } => {
+                if sign_prompt.is_confirmed() {
+                    if let Some(phase_data) = phase.take() {
+                        return Some(UiEvent::SpEcdhConfirm { phase: phase_data });
                     }
                 }
                 if phase.is_none() && sign_prompt.is_finished() {

@@ -116,7 +116,7 @@ fn chunk_address(address: &str) -> [String; 18] {
 }
 
 /// Picks 2 distinct highlighted chunk indices from range `1..num_chunks-1`.
-fn pick_highlights(seed: u32, num_chunks: usize) -> BTreeSet<usize> {
+pub(crate) fn pick_highlights(seed: u32, num_chunks: usize) -> BTreeSet<usize> {
     let mut highlighted = BTreeSet::new();
     if num_chunks <= 2 {
         return highlighted;

@@ -708,8 +708,13 @@ impl<'a> DeviceLoop<'a> {
                         DeviceToUserMessage::NonceJobs(batch) => {
                             self.nonce_task_batch = Some(batch);
                         }
-                        DeviceToUserMessage::SpEcdhRequest { phase: _ } => {
-                            // The prompt for silent payment ECDH requests comes in the next commit.
+                        DeviceToUserMessage::SpEcdhRequest { phase } => {
+                            let rand_seed = self.rng.next_u32();
+                            self.ui
+                                .set_workflow(ui::Workflow::prompt(ui::Prompt::SpEcdh {
+                                    phase,
+                                    rand_seed,
+                                }));
                         }
                     };
                 }
@@ -734,6 +739,23 @@ impl<'a> DeviceLoop<'a> {
                             .sign_ack(*phase, &mut self.hmac_keys.share_encryption)
                             .expect("state changed while acking sign"),
                     );
+                }
+                UiEvent::SpEcdhConfirm { phase } => {
+                    self.ui.set_busy_task(ui::BusyTask::SpEcdh);
+                    // A share that fails to decrypt comes from a bad coordinator contribution, so
+                    // drop the request instead of panicking. The coordinator gets no answer.
+                    match self.signer.sp_ecdh_ack(
+                        *phase,
+                        &mut self.hmac_keys.share_encryption,
+                        self.rng,
+                    ) {
+                        Ok(sends) => self.outbox.extend(sends),
+                        Err(_e) => {
+                            log_and_redraw!(self.ui, "sp ecdh ack failed: {_e:?}");
+                            self.ui.clear_busy_task();
+                            self.ui.go_to_default();
+                        }
+                    }
                 }
                 UiEvent::NameConfirm(ref new_name) => {
                     self.mutation_log
