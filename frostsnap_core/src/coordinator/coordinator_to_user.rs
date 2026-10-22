@@ -1,4 +1,5 @@
 use super::*;
+use crate::message::signing::SpEcdhSessionId;
 use frostsnap_macros::Kind;
 
 #[derive(Clone, Debug, Kind)]
@@ -30,6 +31,10 @@ pub enum CoordinatorToUserSigningMessage {
     Signed {
         session_id: SignSessionId,
         signatures: Vec<EncodedSignature>,
+    },
+    GotSpEcdhShares {
+        session_id: SpEcdhSessionId,
+        from: DeviceId,
     },
 }
 

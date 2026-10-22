@@ -653,6 +653,7 @@ impl Env for ProptestEnv {
                 CoordinatorToUserSigningMessage::Signed { session_id, .. } => {
                     self.finished_signatures.insert(session_id);
                 }
+                CoordinatorToUserSigningMessage::GotSpEcdhShares { .. } => { /* ignore */ }
             },
             _ => { /* nothing needs doing */ }
         }
@@ -686,6 +687,9 @@ impl Env for ProptestEnv {
             }
             VerifyAddress { .. } => {
                 // we dont actually confirm on the device
+            }
+            SpEcdhRequest { .. } => {
+                // The proptest model does not run silent payment sends.
             }
             NonceJobs(mut batch) => {
                 // Run the batch to completion and send a single response

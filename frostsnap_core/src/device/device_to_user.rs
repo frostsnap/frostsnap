@@ -17,6 +17,9 @@ pub enum DeviceToUserMessage {
     SignatureRequest {
         phase: Box<SignPhase1>,
     },
+    SpEcdhRequest {
+        phase: Box<SpEcdhPhase>,
+    },
     VerifyAddress {
         address: Address<NetworkChecked>,
         bip32_path: BitcoinBip32Path,

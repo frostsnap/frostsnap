@@ -1,11 +1,30 @@
-use crate::{nonce_stream::NonceStreamSegment, DeviceId, KeyId, Kind, SignSessionId};
-use alloc::vec::Vec;
+use crate::{
+    message::signing::SpEcdhSessionId, nonce_stream::NonceStreamSegment,
+    silent_payments::EcdhShare, AccessStructureRef, DeviceId, KeyId, Kind, SignSessionId,
+    WireSignTask,
+};
+use alloc::{
+    collections::{BTreeMap, BTreeSet},
+    vec::Vec,
+};
 use frostsnap_macros::Kind as KindDerive;
 use schnorr_fun::frost::{self, SignatureShare};
 
 use super::FrostCoordinator;
 
 pub use super::remote_signing::{combine_signatures, CombineSignatureError, RemoteSignSessionId};
+
+/// A threshold ECDH for a silent payment send, from the moment its device is asked until the
+/// signing session is opened from its shares.
+#[derive(Clone, Debug, bincode::Encode, bincode::Decode, PartialEq)]
+pub struct SpEcdhSession {
+    pub session_id: SpEcdhSessionId,
+    pub access_structure_ref: AccessStructureRef,
+    /// The template with its silent payment scripts still to be derived.
+    pub sign_task: WireSignTask,
+    pub requested: BTreeSet<DeviceId>,
+    pub shares: BTreeMap<DeviceId, Vec<EcdhShare>>,
+}
 
 /// Binonces for a participant (local or remote).
 #[derive(Debug, Clone, bincode::Encode, bincode::Decode)]
@@ -67,12 +86,30 @@ pub enum SigningMutation {
     ForgetFinishedSignSession {
         session_id: SignSessionId,
     },
+    NewSpEcdhSession(SpEcdhSession),
+    GotSpEcdhShares {
+        session_id: SpEcdhSessionId,
+        device_id: DeviceId,
+        shares: Vec<EcdhShare>,
+    },
+    CloseSpEcdhSession {
+        session_id: SpEcdhSessionId,
+    },
 }
 
 impl SigningMutation {
     pub fn tied_to_key(&self, coord: &FrostCoordinator) -> Option<KeyId> {
         match self {
             SigningMutation::NewNonces { .. } => None,
+            SigningMutation::NewSpEcdhSession(session) => Some(session.access_structure_ref.key_id),
+            SigningMutation::GotSpEcdhShares { session_id, .. }
+            | SigningMutation::CloseSpEcdhSession { session_id } => Some(
+                coord
+                    .sp_ecdh_sessions
+                    .get(session_id)?
+                    .access_structure_ref
+                    .key_id,
+            ),
             SigningMutation::NewSigningSession(active_sign_session) => {
                 Some(active_sign_session.key_id)
             }

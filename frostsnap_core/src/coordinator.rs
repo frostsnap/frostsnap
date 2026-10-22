@@ -1,11 +1,16 @@
+use crate::sign_task::SpScripts;
 use crate::{
     coord_nonces::{NonceCache, NotEnoughNonces},
     device::{KeyPurpose, NONCE_BATCH_SIZE},
     map_ext::*,
-    message::{signing::OpenNonceStreams, *},
+    message::{
+        signing::{OpenNonceStreams, RequestSpEcdh, SpEcdhSessionId},
+        *,
+    },
     nonce_stream::{CoordNonceStreamState, NonceStreamId, SigningReqSubSegment},
+    silent_payments::{self, EcdhShare},
     symmetric_encryption::{Ciphertext, SymmetricKey},
-    tweak::Xpub,
+    tweak::{BitcoinAccount, Xpub},
     AccessStructureId, AccessStructureKind, AccessStructureRef, ActionError,
     CoordShareDecryptionContrib, DeviceId, Error, Gist, KeyId, KeygenId, Kind, MasterAppkey,
     MessageResult, RestorationId, SessionHash, ShareImage, SignItem, SignSessionId, SignTaskError,
@@ -41,8 +46,8 @@ pub mod restoration;
 pub mod signing;
 pub use coordinator_to_user::*;
 pub use keys::BeginKeygen;
-use signing::SigningMutation;
 pub use signing::{ParticipantBinonces, ParticipantSignatureShares};
+use signing::{SigningMutation, SpEcdhSession};
 
 pub const MIN_NONCES_BEFORE_REQUEST: u32 = NONCE_BATCH_SIZE / 2;
 
@@ -57,6 +62,7 @@ pub struct FrostCoordinator {
     active_sign_session_order: Vec<SignSessionId>,
     finished_signing_sessions: BTreeMap<SignSessionId, FinishedSignSession>,
     remote_signing: remote_signing::State,
+    sp_ecdh_sessions: BTreeMap<SpEcdhSessionId, SpEcdhSession>,
     restoration: restoration::State,
     remote_keygen: remote_keygen::State,
     pub keygen_fingerprint: schnorr_fun::frost::Fingerprint,
@@ -445,6 +451,23 @@ impl FrostCoordinator {
             }
             Signing(SigningMutation::ForgetFinishedSignSession { session_id }) => {
                 self.finished_signing_sessions.remove(&session_id);
+            }
+            Signing(SigningMutation::NewSpEcdhSession(ref session)) => {
+                self.sp_ecdh_sessions
+                    .insert(session.session_id, session.clone());
+            }
+            Signing(SigningMutation::GotSpEcdhShares {
+                session_id,
+                device_id,
+                ref shares,
+            }) => {
+                self.sp_ecdh_sessions
+                    .get_mut(&session_id)?
+                    .shares
+                    .insert(device_id, shares.clone());
+            }
+            Signing(SigningMutation::CloseSpEcdhSession { session_id }) => {
+                self.sp_ecdh_sessions.remove(&session_id)?;
             }
             Restoration(inner) => {
                 return self
@@ -920,6 +943,22 @@ impl FrostCoordinator {
                 }
             }
             DeviceToCoordinatorMessage::Signing(
+                crate::message::signing::DeviceSigning::SpEcdhShares { session_id, shares },
+            ) => {
+                self.check_sp_ecdh_shares(from, session_id, &shares)
+                    .map_err(|reason| Error::coordinator_invalid_message(message_kind, reason))?;
+                self.mutate(Mutation::Signing(SigningMutation::GotSpEcdhShares {
+                    session_id,
+                    device_id: from,
+                    shares,
+                }));
+                Ok(vec![CoordinatorSend::ToUser(
+                    CoordinatorToUserMessage::Signing(
+                        CoordinatorToUserSigningMessage::GotSpEcdhShares { session_id, from },
+                    ),
+                )])
+            }
+            DeviceToCoordinatorMessage::Signing(
                 crate::message::signing::DeviceSigning::SignatureShare {
                     session_id,
                     ref signature_shares,
@@ -1295,6 +1334,156 @@ impl FrostCoordinator {
         )));
 
         session_id
+    }
+
+    /// Asks `device_id` for its silent payment ECDH shares for `sign_task`, the template with its
+    /// silent payment scripts still to be derived. Returns the session that collects the device's
+    /// reply, and the request for the device. The shares are checked as they arrive.
+    pub fn start_remote_sp_ecdh(
+        &mut self,
+        access_structure_ref: AccessStructureRef,
+        sign_task: WireSignTask,
+        device_id: DeviceId,
+        encryption_key: SymmetricKey,
+        rng: &mut impl rand_core::RngCore,
+    ) -> Result<(SpEcdhSessionId, Vec<CoordinatorSend>), StartSignError> {
+        let AccessStructureRef {
+            key_id,
+            access_structure_id,
+        } = access_structure_ref;
+
+        let key_data = self
+            .keys
+            .get(&key_id)
+            .ok_or(StartSignError::UnknownKey { key_id })?
+            .clone();
+        let complete_key = key_data.complete_key;
+        let access_structure = complete_key
+            .access_structures
+            .get(&access_structure_id)
+            .ok_or(StartSignError::NoSuchAccessStructure)?;
+        if !access_structure
+            .device_to_share_index
+            .contains_key(&device_id)
+        {
+            return Err(StartSignError::DeviceNotPartOfKey { device_id });
+        }
+
+        let master_appkey = complete_key.master_appkey;
+        let template = match &sign_task {
+            WireSignTask::BitcoinTransaction(template) if template.has_silent_payment_outputs() => {
+                template
+            }
+            _ => return Err(StartSignError::NotSilentPayment),
+        };
+        sign_task
+            .clone()
+            .check_with(master_appkey, key_data.purpose, SpScripts::Pending)
+            .map_err(StartSignError::SignTask)?;
+        let (input_hash, _) =
+            template
+                .sp_ecdh_inputs(master_appkey)
+                .ok_or(StartSignError::SignTask(
+                    crate::SignTaskError::SilentPaymentInputs,
+                ))?;
+        let scan_keys = template.silent_payment_scan_keys();
+
+        let mut session_id = [0u8; 32];
+        rng.fill_bytes(&mut session_id);
+        let session_id = SpEcdhSessionId(session_id);
+
+        let (rootkey, coord_share_decryption_contrib) = complete_key
+            .coord_share_decryption_contrib(access_structure_id, device_id, encryption_key)
+            .expect("must be able to decrypt rootkey");
+        let request = CoordinatorSend::ToDevice {
+            message: CoordinatorToDeviceMessage::Signing(
+                crate::message::signing::CoordinatorSigning::RequestSpEcdh(Box::new(
+                    RequestSpEcdh {
+                        session_id,
+                        rootkey,
+                        access_structure_id,
+                        coord_share_decryption_contrib,
+                        scan_keys,
+                        input_hash,
+                        sign_task: sign_task.clone(),
+                    },
+                )),
+            ),
+            destinations: [device_id].into(),
+        };
+
+        self.mutate(Mutation::Signing(SigningMutation::NewSpEcdhSession(
+            SpEcdhSession {
+                session_id,
+                access_structure_ref,
+                sign_task,
+                requested: [device_id].into(),
+                shares: Default::default(),
+            },
+        )));
+
+        Ok((session_id, vec![request]))
+    }
+
+    /// Abandons a silent payment ECDH, discarding the shares collected so far.
+    pub fn cancel_sp_ecdh(&mut self, session_id: SpEcdhSessionId) {
+        self.mutate(Mutation::Signing(SigningMutation::CloseSpEcdhSession {
+            session_id,
+        }));
+    }
+
+    /// Whether a device's silent payment shares are its own, for this session, and prove under the
+    /// account key share the coordinator derives for it.
+    fn check_sp_ecdh_shares(
+        &self,
+        from: DeviceId,
+        session_id: SpEcdhSessionId,
+        shares: &[EcdhShare],
+    ) -> Result<(), String> {
+        let session = self
+            .sp_ecdh_sessions
+            .get(&session_id)
+            .ok_or("got silent payment shares for an ECDH session we don't have")?;
+        if !session.requested.contains(&from) {
+            return Err("device was not asked for silent payment shares".into());
+        }
+        if session.shares.contains_key(&from) {
+            return Err("device already sent its silent payment shares".into());
+        }
+
+        let access_structure = self
+            .get_access_structure(session.access_structure_ref)
+            .ok_or("silent payment session has no access structure")?;
+        let share_index = *access_structure
+            .device_to_share_index
+            .get(&from)
+            .ok_or("got silent payment shares from a device outside the access structure")?;
+        let WireSignTask::BitcoinTransaction(template) = &session.sign_task else {
+            return Err("silent payment session is not a bitcoin transaction".into());
+        };
+        let (input_hash, _) = template
+            .sp_ecdh_inputs(access_structure.master_appkey())
+            .ok_or("silent payment inputs are not this key's coins")?;
+        let account =
+            BitcoinAccount::default().derive_account_key(&access_structure.app_shared_key());
+        let image = account.key().share_image(share_index).image;
+
+        let scan_keys = template.silent_payment_scan_keys();
+        if shares.len() != scan_keys.len() {
+            return Err("device sent the wrong number of silent payment shares".into());
+        }
+        for scan_key in scan_keys {
+            let share = shares
+                .iter()
+                .find(|share| share.scan_key == scan_key)
+                .ok_or("device sent no silent payment share for a scan key")?;
+            if share.share_index != share_index
+                || !silent_payments::verify_ecdh_share(image, input_hash, share)
+            {
+                return Err("silent payment ECDH share has a bad proof".into());
+            }
+        }
+        Ok(())
     }
 
     pub fn request_device_sign(
@@ -1960,6 +2149,7 @@ pub enum StartSignError {
     UnknownKey {
         key_id: KeyId,
     },
+    NotSilentPayment,
     DeviceNotPartOfKey {
         device_id: DeviceId,
     },
@@ -1995,6 +2185,9 @@ impl fmt::Display for StartSignError {
             }
             StartSignError::CantSignInState { in_state } => {
                 write!(f, "Can't sign in state {in_state}")
+            }
+            StartSignError::NotSilentPayment => {
+                write!(f, "the transaction has no silent payment outputs")
             }
             StartSignError::NotEnoughNoncesForDevice(not_enough_nonces) => not_enough_nonces.fmt(f),
             StartSignError::DeviceNotPartOfKey { device_id } => {
