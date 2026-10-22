@@ -220,7 +220,10 @@ impl SuperWallet {
         let mut super_wallet = self.inner.lock().unwrap();
         let signing_task = super_wallet.send_to(
             master_appkey,
-            [(to_address.clone(), Some(value))],
+            [(
+                frostsnap_coordinator::bitcoin::wallet::SendRecipient::Address(to_address.clone()),
+                Some(value),
+            )],
             feerate as f32,
         )?;
         let unsigned_tx = UnsignedTx {
@@ -240,9 +243,11 @@ impl SuperWallet {
         wallet
             .calculate_avaliable_value(
                 master_appkey,
-                target_addresses
-                    .into_iter()
-                    .map(|a| a.blocking_read().clone()),
+                target_addresses.into_iter().map(|a| {
+                    frostsnap_coordinator::bitcoin::wallet::SendRecipient::Address(
+                        a.blocking_read().clone(),
+                    )
+                }),
                 feerate,
                 true,
             )

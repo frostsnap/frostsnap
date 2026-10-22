@@ -391,7 +391,10 @@ impl BuildTxState {
             inner.recipients.iter().filter_map(|r| {
                 let addr = r.address.clone()?;
                 let amount = r.amount.map_or(Some(0), |a| a.value());
-                Some((addr, amount))
+                Some((
+                    frostsnap_coordinator::bitcoin::wallet::SendRecipient::Address(addr),
+                    amount,
+                ))
             }),
             inner.feerate()?,
         )
@@ -576,7 +579,14 @@ impl BuildTxState {
         let recipients = inner
             .recipients
             .iter()
-            .filter_map(|r| Some((r.address.clone()?, r.amount?.value())))
+            .filter_map(|r| {
+                Some((
+                    frostsnap_coordinator::bitcoin::wallet::SendRecipient::Address(
+                        r.address.clone()?,
+                    ),
+                    r.amount?.value(),
+                ))
+            })
             .collect::<Vec<_>>();
         if recipients.len() != inner.recipients.len() {
             return Err(TryFinishTxError::IncompleteRecipientValues);
