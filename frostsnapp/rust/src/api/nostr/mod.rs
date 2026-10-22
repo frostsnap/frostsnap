@@ -43,6 +43,8 @@ fn now_secs() -> u64 {
 /// valid nsec on a flaky network.
 const IMPORT_PROFILE_FETCH_TIMEOUT: Duration = Duration::from_secs(30);
 
+pub use frostsnap_core::coordinator::remote_signing::SpSubset;
+pub use frostsnap_core::silent_payments::EcdhShare;
 pub use frostsnap_nostr::{
     ChannelEvent, ChannelParticipant, ChannelSecret, ConfirmedSubsetEntry, ConnectionState,
     EventId, GroupMember, ObservationKind, ParticipantShares, PublicKey, SigningEvent,
@@ -1096,6 +1098,7 @@ pub struct _ConfirmedSubsetEntry {
     pub author: PublicKey,
     pub timestamp: u64,
     pub binonces: Vec<ParticipantBinonces>,
+    pub sp_ecdh: Vec<EcdhShare>,
 }
 
 /// Mirrors `frostsnap_nostr::SigningEvent`. Variants stay 1:1 with the
@@ -1118,13 +1121,24 @@ pub enum _SigningEvent {
         author: PublicKey,
         request_id: EventId,
         binonces: Vec<ParticipantBinonces>,
+        /// The offer's silent payment ECDH shares. Empty unless the request is a silent payment
+        /// send. Offers whose shares fail verification never become events, see `Rejected`.
+        sp_ecdh: Vec<EcdhShare>,
         timestamp: u64,
     },
+    /// Emitted when the settling timer expires with at least `threshold`
+    /// offers observed. The subset is locked in; included participants
+    /// should sign.
+    ///
+    /// For a silent payment send, `sign_task` is still the requested template and `sp` is the
+    /// subset's shares with the task completed from them. `session_id` is the session of the
+    /// completed task. Pass `sp` to `sign_with_nonce_reservation`.
     RoundConfirmed {
         request_id: EventId,
         subset: Vec<ConfirmedSubsetEntry>,
         session_id: SignSessionId,
         sign_task: WireSignTask,
+        sp: Option<SpSubset>,
         timestamp: u64,
     },
     RoundPending {

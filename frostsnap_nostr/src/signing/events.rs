@@ -12,7 +12,8 @@
 use crate::channel::ParticipantShares;
 use crate::{EventId, PublicKey};
 use frostsnap_core::{
-    coordinator::{ParticipantBinonces, ParticipantSignatureShares},
+    coordinator::{remote_signing::SpSubset, ParticipantBinonces, ParticipantSignatureShares},
+    silent_payments::EcdhShare,
     SignSessionId, WireSignTask,
 };
 use nostr_sdk::{Event, TagKind};
@@ -173,6 +174,8 @@ pub struct ConfirmedSubsetEntry {
     pub author: PublicKey,
     pub timestamp: u64,
     pub binonces: Vec<ParticipantBinonces>,
+    /// The offer's silent payment ECDH shares. Empty unless the request is a silent payment send.
+    pub sp_ecdh: Vec<EcdhShare>,
 }
 
 #[derive(Debug, Clone)]
@@ -190,16 +193,24 @@ pub enum SigningEvent {
         author: PublicKey,
         request_id: EventId,
         binonces: Vec<ParticipantBinonces>,
+        /// The offer's silent payment ECDH shares. Empty unless the request is a silent payment
+        /// send. Offers whose shares fail verification never become events, see `Rejected`.
+        sp_ecdh: Vec<EcdhShare>,
         timestamp: u64,
     },
     /// Emitted when the settling timer expires with at least `threshold`
     /// offers observed. The subset is locked in; included participants
     /// should sign.
+    ///
+    /// For a silent payment send, `sign_task` is still the requested template and `sp` is the
+    /// subset's shares with the task completed from them. `session_id` is the session of the
+    /// completed task. Pass `sp` to `sign_with_nonce_reservation`.
     RoundConfirmed {
         request_id: EventId,
         subset: Vec<ConfirmedSubsetEntry>,
         session_id: SignSessionId,
         sign_task: WireSignTask,
+        sp: Option<SpSubset>,
         timestamp: u64,
     },
     /// Emitted when the settling timer expires with fewer than `threshold`
@@ -286,6 +297,12 @@ pub(crate) enum SigningMessage {
         signature_shares: ParticipantSignatureShares,
     },
     Cancel,
+    /// An offer to sign a silent payment send: the binonces and, for each of the offering
+    /// devices, its ECDH share and proof for every scan key of the request.
+    SpOffer {
+        binonces: Vec<ParticipantBinonces>,
+        sp_ecdh: Vec<EcdhShare>,
+    },
 }
 
 /// Wire format for receive-address share messages (kind 7800).
@@ -298,4 +315,29 @@ pub(crate) enum SigningMessage {
 pub struct ReceiveAddressPayload {
     pub derivation_index: u32,
     pub memo: String,
+}
+
+#[cfg(test)]
+mod encoding {
+    use super::SigningMessage;
+
+    fn encoded(message: &SigningMessage) -> String {
+        let bytes = bincode::encode_to_vec(message, bincode::config::standard()).unwrap();
+        frostsnap_core::hex::encode(&bytes)
+    }
+
+    /// `Offer` stays variant 1. `SpOffer` is appended after `Cancel`, so existing offer bytes
+    /// still decode. `standard()` encodes the variant index and lengths as varints.
+    #[test]
+    fn sp_offer_is_an_appended_variant() {
+        assert_eq!(encoded(&SigningMessage::Offer { binonces: vec![] }), "0100");
+        assert_eq!(encoded(&SigningMessage::Cancel), "03");
+        assert_eq!(
+            encoded(&SigningMessage::SpOffer {
+                binonces: vec![],
+                sp_ecdh: vec![],
+            }),
+            "040000"
+        );
+    }
 }

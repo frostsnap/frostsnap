@@ -299,7 +299,7 @@ fn two_of_three_silent_payment_send_over_remote_signing() {
         .copied()
         .zip(completed.inputs().iter().map(|input| input.outpoint()))
         .collect();
-    let root_secret = reconstruct_root_secret(&remote, &subset);
+    let root_secret = reconstruct_root_secret(&remote.run, &subset);
     let expected = expected_output_keys(root_secret, &inputs, &[first, second, third]);
     let paid: Vec<[u8; 32]> = completed
         .silent_payment_outputs()
@@ -382,7 +382,7 @@ fn silent_payment_send_with_several_inputs_shared_scan_key_and_change() {
         .copied()
         .zip(completed.inputs().iter().map(|input| input.outpoint()))
         .collect();
-    let root_secret = reconstruct_root_secret(&remote, &subset);
+    let root_secret = reconstruct_root_secret(&remote.run, &subset);
     let expected = expected_output_keys(root_secret, &inputs, &[first, second, third]);
     let paid: Vec<[u8; 32]> = completed
         .silent_payment_outputs()

@@ -455,7 +455,7 @@ fn silent_payment_ecdh_survives_a_coordinator_restart() {
         .copied()
         .zip(paid.inputs().iter().map(|input| input.outpoint()))
         .collect::<Vec<_>>();
-    let root_secret = reconstruct_root_secret(&remote, &[0, 1]);
+    let root_secret = reconstruct_root_secret(&remote.run, &[0, 1]);
     let expected = expected_output_keys(root_secret, &inputs, &[recipient]);
     let paid_keys = paid
         .silent_payment_outputs()

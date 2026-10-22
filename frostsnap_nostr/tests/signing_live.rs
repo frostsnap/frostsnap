@@ -5,7 +5,10 @@
 //! travels through nostr. After the partials land we combine them off-band
 //! and verify the final Schnorr signature.
 
+use bitcoin::{Network, Witness};
 use frostsnap_coordinator::Sink;
+use frostsnap_core::bitcoin_transaction::TransactionTemplate;
+use frostsnap_core::coordinator::remote_signing::SignOffer;
 use frostsnap_core::coordinator::signing::{ParticipantSignatureShares, RemoteSignSessionId};
 use frostsnap_core::coordinator::{
     remote_signing, CoordinatorToUserKeyGenMessage, CoordinatorToUserMessage,
@@ -13,7 +16,14 @@ use frostsnap_core::coordinator::{
 };
 use frostsnap_core::device::KeyPurpose;
 use frostsnap_core::schnorr_fun::Schnorr;
+use frostsnap_core::silent_payments::SilentPaymentRecipient;
+use frostsnap_core::test::silent_payments::{
+    bitcoin_template, expected_output_keys, public, recipient, reconstruct_root_secret, scalar,
+    template,
+};
 use frostsnap_core::test::{Env, Run, TEST_ENCRYPTION_KEY};
+use frostsnap_core::tweak::BitcoinBip32Path;
+use frostsnap_core::MasterAppkey;
 use frostsnap_core::{SignSessionId, WireSignTask};
 use frostsnap_nostr::channel::ChannelInitData;
 use frostsnap_nostr::signing::{ChannelClient, ChannelEvent, ConfirmedSubsetEntry, SigningEvent};
@@ -304,6 +314,10 @@ async fn run_signing_test(device_counts: &[usize], threshold: u16, seed: u64) {
         .collect();
     let subset_authors: BTreeSet<_> = confirmed.subset.iter().map(|e| e.author).collect();
     assert_eq!(confirmed.subset.len(), t);
+    assert!(
+        confirmed.sp.is_none(),
+        "a plain send carries no silent payment subset"
+    );
 
     // Each included participant signs with the confirmed binonce set.
     for (i, _) in &offered_pairs {
@@ -377,6 +391,89 @@ async fn run_signing_test(device_counts: &[usize], threshold: u16, seed: u64) {
     );
     tracing::info!("nostr remote signing completed successfully");
 }
+#[tokio::test]
+async fn three_coordinators_silent_payment_send_over_nostr() {
+    let _ = tracing_subscriber::fmt::try_init();
+    let mut fx = prepare_sp_channel(21).await;
+    let offers: Vec<_> = (0..3).map(|i| offer_sp(&mut fx, i)).collect();
+    for offer in &offers {
+        assert_eq!(offer.sp_ecdh.len(), 2, "one share per distinct scan key");
+    }
+    let mut offer_ids = Vec::new();
+    for (i, offer) in offers.iter().enumerate() {
+        offer_ids.push(
+            fx.sides[i]
+                .handle
+                .send_sp_sign_offer(
+                    &fx.sides[i].keys,
+                    fx.request_id,
+                    vec![offer.participant_binonces.clone()],
+                    offer.sp_ecdh.clone(),
+                )
+                .await
+                .unwrap(),
+        );
+    }
+
+    let confirmations = wait_for_round_confirmed(&mut fx.event_rx, 3, fx.request_id).await;
+    let confirmed = &confirmations[0];
+    for c in &confirmations[1..] {
+        assert_eq!(c.session_id, confirmed.session_id);
+        assert_eq!(c.sp, confirmed.sp);
+    }
+    finish_sp_round(&mut fx, confirmed, &offer_ids).await;
+}
+
+#[tokio::test]
+async fn invalid_silent_payment_offer_is_not_selected() {
+    let _ = tracing_subscriber::fmt::try_init();
+    let mut fx = prepare_sp_channel(22).await;
+    // ECDH first, then publish. The tampered offer goes out first, so oldest-first would select
+    // it if the tree let a bad proof into the offer set.
+    let offers: Vec<_> = (0..3).map(|i| offer_sp(&mut fx, i)).collect();
+    let mut tampered = offers[2].sp_ecdh.clone();
+    tampered[0].ecdh_share = public(scalar(0x77));
+    let bad_id = fx.sides[2]
+        .handle
+        .send_sp_sign_offer(
+            &fx.sides[2].keys,
+            fx.request_id,
+            vec![offers[2].participant_binonces.clone()],
+            tampered,
+        )
+        .await
+        .unwrap();
+    let mut honest_ids = Vec::new();
+    for (side, offer) in fx.sides.iter().zip(&offers).take(2) {
+        honest_ids.push(
+            side.handle
+                .send_sp_sign_offer(
+                    &side.keys,
+                    fx.request_id,
+                    vec![offer.participant_binonces.clone()],
+                    offer.sp_ecdh.clone(),
+                )
+                .await
+                .unwrap(),
+        );
+    }
+
+    let (confirmations, rejected) =
+        wait_for_round_confirmed_and_rejections(&mut fx.event_rx, 3, fx.request_id).await;
+    assert!(
+        rejected.contains(&bad_id),
+        "a tampered ECDH share must be rejected before subset selection"
+    );
+    let confirmed = &confirmations[0];
+    let subset_ids: Vec<_> = confirmed.subset.iter().map(|e| e.event_id).collect();
+    assert_eq!(subset_ids.len(), 2);
+    assert!(!subset_ids.contains(&bad_id));
+    assert_eq!(
+        subset_ids.iter().copied().collect::<BTreeSet<_>>(),
+        honest_ids.iter().copied().collect::<BTreeSet<_>>(),
+    );
+    finish_sp_round(&mut fx, confirmed, &honest_ids).await;
+}
 
 // ============================================================================
 // Helpers
@@ -430,7 +527,7 @@ fn extract_key_artifacts(
     .expect("all devices should be in devices_in_order");
     let init_data = ChannelInitData {
         key_name: key_data.key_name.clone(),
-        purpose: KeyPurpose::Test,
+        purpose: key_data.purpose,
         root_shared_key,
         participants,
     };
@@ -533,6 +630,7 @@ struct ConfirmedView {
     session_id: SignSessionId,
     subset: Vec<ConfirmedSubsetEntry>,
     sign_task: WireSignTask,
+    sp: Option<remote_signing::SpSubset>,
 }
 
 async fn wait_for_round_confirmed(
@@ -553,6 +651,7 @@ async fn wait_for_round_confirmed(
                     subset,
                     session_id,
                     sign_task,
+                    sp,
                     ..
                 },
             ..
@@ -563,6 +662,7 @@ async fn wait_for_round_confirmed(
                     session_id,
                     subset,
                     sign_task,
+                    sp,
                 });
             }
         }
@@ -633,4 +733,286 @@ async fn wait_for_partials(
             }
         }
     }
+}
+
+struct SpChannel {
+    run: Run,
+    env: SigningEnv,
+    rng: ChaCha20Rng,
+    sides: Vec<NostrSide>,
+    request_id: EventId,
+    event_rx: mpsc::Receiver<(usize, ChannelEvent)>,
+    committed: WireSignTask,
+    access_structure_ref: frostsnap_core::AccessStructureRef,
+    master_appkey: MasterAppkey,
+    key_context: frostsnap_core::coordinator::KeyContext,
+    paths: [BitcoinBip32Path; 2],
+    recipients: [SilentPaymentRecipient; 2],
+    _relay: MockRelay,
+}
+
+async fn prepare_sp_channel(seed: u64) -> SpChannel {
+    let mut rng = ChaCha20Rng::seed_from_u64(seed);
+    let mut env = SigningEnv::default();
+    let mut run = Run::start_after_remote_keygen(
+        &[1, 1, 1],
+        2,
+        "sp nostr key",
+        KeyPurpose::Bitcoin(Network::Bitcoin),
+        &mut env,
+        &mut rng,
+    );
+    run.replenish_all_nonces(2, &mut env, &mut rng);
+
+    let (key_context, init_data, _key_data) = extract_key_artifacts(&run);
+    let access_structure_ref = extract_ar(&run);
+    let master_appkey = run.participants[0]
+        .coordinator
+        .iter_keys()
+        .next()
+        .unwrap()
+        .complete_key
+        .master_appkey;
+    let (first, first_address) = recipient(0x11, 0x12);
+    let (second, second_address) = recipient(0x14, 0x15);
+    let paths = [
+        BitcoinBip32Path::external(7),
+        BitcoinBip32Path::internal(42),
+    ];
+    let template = template(
+        master_appkey,
+        &[(paths[0], 42_000), (paths[1], 1_337_000)],
+        &[
+            (50_000, first, first_address),
+            (70_000, second, second_address),
+        ],
+        1_000_000,
+    );
+    let committed = WireSignTask::BitcoinTransaction(template);
+
+    let (relay_url, relay) = start_relay().await;
+    let (event_tx, mut event_rx) = mpsc::channel::<(usize, ChannelEvent)>(512);
+    let sides = spawn_sides(&run, 3, &relay_url, &key_context, &init_data, event_tx).await;
+    settle_subscriptions().await;
+    let request_id = sides[0]
+        .handle
+        .send_sign_request(&sides[0].keys, committed.clone(), "pay silent".into())
+        .await
+        .unwrap();
+    wait_for_request(&mut event_rx, 3, request_id).await;
+
+    SpChannel {
+        run,
+        env,
+        rng,
+        sides,
+        request_id,
+        event_rx,
+        committed,
+        access_structure_ref,
+        master_appkey,
+        key_context,
+        paths,
+        recipients: [first, second],
+        _relay: relay,
+    }
+}
+
+fn offer_sp(fx: &mut SpChannel, i: usize) -> SignOffer {
+    let device_id = *fx.run.participants[i].devices.keys().next().unwrap();
+    let (ecdh_session, sends) = fx.run.participants[i]
+        .coordinator
+        .start_remote_sp_ecdh(
+            fx.access_structure_ref,
+            fx.committed.clone(),
+            device_id,
+            TEST_ENCRYPTION_KEY,
+            &mut fx.rng,
+        )
+        .unwrap();
+    fx.run.extend_from_coordinator(i, sends);
+    fx.run.run_until_finished(&mut fx.env, &mut fx.rng).unwrap();
+    fx.run.participants[i]
+        .coordinator
+        .offer_to_sign_sp(
+            RemoteSignSessionId::new([3u8; 32]),
+            fx.access_structure_ref,
+            fx.committed.clone(),
+            device_id,
+            ecdh_session,
+        )
+        .unwrap()
+}
+
+async fn finish_sp_round(fx: &mut SpChannel, confirmed: &ConfirmedView, offer_ids: &[EventId]) {
+    let sp = confirmed
+        .sp
+        .clone()
+        .expect("silent payment round completes the template");
+    let subset_ids: BTreeSet<_> = confirmed
+        .subset
+        .iter()
+        .map(|entry| entry.event_id)
+        .collect();
+    assert!(subset_ids.is_subset(&offer_ids.iter().copied().collect()));
+    assert!(bitcoin_template(&fx.committed)
+        .silent_payment_outputs()
+        .all(|output| output.script.is_none()));
+
+    let completed = bitcoin_template(&sp.completed_task).clone();
+    assert!(completed
+        .silent_payment_outputs()
+        .all(|output| output.script.is_some()));
+    let inputs: Vec<_> = fx
+        .paths
+        .iter()
+        .copied()
+        .zip(completed.inputs().iter().map(|input| input.outpoint()))
+        .collect();
+    let expected = expected_output_keys(
+        reconstruct_root_secret(&fx.run, &[0, 1]),
+        &inputs,
+        &fx.recipients,
+    );
+    assert_eq!(sp_output_keys(&completed), expected);
+
+    let binonces: Vec<_> = confirmed
+        .subset
+        .iter()
+        .flat_map(|entry| entry.binonces.iter().cloned())
+        .collect();
+    let authors: BTreeSet<_> = confirmed.subset.iter().map(|entry| entry.author).collect();
+    for i in 0..fx.sides.len() {
+        let author = frostsnap_nostr::PublicKey::from(fx.sides[i].keys.public_key());
+        if !authors.contains(&author) {
+            continue;
+        }
+        let device_id = *fx.run.participants[i].devices.keys().next().unwrap();
+        let sign_req = fx.run.participants[i]
+            .coordinator
+            .sign_with_nonce_reservation(
+                RemoteSignSessionId::new([3u8; 32]),
+                device_id,
+                &binonces,
+                Some(&sp),
+                TEST_ENCRYPTION_KEY,
+            )
+            .unwrap();
+        fx.run.extend_from_coordinator(i, sign_req);
+    }
+    fx.run.run_until_finished(&mut fx.env, &mut fx.rng).unwrap();
+
+    let offer_subset: Vec<EventId> = confirmed
+        .subset
+        .iter()
+        .map(|entry| entry.event_id)
+        .collect();
+    let mut all_shares = Vec::new();
+    for i in 0..fx.sides.len() {
+        let author = frostsnap_nostr::PublicKey::from(fx.sides[i].keys.public_key());
+        if !authors.contains(&author) {
+            continue;
+        }
+        let shares = fx.env.shares[&(i, confirmed.session_id)][0].clone();
+        fx.sides[i]
+            .handle
+            .send_sign_partial(
+                &fx.sides[i].keys,
+                fx.request_id,
+                offer_subset.clone(),
+                shares.clone(),
+            )
+            .await
+            .unwrap();
+        all_shares.push(shares);
+    }
+    wait_for_partials(&mut fx.event_rx, 3, 2, fx.request_id).await;
+
+    let refs: Vec<_> = all_shares.iter().collect();
+    let signatures = remote_signing::combine_signatures(
+        sp.completed_task.clone(),
+        &fx.key_context,
+        &binonces,
+        &refs,
+    )
+    .unwrap();
+    let checked = sp
+        .completed_task
+        .clone()
+        .check(fx.master_appkey, KeyPurpose::Bitcoin(Network::Bitcoin))
+        .unwrap();
+    let decoded: Vec<_> = signatures
+        .iter()
+        .map(|sig| (*sig).into_decoded().unwrap())
+        .collect();
+    assert!(checked.verify_final_signatures(&Schnorr::<sha2::Sha256>::verify_only(), &decoded));
+
+    let mut tx = completed.to_rust_bitcoin_tx();
+    for (input, signature) in tx.input.iter_mut().zip(&decoded) {
+        input.witness = Witness::from_slice(&[signature.to_bytes()]);
+    }
+    for key in &expected {
+        assert!(
+            tx.output.iter().any(|output| {
+                output.script_pubkey.is_p2tr() && output.script_pubkey.as_bytes()[2..34] == key[..]
+            }),
+            "the final transaction pays {}",
+            frostsnap_core::hex::encode(key)
+        );
+    }
+}
+
+async fn wait_for_round_confirmed_and_rejections(
+    rx: &mut mpsc::Receiver<(usize, ChannelEvent)>,
+    n: usize,
+    request_id: EventId,
+) -> (Vec<ConfirmedView>, BTreeSet<EventId>) {
+    let mut per_side: BTreeMap<usize, ConfirmedView> = BTreeMap::new();
+    let mut rejected = BTreeSet::new();
+    while per_side.len() < n {
+        let (i, event) = tokio::time::timeout(Duration::from_secs(10), rx.recv())
+            .await
+            .expect("timeout waiting for RoundConfirmed")
+            .expect("event channel closed");
+        match event {
+            ChannelEvent::Signing {
+                event: SigningEvent::Rejected { event_id, .. },
+                ..
+            } => {
+                rejected.insert(event_id);
+            }
+            ChannelEvent::Signing {
+                event:
+                    SigningEvent::RoundConfirmed {
+                        request_id: rid,
+                        subset,
+                        session_id,
+                        sign_task,
+                        sp,
+                        ..
+                    },
+                ..
+            } if rid == request_id => {
+                per_side.entry(i).or_insert(ConfirmedView {
+                    session_id,
+                    subset,
+                    sign_task,
+                    sp,
+                });
+            }
+            _ => {}
+        }
+    }
+    (per_side.into_values().collect(), rejected)
+}
+
+fn sp_output_keys(template: &TransactionTemplate) -> Vec<[u8; 32]> {
+    template
+        .silent_payment_outputs()
+        .map(|output| {
+            output.script.as_ref().unwrap().as_bytes()[2..34]
+                .try_into()
+                .unwrap()
+        })
+        .collect()
 }

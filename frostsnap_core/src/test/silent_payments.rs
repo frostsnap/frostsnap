@@ -281,20 +281,29 @@ pub fn binonces_of(offers: &[&SignOffer]) -> Vec<ParticipantBinonces> {
         .collect()
 }
 
-/// The root secret, recovered from the shares of `participants`' devices as a test-only
-/// reconstruction.
-pub fn reconstruct_root_secret(remote: &SpRemote, participants: &[usize]) -> Scalar {
-    let ar = remote.access_structure_ref;
+pub fn extract_ar(run: &Run) -> crate::AccessStructureRef {
+    run.participants[0]
+        .coordinator
+        .iter_keys()
+        .next()
+        .unwrap()
+        .access_structures()
+        .next()
+        .unwrap()
+        .access_structure_ref()
+}
+
+pub fn reconstruct_root_secret(run: &Run, participants: &[usize]) -> Scalar {
+    let ar = extract_ar(run);
     let shares = participants
         .iter()
         .map(|&i| {
-            // Each coordinator knows its own device's share, whoever else it knows.
-            let key = remote.run.participants[i]
+            let key = run.participants[i]
                 .coordinator
                 .get_frost_key(ar.key_id)
                 .unwrap();
             let access_structure = key.access_structures().next().unwrap();
-            let device_id = remote.device(i);
+            let device_id = *run.participants[i].devices.keys().next().unwrap();
             let contrib = key
                 .complete_key
                 .coord_share_decryption_contrib(
@@ -305,7 +314,7 @@ pub fn reconstruct_root_secret(remote: &SpRemote, participants: &[usize]) -> Sca
                 .unwrap()
                 .1;
             let index = access_structure.device_to_share_indicies()[&device_id];
-            let share = remote.run.participants[i].devices[&device_id]
+            let share = run.participants[i].devices[&device_id]
                 .get_encrypted_share(ar, index)
                 .unwrap()
                 .decrypt(ar, contrib, &mut TestDeviceKeyGen)
@@ -313,7 +322,6 @@ pub fn reconstruct_root_secret(remote: &SpRemote, participants: &[usize]) -> Sca
             (index, share.share)
         })
         .collect::<Vec<_>>();
-
     let indices = shares.iter().map(|(index, _)| *index).collect::<Vec<_>>();
     shares
         .iter()

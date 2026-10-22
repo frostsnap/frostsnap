@@ -26,9 +26,12 @@ use super::events::{ConfirmedSubsetEntry, SigningEvent};
 use crate::channel_runner::EventMeta;
 use crate::{EventId, PublicKey};
 use frostsnap_core::{
-    coordinator::{KeyContext, ParticipantBinonces, ParticipantSignatureShares},
+    coordinator::{
+        remote_signing::SpSubset, KeyContext, ParticipantBinonces, ParticipantSignatureShares,
+    },
     message::GroupSignReq,
     schnorr_fun::frost::ShareIndex,
+    silent_payments::{complete_sp_task, verify_sp_ecdh_shares, EcdhShare},
     WireSignTask,
 };
 use std::collections::{BTreeSet, HashMap, VecDeque};
@@ -62,6 +65,42 @@ struct RequestState {
     cancelled: bool,
 }
 
+impl RequestState {
+    /// Whether the request is a silent payment send, whose offers must carry ECDH shares.
+    fn is_silent_payment(&self) -> bool {
+        matches!(&self.sign_task, WireSignTask::BitcoinTransaction(template)
+            if template.has_silent_payment_outputs())
+    }
+
+    /// The silent payment shares of the subset `entries`, with the task they complete. `None` for a
+    /// plain send, which signs its task as requested. `Err` is the reason the subset cannot
+    /// complete the send.
+    fn sp_round<'a>(
+        &self,
+        key_context: &KeyContext,
+        binonces: &[ParticipantBinonces],
+        entries: impl IntoIterator<Item = &'a ConfirmedSubsetEntry>,
+    ) -> Result<Option<SpSubset>, &'static str> {
+        if !self.is_silent_payment() {
+            return Ok(None);
+        }
+        let shares = shares_of(entries);
+        let completed_task = complete_sp_task(&self.sign_task, key_context, binonces, &shares)?;
+        Ok(Some(SpSubset {
+            completed_task,
+            shares,
+        }))
+    }
+}
+
+/// The ECDH shares of `entries`, in order.
+fn shares_of<'a>(entries: impl IntoIterator<Item = &'a ConfirmedSubsetEntry>) -> Vec<EcdhShare> {
+    entries
+        .into_iter()
+        .flat_map(|entry| entry.sp_ecdh.iter().copied())
+        .collect()
+}
+
 /// Decoded wire event after the caller has resolved the e-tag. Mirrors
 /// [`crate::signing::SigningMessage`] but with the referenced request_id
 /// promoted out of the e-tag for the variants that need it. The outer
@@ -75,6 +114,8 @@ pub(crate) enum WireEvent {
     Offer {
         request_id: EventId,
         binonces: Vec<ParticipantBinonces>,
+        /// Empty for a plain offer.
+        sp_ecdh: Vec<EcdhShare>,
     },
     Partial {
         request_id: EventId,
@@ -161,6 +202,7 @@ impl SigningEventTree {
                 WireEvent::Offer {
                     request_id,
                     binonces,
+                    sp_ecdh,
                 } => {
                     let Some(state) = self.requests.get_mut(&request_id) else {
                         tracing::debug!(
@@ -173,6 +215,7 @@ impl SigningEventTree {
                             WireEvent::Offer {
                                 request_id,
                                 binonces,
+                                sp_ecdh,
                             },
                         ));
                         continue;
@@ -184,6 +227,30 @@ impl SigningEventTree {
                             author: meta.author,
                             timestamp: meta.timestamp,
                             reason: "offer arrived after round was decided".into(),
+                        });
+                        continue;
+                    }
+
+                    // An offer whose shares do not verify is dropped before it can take its share
+                    // indices, so it can neither enter the subset nor block an honest offer.
+                    let shares_ok = if state.is_silent_payment() {
+                        verify_sp_ecdh_shares(
+                            &state.sign_task,
+                            &self.key_context,
+                            &binonces,
+                            &sp_ecdh,
+                        )
+                    } else if sp_ecdh.is_empty() {
+                        Ok(())
+                    } else {
+                        Err("silent payment shares on a send with no silent payment outputs")
+                    };
+                    if let Err(reason) = shares_ok {
+                        events.push(SigningEvent::Rejected {
+                            event_id: meta.event_id,
+                            author: meta.author,
+                            timestamp: meta.timestamp,
+                            reason: format!("offer's silent payment shares refused: {reason}"),
                         });
                         continue;
                     }
@@ -209,6 +276,7 @@ impl SigningEventTree {
                             author: meta.author,
                             timestamp: meta.timestamp,
                             binonces: binonces.clone(),
+                            sp_ecdh: sp_ecdh.clone(),
                         },
                     );
 
@@ -221,6 +289,7 @@ impl SigningEventTree {
                         author: meta.author,
                         request_id,
                         binonces,
+                        sp_ecdh,
                         timestamp: meta.timestamp,
                     });
                     self.drain_pending_into(meta.event_id, &mut queue);
@@ -293,8 +362,28 @@ impl SigningEventTree {
                         .flat_map(|oid| state.offers[oid].binonces.iter().cloned())
                         .collect();
 
+                    // A silent payment partial signs the task completed from its subset's shares.
+                    let signed_task = match state.sp_round(
+                        &self.key_context,
+                        &resolved_binonces,
+                        offer_subset.iter().map(|oid| &state.offers[oid]),
+                    ) {
+                        Ok(Some(sp)) => sp.completed_task,
+                        Ok(None) => state.sign_task.clone(),
+                        Err(reason) => {
+                            events.push(SigningEvent::Rejected {
+                                event_id: meta.event_id,
+                                author: meta.author,
+                                timestamp: meta.timestamp,
+                                reason: format!(
+                                    "partial's offers do not complete the silent payment send: {reason}"
+                                ),
+                            });
+                            continue;
+                        }
+                    };
                     let session_id = GroupSignReq::from_binonces(
-                        state.sign_task.clone(),
+                        signed_task,
                         self.key_context.access_structure_id(),
                         &resolved_binonces,
                     )
@@ -383,12 +472,28 @@ impl SigningEventTree {
             .iter()
             .flat_map(|rec| rec.binonces.iter().cloned())
             .collect();
-        let session_id = GroupSignReq::from_binonces(
-            state.sign_task.clone(),
-            access_structure_id,
-            &selected_binonces,
-        )
-        .session_id();
+
+        // The ECDH set is the confirmed subset, so the shares combine with the same Lagrange
+        // coefficients as the signature. Every offer's shares were verified on arrival.
+        let sp = match state.sp_round(&self.key_context, &selected_binonces, &subset) {
+            Ok(sp) => sp,
+            Err(reason) => {
+                // The round stays open: there is no subset of these offers that completes.
+                return Some(SigningEvent::Rejected {
+                    event_id: request_id,
+                    author: state.author,
+                    timestamp: now_seconds(),
+                    reason: format!("silent payment send cannot be completed: {reason}"),
+                });
+            }
+        };
+        let signed_task = match &sp {
+            Some(sp) => sp.completed_task.clone(),
+            None => state.sign_task.clone(),
+        };
+        let session_id =
+            GroupSignReq::from_binonces(signed_task, access_structure_id, &selected_binonces)
+                .session_id();
 
         state.confirmed = true;
         Some(SigningEvent::RoundConfirmed {
@@ -396,6 +501,7 @@ impl SigningEventTree {
             subset,
             session_id,
             sign_task: state.sign_task.clone(),
+            sp,
             timestamp: now_seconds(),
         })
     }
@@ -533,6 +639,7 @@ mod tests {
                     share_index: share_index(share_idx),
                     binonces: vec![binonce::Nonce([Point::generator(), Point::generator()])],
                 }],
+                sp_ecdh: vec![],
             },
         )
     }
