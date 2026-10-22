@@ -9,6 +9,7 @@
 
 mod address;
 mod dleq;
+mod template;
 
 pub use dleq::{dleq_prove, dleq_verify};
 

@@ -1,5 +1,5 @@
 use alloc::vec::Vec;
-use alloc::{boxed::Box, collections::BTreeMap};
+use alloc::{boxed::Box, collections::BTreeMap, string::String};
 use bitcoin::{
     consensus::Encodable,
     hashes::{sha256d, Hash},
@@ -9,6 +9,7 @@ use bitcoin::{
 };
 
 use crate::{
+    silent_payments::SilentPaymentRecipient,
     tweak::{AppTweak, BitcoinBip32Path},
     MasterAppkey,
 };
@@ -21,7 +22,7 @@ pub struct TransactionTemplate {
     #[bincode(with_serde)]
     lock_time: bitcoin::absolute::LockTime,
     inputs: Vec<Input>,
-    outputs: Vec<Output>,
+    pub(crate) outputs: Vec<Output>,
 }
 
 pub struct PushInput<'a> {
@@ -316,8 +317,20 @@ impl TransactionTemplate {
         // Calculate fee rate in sats/vB
         let fee_rate_sats_per_vbyte = self.feerate();
 
+        let silent_payment_recipients = self
+            .outputs
+            .iter()
+            .filter_map(|output| match &output.owner {
+                SpkOwner::SilentPayment(sp) => {
+                    Some((sp.address.clone(), bitcoin::Amount::from_sat(output.value)))
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+
         PromptSignBitcoinTx {
             foreign_recipients,
+            silent_payment_recipients,
             fee,
             fee_rate_sats_per_vbyte,
         }
@@ -327,17 +340,25 @@ impl TransactionTemplate {
 #[derive(Clone, Debug, PartialEq)]
 pub struct PromptSignBitcoinTx {
     pub foreign_recipients: Vec<(bitcoin::Address, bitcoin::Amount)>,
+    /// Silent payment recipients, as the address the recipient gave. The device has checked it
+    /// against the keys the output is paid to.
+    pub silent_payment_recipients: Vec<(String, bitcoin::Amount)>,
     pub fee: bitcoin::Amount,
     /// Fee rate in sats/vB
     pub fee_rate_sats_per_vbyte: Option<f64>,
 }
 
 impl PromptSignBitcoinTx {
-    /// Calculate the total amount being sent to foreign recipients
+    /// Calculate the total amount being sent to foreign and silent payment recipients
     pub fn total_sent(&self) -> bitcoin::Amount {
         self.foreign_recipients
             .iter()
             .map(|(_, amount)| *amount)
+            .chain(
+                self.silent_payment_recipients
+                    .iter()
+                    .map(|(_, amount)| *amount),
+            )
             .sum()
     }
 }
@@ -439,6 +460,19 @@ impl Output {
 pub enum SpkOwner {
     Foreign(#[bincode(with_serde)] ScriptBuf),
     Local(LocalSpk),
+    SilentPayment(Box<SilentPaymentOutput>),
+}
+
+/// A silent payment output. Its script depends on the ECDH shares of the signing devices, so it
+/// is `None` until they are combined. A send with any output still missing its script cannot be
+/// signed.
+#[derive(bincode::Encode, bincode::Decode, Clone, Debug, PartialEq, Eq, Hash)]
+pub struct SilentPaymentOutput {
+    pub recipient: SilentPaymentRecipient,
+    /// The address the recipient gave, for display. Must encode `recipient` on the signing network.
+    pub address: String,
+    #[bincode(with_serde)]
+    pub script: Option<ScriptBuf>,
 }
 
 impl SpkOwner {
@@ -446,25 +480,28 @@ impl SpkOwner {
         match self {
             SpkOwner::Foreign(spk) => RootOwner::Foreign(spk.clone()),
             SpkOwner::Local(local) => RootOwner::Local(local.master_appkey),
+            SpkOwner::SilentPayment(_) => RootOwner::Foreign(self.spk()),
         }
     }
     pub fn spk(&self) -> ScriptBuf {
         match self {
             SpkOwner::Foreign(spk) => spk.clone(),
             SpkOwner::Local(owner) => owner.spk(),
+            // SignTask::check refuses a send whose silent payment scripts are missing.
+            SpkOwner::SilentPayment(sp) => sp.script.clone().unwrap_or_default(),
         }
     }
 
     pub fn local_owner_key(&self) -> Option<MasterAppkey> {
         match self {
-            SpkOwner::Foreign(_) => None,
+            SpkOwner::Foreign(_) | SpkOwner::SilentPayment(_) => None,
             SpkOwner::Local(owner) => Some(owner.master_appkey),
         }
     }
 
     pub fn local_owner(&self) -> Option<&LocalSpk> {
         match self {
-            SpkOwner::Foreign(_) => None,
+            SpkOwner::Foreign(_) | SpkOwner::SilentPayment(_) => None,
             SpkOwner::Local(owner) => Some(owner),
         }
     }
