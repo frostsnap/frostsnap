@@ -907,14 +907,18 @@ impl Coordinator {
         &self,
         id: RemoteSignSessionId,
         access_structure_ref: AccessStructureRef,
-        sign_task: WireSignTask,
+        sign_task: &WireSignTask,
         device_id: DeviceId,
     ) -> Result<ParticipantBinonces> {
         let mut db = self.0.db.lock().unwrap();
         let mut coord = self.0.coordinator.lock().unwrap();
         coord.staged_mutate(&mut *db, |coordinator| {
-            let offer =
-                coordinator.offer_to_sign(id, access_structure_ref, sign_task, device_id)?;
+            let offer = coordinator.offer_to_sign(
+                id,
+                access_structure_ref,
+                sign_task.clone(),
+                device_id,
+            )?;
             Ok(offer.participant_binonces)
         })
     }
