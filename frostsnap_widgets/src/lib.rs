@@ -78,7 +78,7 @@ pub use key_touch::{Key, KeyTouch};
 pub use page_slider::PageSlider;
 pub use share_index::ShareIndexWidget;
 pub use sign_message::SignMessageConfirm;
-pub use sign_prompt::{SignPromptKind, SignTxPrompt};
+pub use sign_prompt::{SignPromptKind, SignTxPrompt, DEFAULT_LIST_REVIEW_THRESHOLD};
 pub use super_draw_target::SuperDrawTarget;
 pub use widget_color::{ColorInterpolate, WidgetColor};
 pub use widget_list::*;

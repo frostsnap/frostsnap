@@ -537,6 +537,91 @@ macro_rules! demo_widget {
                 let widget = SignTxPrompt::new_sp_ecdh(prompt, 0);
                 $run_macro!(widget);
             }
+            "sp_batch_prompt" => {
+                use $crate::sign_prompt::SignTxPrompt;
+                use core::str::FromStr;
+                use frostsnap_core::bitcoin_transaction::PromptSignBitcoinTx;
+
+                let tb1_strings = [
+                    "tb1qqyqszqgpqyqszqgpqyqszqgpqyqszqgpw0yxjz",
+                    "tb1pqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpq7vgt27",
+                    "tb1qqvpsxqcrqvpsxqcrqvpsxqcrqvpsxqcr7mrzn4",
+                    "tb1pqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszq2jl0cm",
+                    "tb1qq5zs2pg9q5zs2pg9q5zs2pg9q5zs2pg9lm9x7g",
+                    "tb1pqcrqvpsxqcrqvpsxqcrqvpsxqcrqvpsxqcrqvpsxqcrqvpsxqcrqzkpjm3",
+                    "tb1qqurswpc8qurswpc8qurswpc8qurswpc800zzll",
+                    "tb1ppqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqlyv8hf",
+                    "tb1qpyysjzgfpyysjzgfpyysjzgfpyysjzgfp83h38",
+                    "tb1ppg9q5zs2pg9q5zs2pg9q5zs2pg9q5zs2pg9q5zs2pg9q5zs2pg9qhqj65r",
+                    "tb1qpv9skzctpv9skzctpv9skzctpv9skzct3nknss",
+                    "tb1ppsxqcrqvpsxqcrqvpsxqcrqvpsxqcrqvpsxqcrqvpsxqcrqvpsxqr797xx",
+                    "tb1qp5xs6rgdp5xs6rgdp5xs6rgdp5xs6rgdsnshad",
+                    "tb1ppc8qurswpc8qurswpc8qurswpc8qurswpc8qurswpc8qurswpc8qt6mr9v",
+                    "tb1qpu8s7rc0pu8s7rc0pu8s7rc0pu8s7rc0q8hnu6",
+                    "tb1pzqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgqg0rp4c",
+                    "tb1qzyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3apj6d3",
+                    "tb1pzgfpyysjzgfpyysjzgfpyysjzgfpyysjzgfpyysjzgfpyysjzgfqqtaukj",
+                    "tb1qzvf3xycnzvf3xycnzvf3xycnzvf3xycnd447vx",
+                    "tb1pzs2pg9q5zs2pg9q5zs2pg9q5zs2pg9q5zs2pg9q5zs2pg9q5zs2q542cyh",
+                ];
+
+                let tsp1_strings = [
+                    "tsp1qqpq5zs2pg9q5zs2pg9q5zs2pg9q5zs2pg9q5zs2pg9q5zs2pg9q5zsrrc0pu8s7rc0pu8s7rc0pu8s7rc0pu8s7rc0pu8s7rc0pu8s7rc0qzskdeh",
+                    "tsp1qqpqkzctpv9skzctpv9skzctpv9skzctpv9skzctpv9skzctpv9skzcrru0378clru0378clru0378clru0378clru0378clru0378clru0s8ls7s9",
+                    "tsp1qqpqcrqvpsxqcrqvpsxqcrqvpsxqcrqvpsxqcrqvpsxqcrqvpsxqcrqryqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqsq77ggys",
+                    "tsp1qqpq6rgdp5xs6rgdp5xs6rgdp5xs6rgdp5xs6rgdp5xs6rgdp5xs6rgryysjzgfpyysjzgfpyysjzgfpyysjzgfpyysjzgfpyysjzgfpyyssm3wmdz",
+                    "tsp1qqpqurswpc8qurswpc8qurswpc8qurswpc8qurswpc8qurswpc8qursryg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3qux7440",
+                    "tsp1qqpq7rc0pu8s7rc0pu8s7rc0pu8s7rc0pu8s7rc0pu8s7rc0pu8s7rcryv3jxgeryv3jxgeryv3jxgeryv3jxgeryv3jxgeryv3jxgeryv3sefcxua",
+                    "tsp1qqppqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqszqgpqyqrysjzgfpyysjzgfpyysjzgfpyysjzgfpyysjzgfpyysjzgfpyysjq6czeyp",
+                    "tsp1qqppzyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygry5jj2ff9y5jj2ff9y5jj2ff9y5jj2ff9y5jj2ff9y5jj2ff9y5jslhy2dn",
+                    "tsp1qqppyysjzgfpyysjzgfpyysjzgfpyysjzgfpyysjzgfpyysjzgfpyysrycnzvf3xycnzvf3xycnzvf3xycnzvf3xycnzvf3xycnzvf3xycnqcq5y47",
+                    "tsp1qqppxycnzvf3xycnzvf3xycnzvf3xycnzvf3xycnzvf3xycnzvf3xycryunjwfe8yunjwfe8yunjwfe8yunjwfe8yunjwfe8yunjwfe8yunsa0jhuv",
+                    "tsp1qqppg9q5zs2pg9q5zs2pg9q5zs2pg9q5zs2pg9q5zs2pg9q5zs2pg9qr9q5zs2pg9q5zs2pg9q5zs2pg9q5zs2pg9q5zs2pg9q5zs2pg9q5q6vnnya",
+                    "tsp1qqpp29g4z52329g4z52329g4z52329g4z52329g4z52329g4z52329gr9y5jj2ff9y5jj2ff9y5jj2ff9y5jj2ff9y5jj2ff9y5jj2ff9y5slr4qd0",
+                    "tsp1qqppv9skzctpv9skzctpv9skzctpv9skzctpv9skzctpv9skzctpv9sr9g4z52329g4z52329g4z52329g4z52329g4z52329g4z52329g4qc59w4z",
+                    "tsp1qqppw9chzut3w9chzut3w9chzut3w9chzut3w9chzut3w9chzut3w9cr9v4jk2et9v4jk2et9v4jk2et9v4jk2et9v4jk2et9v4jk2et9v4samraus",
+                    "tsp1qqppsxqcrqvpsxqcrqvpsxqcrqvpsxqcrqvpsxqcrqvpsxqcrqvpsxqr9skzctpv9skzctpv9skzctpv9skzctpv9skzctpv9skzctpv9skqdzh78d",
+                    "tsp1qqppjxgeryv3jxgeryv3jxgeryv3jxgeryv3jxgeryv3jxgeryv3jxgr95kj6tfd95kj6tfd95kj6tfd95kj6tfd95kj6tfd95kj6tfd95ksgd3dwl",
+                    "tsp1qqpp5xs6rgdp5xs6rgdp5xs6rgdp5xs6rgdp5xs6rgdp5xs6rgdp5xsr9chzut3w9chzut3w9chzut3w9chzut3w9chzut3w9chzut3w9chq06prkj",
+                    "tsp1qqppkxcmrvd3kxcmrvd3kxcmrvd3kxcmrvd3kxcmrvd3kxcmrvd3kxcr9uhj7te09uhj7te09uhj7te09uhj7te09uhj7te09uhj7te09uhs248slq",
+                    "tsp1qqppc8qurswpc8qurswpc8qurswpc8qurswpc8qurswpc8qurswpc8qrxqcrqvpsxqcrqvpsxqcrqvpsxqcrqvpsxqcrqvpsxqcrqvpsxqcqn3nrma",
+                    "tsp1qqpp68gar5w368gar5w368gar5w368gar5w368gar5w368gar5w368grxycnzvf3xycnzvf3xycnzvf3xycnzvf3xycnzvf3xycnzvf3xycsk74sj0",
+                ];
+
+                let foreign_amounts = [
+                    50_000, 120_000, 75_000, 200_000, 35_000, 80_000, 150_000, 25_000, 300_000, 90_000,
+                    110_000, 45_000, 60_000, 180_000, 220_000, 40_000, 95_000, 130_000, 70_000, 250_000,
+                ];
+
+                let sp_amounts = [
+                    65_000, 140_000, 85_000, 210_000, 45_000, 90_000, 160_000, 30_000, 320_000, 100_000,
+                    115_000, 55_000, 70_000, 190_000, 230_000, 50_000, 105_000, 135_000, 80_000, 260_000,
+                ];
+
+                let mut foreign_recipients = $crate::alloc::vec![];
+                for (addr_str, amt) in tb1_strings.iter().zip(foreign_amounts.iter()) {
+                    let addr = bitcoin::Address::from_str(addr_str)
+                        .unwrap()
+                        .assume_checked();
+                    foreign_recipients.push((addr, bitcoin::Amount::from_sat(*amt)));
+                }
+
+                let mut silent_payment_recipients = $crate::alloc::vec![];
+                for (addr_str, amt) in tsp1_strings.iter().zip(sp_amounts.iter()) {
+                    silent_payment_recipients.push((addr_str.to_string(), bitcoin::Amount::from_sat(*amt)));
+                }
+
+                let prompt = PromptSignBitcoinTx {
+                    foreign_recipients,
+                    silent_payment_recipients,
+                    fee: bitcoin::Amount::from_sat(25_000),
+                    fee_rate_sats_per_vbyte: Some(10.5),
+                    outputs_fingerprint: [0xab; 32],
+                };
+
+                let widget = SignTxPrompt::new(prompt);
+                $run_macro!(widget);
+            }
             "bitcoin_amount" => {
                 use $crate::{bitcoin_amount_display::BitcoinAmountDisplay, Column, MainAxisAlignment};
 
@@ -1447,7 +1532,7 @@ macro_rules! demo_widget {
                 $run_macro!(widget);
             }
             _ => {
-                panic!("Unknown demo: '{}'. Valid demos: hello_world, bip39_entry, log_touches, numeric_keyboard, hold_confirm, welcome, column_cross_axis, column_center, row_cross_axis, row_center, row_inside_column, bip39_backup, all_words, fade_in, fade_switcher, device_name, device_name_cursor, bobbing_icon, swipe_up_chevron, keygen_check, sign_prompt, sp_sign_prompt, sp_ecdh_prompt, bitcoin_amount, slide_in, firmware_upgrade_progress, firmware_upgrade_download, firmware_upgrade_erase, firmware_upgrade_passive, progress, firmware_upgrade, array_column, vec_column, word_selector, address, standby, standby_recovery, screen_test, multiline_string, logo_colors, standby_transitions, erase_device, aa_compare, border_iter, check_backup", $demo);
+                panic!("Unknown demo: '{}'. Valid demos: hello_world, bip39_entry, log_touches, numeric_keyboard, hold_confirm, welcome, column_cross_axis, column_center, row_cross_axis, row_center, row_inside_column, bip39_backup, all_words, fade_in, fade_switcher, device_name, device_name_cursor, bobbing_icon, swipe_up_chevron, keygen_check, sign_prompt, sp_sign_prompt, sp_ecdh_prompt, sp_batch_prompt, bitcoin_amount, slide_in, firmware_upgrade_progress, firmware_upgrade_download, firmware_upgrade_erase, firmware_upgrade_passive, progress, firmware_upgrade, array_column, vec_column, word_selector, address, standby, standby_recovery, screen_test, multiline_string, logo_colors, standby_transitions, erase_device, aa_compare, border_iter, check_backup", $demo);
             }
         }
     };

@@ -8,7 +8,7 @@ use frostsnap_widgets::{
     backup::{BackupDisplay, CheckBackupScreen, EnterShareScreen},
     debug::OverlayDebug,
     keygen_check::KeygenCheck,
-    sign_prompt::SignTxPrompt,
+    sign_prompt::{SignPromptKind, SignTxPrompt},
     DeviceNameScreen, DynWidget, FirmwareUpgradeConfirm, FirmwareUpgradeProgress, Standby, Widget,
     HOLD_TO_CONFIRM_TIME_MS,
 };
@@ -19,6 +19,10 @@ use crate::{
     root_widget::RootWidget, ui::*, widget_tree::WidgetTree, DownstreamConnectionState, Instant,
     UpstreamConnectionState,
 };
+
+/// Recipients above which signing review uses a summary and list instead of one page per
+/// recipient. 0 always uses the list.
+const REVIEW_LIST_THRESHOLD: usize = frostsnap_widgets::DEFAULT_LIST_REVIEW_THRESHOLD;
 
 // Type alias for the display to match factory
 type DeviceDisplay<'a> = mipidsi::Display<
@@ -228,8 +232,12 @@ impl<'a> UserInteraction for FrostyUi<'a> {
                                 let prompt = tx_template.user_prompt(*network);
 
                                 // Create the SignTxPrompt widget with random seed
-                                let widget =
-                                    Box::new(SignTxPrompt::new_with_seed(prompt, rand_seed));
+                                let widget = Box::new(SignTxPrompt::new_with_seed_and_kind(
+                                    prompt,
+                                    rand_seed,
+                                    SignPromptKind::Sign,
+                                    REVIEW_LIST_THRESHOLD,
+                                ));
 
                                 // Store both widget and phase in the WidgetTree
                                 WidgetTree::SignTxPrompt {
@@ -263,7 +271,12 @@ impl<'a> UserInteraction for FrostyUi<'a> {
                                 network,
                             } => {
                                 let prompt = tx_template.user_prompt(*network);
-                                let widget = Box::new(SignTxPrompt::new_sp_ecdh(prompt, rand_seed));
+                                let widget = Box::new(SignTxPrompt::new_with_seed_and_kind(
+                                    prompt,
+                                    rand_seed,
+                                    SignPromptKind::SpEcdh,
+                                    REVIEW_LIST_THRESHOLD,
+                                ));
                                 WidgetTree::SpEcdhPrompt {
                                     widget,
                                     phase: Some(phase),
