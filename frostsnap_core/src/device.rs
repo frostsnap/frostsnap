@@ -323,6 +323,86 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
         DeviceId::new(self.keypair().public_key())
     }
 
+    fn recv_sign_request(
+        &mut self,
+        message: &CoordinatorToDeviceMessage,
+        group_sign_req: GroupSignReq,
+        device_sign_req: DeviceSignReq,
+    ) -> MessageResult<Vec<DeviceSend>> {
+        let session_id = group_sign_req.session_id();
+        let key_id = KeyId::from_rootkey(device_sign_req.rootkey);
+        let key_data = self
+            .keys
+            .get(&key_id)
+            .ok_or_else(|| {
+                Error::signer_invalid_message(
+                    message,
+                    format!("device doesn't have key for {key_id}"),
+                )
+            })?
+            .clone();
+
+        let group_sign_req = group_sign_req
+            .check(device_sign_req.rootkey, key_data.purpose)
+            .map_err(|e| Error::signer_invalid_message(message, e))?;
+
+        let GroupSignReq {
+            parties,
+            access_structure_id,
+            ..
+        } = &group_sign_req;
+        let coord_req_nonces = device_sign_req.nonces;
+
+        let access_structure_data = key_data
+            .access_structures
+            .get(access_structure_id)
+            .ok_or_else(|| {
+                Error::signer_invalid_message(
+                    message,
+                    format!(
+                        "this device is not part of that access structure: {access_structure_id}"
+                    ),
+                )
+            })?
+            .clone();
+        let (_, encrypted_secret_share) = parties
+            .iter()
+            .find_map(|party| Some((*party, *access_structure_data.shares.get(party)?)))
+            .ok_or_else(|| {
+                Error::signer_invalid_message(
+                    message,
+                    "device doesn't have any of the shares requested",
+                )
+            })?;
+
+        // Just verify the nonce stream exists but don't check availability
+        // The signing logic will handle cached signatures naturally
+        let _nonce_slot = self
+            .nonce_slots
+            .get(coord_req_nonces.stream_id)
+            .and_then(|slot| slot.read_slot())
+            .ok_or(Error::signer_invalid_message(
+                message,
+                format!(
+                    "device did not have that nonce stream id {}",
+                    coord_req_nonces.stream_id
+                ),
+            ))?;
+
+        // Removed are_nonces_available check - let the signing system handle it
+        let phase = SignPhase1 {
+            group_sign_req,
+            device_sign_req,
+            encrypted_secret_share,
+            session_id,
+        };
+        Ok(vec![DeviceSend::ToUser(Box::new(
+            DeviceToUserMessage::SignatureRequest {
+                phase: Box::new(phase),
+            },
+        ))])
+    }
+
     pub fn recv_coordinator_message(
         &mut self,
         message: CoordinatorToDeviceMessage,
@@ -544,70 +624,7 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
                     group_sign_req,
                     device_sign_req,
                 } = *request_sign;
-                let session_id = group_sign_req.session_id();
-                let key_id = KeyId::from_rootkey(device_sign_req.rootkey);
-                let key_data = self
-                    .keys
-                    .get(&key_id)
-                    .ok_or_else(|| {
-                        Error::signer_invalid_message(
-                            &message,
-                            format!("device doesn't have key for {key_id}"),
-                        )
-                    })?
-                    .clone();
-
-                let group_sign_req = group_sign_req
-                    .check(device_sign_req.rootkey, key_data.purpose)
-                    .map_err(|e| Error::signer_invalid_message(&message, e))?;
-
-                let GroupSignReq {
-                    parties,
-                    access_structure_id,
-                    ..
-                } = &group_sign_req;
-                let coord_req_nonces = device_sign_req.nonces;
-
-                let access_structure_data = key_data.access_structures.get(access_structure_id)
-                    .ok_or_else(|| {
-                        Error::signer_invalid_message(&message, format!("this device is not part of that access structure: {access_structure_id}"))
-                    })?.clone();
-                let (_, encrypted_secret_share) = parties
-                    .iter()
-                    .find_map(|party| Some((*party, *access_structure_data.shares.get(party)?)))
-                    .ok_or_else(|| {
-                        Error::signer_invalid_message(
-                            &message,
-                            "device doesn't have any of the shares requested",
-                        )
-                    })?;
-
-                // Just verify the nonce stream exists but don't check availability
-                // The signing logic will handle cached signatures naturally
-                let _nonce_slot = self
-                    .nonce_slots
-                    .get(coord_req_nonces.stream_id)
-                    .and_then(|slot| slot.read_slot())
-                    .ok_or(Error::signer_invalid_message(
-                        &message,
-                        format!(
-                            "device did not have that nonce stream id {}",
-                            coord_req_nonces.stream_id
-                        ),
-                    ))?;
-
-                // Removed are_nonces_available check - let the signing system handle it
-                let phase = SignPhase1 {
-                    group_sign_req,
-                    device_sign_req,
-                    encrypted_secret_share,
-                    session_id,
-                };
-                Ok(vec![DeviceSend::ToUser(Box::new(
-                    DeviceToUserMessage::SignatureRequest {
-                        phase: Box::new(phase),
-                    },
-                ))])
+                self.recv_sign_request(&message, group_sign_req, device_sign_req)
             }
             ScreenVerify(screen_verify::ScreenVerify::VerifyAddress {
                 master_appkey,

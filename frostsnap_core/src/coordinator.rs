@@ -3,7 +3,7 @@ use crate::{
     device::{KeyPurpose, NONCE_BATCH_SIZE},
     map_ext::*,
     message::{signing::OpenNonceStreams, *},
-    nonce_stream::{CoordNonceStreamState, NonceStreamId},
+    nonce_stream::{CoordNonceStreamState, NonceStreamId, SigningReqSubSegment},
     symmetric_encryption::{Ciphertext, SymmetricKey},
     tweak::Xpub,
     AccessStructureId, AccessStructureKind, AccessStructureRef, ActionError,
@@ -1171,8 +1171,6 @@ impl FrostCoordinator {
             }
         }
 
-        let app_shared_key = access_structure.app_shared_key().clone();
-
         let selected = signing_devices.len();
         if selected < access_structure.threshold() as usize {
             return Err(StartSignError::NotEnoughDevicesSelected {
@@ -1197,6 +1195,39 @@ impl FrostCoordinator {
                 &self.all_used_nonce_streams(),
             )
             .map_err(StartSignError::NotEnoughNoncesForDevice)?;
+
+        Ok(self.new_sign_session(
+            access_structure_ref,
+            sign_task,
+            sign_items,
+            nonces_by_device,
+            rng,
+        ))
+    }
+
+    /// Opens the signing session for `sign_task`, whose nonces are already reserved for each device
+    /// in `nonces_by_device`. The access structure in `access_structure_ref` must exist.
+    fn new_sign_session(
+        &mut self,
+        access_structure_ref: AccessStructureRef,
+        sign_task: WireSignTask,
+        sign_items: Vec<SignItem>,
+        nonces_by_device: BTreeMap<DeviceId, SigningReqSubSegment>,
+        rng: &mut impl rand_core::RngCore,
+    ) -> SignSessionId {
+        let AccessStructureRef {
+            key_id,
+            access_structure_id,
+        } = access_structure_ref;
+        let access_structure = self
+            .keys
+            .get(&key_id)
+            .expect("key was checked by start_sign")
+            .complete_key
+            .access_structures
+            .get(&access_structure_id)
+            .expect("access structure was checked by start_sign");
+        let app_shared_key = access_structure.app_shared_key().clone();
 
         let nonces_by_party = nonces_by_device
             .iter()
@@ -1263,7 +1294,7 @@ impl FrostCoordinator {
             local_session,
         )));
 
-        Ok(session_id)
+        session_id
     }
 
     pub fn request_device_sign(
