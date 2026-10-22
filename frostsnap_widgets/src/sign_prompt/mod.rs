@@ -255,7 +255,7 @@ impl FeePage {
     }
 }
 
-const WARNING_ICON_DATA: &[u8] = include_bytes!("../assets/warning-icon-24x24.bmp");
+const WARNING_ICON_DATA: &[u8] = include_bytes!("../../assets/warning-icon-24x24.bmp");
 
 /// Page widget for high fee warning
 #[derive(frostsnap_macros::Widget)]
