@@ -785,7 +785,7 @@ fn nonces_available_should_heal_itself_when_outcome_of_sign_request_is_ambigious
     let nonces_available_after_cancel = run.coordinator.nonces_available(device_id);
     assert_ne!(
         nonces_available_after_cancel, available_at_start,
-        "canceling should not reclaim ambigious nonces"
+        "canceling should not reclaim ambiguous nonces"
     );
 
     // now we simulate reconnecting the device. The coordinator should recognise once of its nonce
