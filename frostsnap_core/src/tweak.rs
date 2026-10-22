@@ -5,7 +5,7 @@ use bitcoin::{
 };
 use schnorr_fun::{
     frost::{PairedSecretShare, SharedKey},
-    fun::{g, marker::*, Point, Scalar, G},
+    fun::{g, marker::*, s, Point, Scalar, G},
 };
 
 #[derive(
@@ -86,6 +86,72 @@ impl BitcoinAccount {
             .path_segments_from_bitcoin_appkey()
             .chain(core::iter::once(self.index))
     }
+
+    /// The key of this account, derived from a master appkey the same way
+    /// [`AppTweak::derive_xonly_key`] derives the path below it.
+    pub fn derive_account_key<K: TweakableKey>(&self, master_appkey: &Xpub<K>) -> Xpub<K> {
+        master_appkey
+            .derive_bip32([AppTweakKind::Bitcoin as u32])
+            .derive_bip32(self.path_segments_from_bitcoin_appkey())
+    }
+}
+
+/// How the signing secret of a [`BitcoinBip32Path`] key is built from the secret `x` of its
+/// account key: the secret is `gv * (gacc * x + tacc)`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TweakContext {
+    pub gacc: Scalar<Public, Zero>,
+    pub tacc: Scalar<Public, Zero>,
+    pub gv: Scalar<Public, Zero>,
+}
+
+impl BitcoinBip32Path {
+    /// The tweak context of this path relative to `account_xpub`, the key of the path's account.
+    ///
+    /// Non-hardened BIP32 adds its tweak to the secret without scaling it, so `gacc` is always 1.
+    /// The BIP341 key-only tweak and the even-Y normalization around it are folded into `tacc`
+    /// and `gv` as described on [`TweakContext`].
+    pub fn tweak_context(&self, account_xpub: &Xpub<Point>) -> TweakContext {
+        let mut xpub = *account_xpub;
+        let mut bip32_tacc = Scalar::<Public, Zero>::zero();
+        for child in [self.account_keychain.keychain as u32, self.index] {
+            let (child_xpub, tweak) = xpub.bip32_child(child);
+            xpub = child_xpub;
+            bip32_tacc = s!(bip32_tacc + tweak).public();
+        }
+
+        // derive_xonly_key first negates the secret to make the child key even Y (gv1), then adds
+        // the taproot tweak and negates again if the tweaked key is odd Y (gv2).
+        let (internal_even_y, internal_negated) = xpub.key.into_point_with_even_y();
+        let taproot_tweak = taproot_key_tweak(&xpub.key);
+        let (_, output_negated) = g!(internal_even_y + taproot_tweak * G)
+            .normalize()
+            .non_zero()
+            .expect("taproot tweak is a hash so this is unreachable")
+            .into_point_with_even_y();
+
+        let gv1 = sign(internal_negated);
+        let gv2 = sign(output_negated);
+        TweakContext {
+            gacc: Scalar::<Public>::one().mark_zero(),
+            tacc: s!(bip32_tacc + gv1 * taproot_tweak).public(),
+            gv: s!(gv1 * gv2).public(),
+        }
+    }
+}
+
+fn sign(negated: bool) -> Scalar<Public, Zero> {
+    let mut one = Scalar::<Public>::one().mark_zero();
+    one.conditional_negate(negated);
+    one
+}
+
+/// The BIP341 key-only tweak for an internal key, as used by [`AppTweak::derive_xonly_key`].
+fn taproot_key_tweak(internal_key: &Point) -> Scalar<Public, Zero> {
+    let tweak =
+        bitcoin::taproot::TapTweakHash::from_key_and_tweak(internal_key.to_libsecp_xonly(), None)
+            .to_scalar();
+    Scalar::<Public, _>::from_bytes_mod_order(tweak.to_be_bytes())
 }
 
 impl Default for BitcoinAccount {
@@ -183,16 +249,9 @@ impl AppTweak {
                 let concrete_internal_key =
                     appkey.derive_bip32(bip32_path.path_segments_from_bitcoin_appkey());
                 let derived_key = concrete_internal_key.into_key();
-                let tweak = bitcoin::taproot::TapTweakHash::from_key_and_tweak(
-                    derived_key.to_libsecp_xonly(),
-                    None,
-                )
-                .to_scalar();
-                derived_key.into_xonly_with_tweak(
-                    Scalar::<Public, _>::from_bytes_mod_order(tweak.to_be_bytes())
-                        .non_zero()
-                        .expect("computationally unreachable"),
-                )
+                let tweak = taproot_key_tweak(&derived_key.to_key());
+                derived_key
+                    .into_xonly_with_tweak(tweak.non_zero().expect("computationally unreachable"))
             }
             AppTweak::Nostr => appkey.into_key().into_xonly(),
             AppTweak::TestMessage => appkey.into_key().into_xonly(),
@@ -336,16 +395,26 @@ impl<T: TweakableKey> Xpub<T> {
     /// Does non-hardened derivation in place
     pub fn derive_bip32_in_place(&mut self, segments: impl IntoIterator<Item = u32>) {
         for child in segments.into_iter() {
-            let mut hmac_engine: HmacEngine<sha512::Hash> = HmacEngine::new(&self.chaincode[..]);
-            hmac_engine.input(&self.key().to_key().to_bytes());
-            hmac_engine.input(&child.to_be_bytes());
-            let hmac_result: Hmac<sha512::Hash> = Hmac::from_engine(hmac_engine);
-
-            self.key = self.key.clone().tweak(
-                Scalar::<Public, _>::from_slice_mod_order(&hmac_result[..32]).expect("32 bytes"),
-            );
-            self.chaincode.copy_from_slice(&hmac_result[32..]);
+            *self = self.bip32_child(child).0;
         }
+    }
+
+    /// One non-hardened BIP32 step, returning the child and the tweak that was added to the key.
+    fn bip32_child(&self, child: u32) -> (Self, Scalar<Public, Zero>) {
+        let mut hmac_engine: HmacEngine<sha512::Hash> = HmacEngine::new(&self.chaincode[..]);
+        hmac_engine.input(&self.key().to_key().to_bytes());
+        hmac_engine.input(&child.to_be_bytes());
+        let hmac_result: Hmac<sha512::Hash> = Hmac::from_engine(hmac_engine);
+
+        let tweak =
+            Scalar::<Public, _>::from_slice_mod_order(&hmac_result[..32]).expect("32 bytes");
+        let mut chaincode = [0u8; 32];
+        chaincode.copy_from_slice(&hmac_result[32..]);
+        let child_xpub = Xpub {
+            key: self.key.clone().tweak(tweak),
+            chaincode,
+        };
+        (child_xpub, tweak)
     }
 
     pub fn derive_bip32(&self, segments: impl IntoIterator<Item = u32>) -> Xpub<T> {
