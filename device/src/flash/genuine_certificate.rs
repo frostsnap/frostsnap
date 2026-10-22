@@ -1,3 +1,4 @@
+use crate::partitions::EspFlashPartition;
 use alloc::vec::Vec;
 use esp_storage::FlashStorage;
 use frostsnap_comms::genuine_certificate::Certificate;
@@ -39,5 +40,21 @@ impl VersionedFactoryData {
         match self.inner {
             Versioned::V0(factory_data) => factory_data,
         }
+    }
+}
+
+/// The factory data in flash. Read it each time it's needed rather than keeping it in memory.
+#[derive(Clone, Copy)]
+pub struct FactoryDataHandle<'a>(EspFlashPartition<'a>);
+
+impl<'a> FactoryDataHandle<'a> {
+    /// `None` if the partition holds no factory data.
+    pub fn open(partition: EspFlashPartition<'a>) -> Option<Self> {
+        VersionedFactoryData::read(partition).ok()?;
+        Some(Self(partition))
+    }
+
+    pub fn read(&self) -> Result<FactoryData, bincode::error::DecodeError> {
+        VersionedFactoryData::read(self.0).map(VersionedFactoryData::into_factory_data)
     }
 }

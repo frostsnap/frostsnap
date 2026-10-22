@@ -2,6 +2,7 @@
 use crate::api::device_list as api;
 use frostsnap_coordinator::{
     frostsnap_core::{AccessStructureRef, DeviceId},
+    genuine_check::GenuineStatus,
     DeviceChange,
 };
 use std::collections::{HashMap, HashSet};
@@ -80,7 +81,11 @@ impl DeviceList {
         }
     }
 
-    pub fn consume_manager_event(&mut self, change: DeviceChange) {
+    pub fn consume_manager_event(
+        &mut self,
+        change: DeviceChange,
+        genuine_status: impl FnOnce(DeviceId) -> Option<GenuineStatus>,
+    ) {
         match change {
             DeviceChange::Connected {
                 id,
@@ -97,6 +102,12 @@ impl DeviceList {
                         name: None,
                         id,
                         recovery_mode: api::RecoveryMode::Off,
+                        case_color: None,
+                        genuine: api::GenuineStatus::Unattested {
+                            firmware_supports_check: FirmwareVersion::new(firmware_digest)
+                                .features()
+                                .genuine_check,
+                        },
                     },
                 );
             }
@@ -112,7 +123,7 @@ impl DeviceList {
                 }
             }
             DeviceChange::NeedsName { id } => {
-                self.append(id);
+                self.append(id, genuine_status(id));
             }
             DeviceChange::Registered { id, name } => {
                 let index = self.index_of(id);
@@ -140,7 +151,7 @@ impl DeviceList {
                     }
                     None => {
                         connected.name = Some(name);
-                        self.append(id);
+                        self.append(id, genuine_status(id));
                     }
                 }
             }
@@ -156,13 +167,27 @@ impl DeviceList {
                 }
             }
             DeviceChange::AppMessage(_) => { /* not relevant */ }
-            DeviceChange::GenuineDevice { .. } => { /* not displayed in app yet */ }
+            DeviceChange::GenuineCheck { .. } => {}
         }
+    }
+
+    pub fn set_genuine(&mut self, id: DeviceId, status: GenuineStatus) {
+        let Some(index) = self.index_of(id) else {
+            return;
+        };
+        let connected = self.connected.get_mut(&id).expect("invariant");
+        (connected.genuine, connected.case_color) = api::GenuineStatus::from_coordinator(status);
+        self.outbox.push(api::DeviceListChange {
+            kind: api::DeviceListChangeKind::GenuineCheck,
+            index: index as u32,
+            device: connected.clone(),
+        });
     }
 
     pub fn get_device(&self, id: DeviceId) -> Option<api::ConnectedDevice> {
         self.connected.get(&id).cloned()
     }
+
     fn index_of(&self, id: DeviceId) -> Option<usize> {
         self.devices
             .iter()
@@ -171,8 +196,13 @@ impl DeviceList {
             .map(|(i, _)| i)
     }
 
-    fn append(&mut self, id: DeviceId) {
+    fn append(&mut self, id: DeviceId, genuine_status: Option<GenuineStatus>) {
         if self.index_of(id).is_none() {
+            if let Some(status) = genuine_status {
+                let connected = self.connected.get_mut(&id).expect("invariant");
+                (connected.genuine, connected.case_color) =
+                    api::GenuineStatus::from_coordinator(status);
+            }
             self.devices.push(id);
             self.outbox.push(api::DeviceListChange {
                 kind: api::DeviceListChangeKind::Added,
@@ -196,5 +226,38 @@ impl DeviceList {
                 })
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use frostsnap_coordinator::frostsnap_comms::Sha256Digest;
+
+    #[test]
+    fn a_device_is_listed_with_the_genuine_status_it_has_reached() {
+        let id = DeviceId([2; 33]);
+        let mut list = DeviceList::default();
+        list.consume_manager_event(
+            DeviceChange::Connected {
+                id,
+                firmware_digest: Sha256Digest([0xab; 32]),
+                latest_firmware_digest: None,
+            },
+            |_| unreachable!(),
+        );
+        let reached = GenuineStatus::Unattested {
+            firmware_supports_check: false,
+        };
+        list.set_genuine(id, reached.clone());
+        assert!(!list.update_ready());
+
+        list.consume_manager_event(DeviceChange::NeedsName { id }, |_| Some(reached.clone()));
+        let added = list.take_update().changes;
+        assert!(matches!(
+            added.as_slice(),
+            [api::DeviceListChange { kind: api::DeviceListChangeKind::Added, device, .. }]
+                if device.genuine == api::GenuineStatus::from_coordinator(reached).0
+        ));
     }
 }
