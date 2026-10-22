@@ -2,6 +2,7 @@ pub mod keygen_run;
 pub mod remote_keygen;
 pub mod remote_recovery;
 
+use crate::api::bitcoin::BitcoinNetwork;
 use crate::api::broadcast::{BehaviorBroadcast, Broadcast};
 use crate::frb_generated::{RustAutoOpaque, StreamSink};
 use crate::nostr_settings_state::NostrSettingsState;
@@ -1278,6 +1279,48 @@ pub fn sign_task_is_silent_payment(sign_task: &WireSignTask) -> bool {
         false
     }
 }
+#[derive(Clone, Debug)]
+pub struct SendRecipientView {
+    pub address: String,
+    pub amount_sat: u64,
+    pub is_silent_payment: bool,
+}
+
+/// Every recipient of a send except change, in output order.
+#[frb(sync)]
+pub fn send_recipients(
+    sign_task: &WireSignTask,
+    network: BitcoinNetwork,
+) -> Vec<SendRecipientView> {
+    let WireSignTask::BitcoinTransaction(template) = sign_task else {
+        return vec![];
+    };
+    template
+        .outputs()
+        .iter()
+        .filter_map(|output| match output.owner() {
+            frostsnap_core::bitcoin_transaction::SpkOwner::SilentPayment(sp) => {
+                Some(SendRecipientView {
+                    address: sp.address.clone(),
+                    amount_sat: output.value,
+                    is_silent_payment: true,
+                })
+            }
+            frostsnap_core::bitcoin_transaction::SpkOwner::Local(_) => None,
+            frostsnap_core::bitcoin_transaction::SpkOwner::Foreign(spk) => {
+                let address = match bitcoin::Address::from_script(spk, network) {
+                    Ok(address) => address.to_string(),
+                    Err(_) => format!("{spk:x}"),
+                };
+                Some(SendRecipientView {
+                    address,
+                    amount_sat: output.value,
+                    is_silent_payment: false,
+                })
+            }
+        })
+        .collect()
+}
 
 /// Opaque bundle of round data needed to combine signatures standalone.
 /// Built on demand by `ChannelHandle::seal_round_confirmed(...)` when a
@@ -1377,4 +1420,84 @@ pub fn default_relay_urls() -> Vec<String> {
         "wss://nos.lol".to_string(),
         "wss://relay.primal.net".to_string(),
     ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bitcoin::{Address, Amount, Network, TxOut};
+    use core::str::FromStr;
+    use frostsnap_core::bitcoin_transaction::TransactionTemplate;
+    use frostsnap_core::silent_payments::SilentPaymentRecipient;
+
+    fn test_sp_address() -> String {
+        let scan = [
+            0x02, 0x20, 0xbc, 0xfa, 0xc5, 0xb9, 0x9e, 0x04, 0xad, 0x1a, 0x06, 0xdd, 0xfb, 0x01,
+            0x6e, 0xe1, 0x35, 0x82, 0x60, 0x9d, 0x60, 0xb6, 0x29, 0x1e, 0x98, 0xd0, 0x1a, 0x9b,
+            0xc9, 0xa1, 0x6c, 0x96, 0xd4,
+        ];
+        let spend = [
+            0x02, 0x5c, 0xc9, 0x85, 0x6d, 0x6f, 0x83, 0x75, 0x35, 0x0e, 0x12, 0x39, 0x78, 0xda,
+            0xac, 0x20, 0x0c, 0x26, 0x0c, 0xb5, 0xb5, 0xae, 0x83, 0x10, 0x6c, 0xab, 0x90, 0x48,
+            0x4d, 0xcd, 0x8f, 0xcf, 0x36,
+        ];
+        let recipient = SilentPaymentRecipient {
+            scan_key: frostsnap_core::schnorr_fun::fun::Point::from_slice(&scan).unwrap(),
+            spend_key: frostsnap_core::schnorr_fun::fun::Point::from_slice(&spend).unwrap(),
+        };
+        recipient.address(bitcoin::Network::Testnet).unwrap()
+    }
+
+    #[test]
+    fn test_send_recipients_mixed() {
+        let mut template = TransactionTemplate::new();
+        let sp_addr = test_sp_address();
+        let scan = [
+            0x02u8, 0x20, 0xbc, 0xfa, 0xc5, 0xb9, 0x9e, 0x04, 0xad, 0x1a, 0x06, 0xdd, 0xfb, 0x01,
+            0x6e, 0xe1, 0x35, 0x82, 0x60, 0x9d, 0x60, 0xb6, 0x29, 0x1e, 0x98, 0xd0, 0x1a, 0x9b,
+            0xc9, 0xa1, 0x6c, 0x96, 0xd4,
+        ];
+        let spend = [
+            0x02u8, 0x5c, 0xc9, 0x85, 0x6d, 0x6f, 0x83, 0x75, 0x35, 0x0e, 0x12, 0x39, 0x78, 0xda,
+            0xac, 0x20, 0x0c, 0x26, 0x0c, 0xb5, 0xb5, 0xae, 0x83, 0x10, 0x6c, 0xab, 0x90, 0x48,
+            0x4d, 0xcd, 0x8f, 0xcf, 0x36,
+        ];
+        let sp_recip = SilentPaymentRecipient {
+            scan_key: frostsnap_core::schnorr_fun::fun::Point::from_slice(&scan).unwrap(),
+            spend_key: frostsnap_core::schnorr_fun::fun::Point::from_slice(&spend).unwrap(),
+        };
+        template.push_silent_payment_output(Amount::from_sat(50000), sp_recip, sp_addr.clone());
+        let a1 = Address::from_str("tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx")
+            .unwrap()
+            .require_network(Network::Testnet)
+            .unwrap();
+        template.push_foreign_output(TxOut {
+            value: Amount::from_sat(10000),
+            script_pubkey: a1.script_pubkey(),
+        });
+        let a2 = Address::from_str("tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx")
+            .unwrap()
+            .require_network(Network::Testnet)
+            .unwrap();
+        template.push_foreign_output(TxOut {
+            value: Amount::from_sat(20000),
+            script_pubkey: a2.script_pubkey(),
+        });
+        let recips = send_recipients(
+            &WireSignTask::BitcoinTransaction(template),
+            BitcoinNetwork::Testnet,
+        );
+        assert_eq!(
+            recips.len(),
+            3,
+            "should return sp + 2 foreign, excluding any change"
+        );
+        assert!(recips[0].is_silent_payment);
+        assert_eq!(recips[0].amount_sat, 50000);
+        assert_eq!(recips[0].address, sp_addr);
+        assert!(!recips[1].is_silent_payment);
+        assert_eq!(recips[1].amount_sat, 10000);
+        assert!(!recips[2].is_silent_payment);
+        assert_eq!(recips[2].amount_sat, 20000);
+    }
 }

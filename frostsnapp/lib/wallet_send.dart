@@ -199,6 +199,10 @@ class _WalletSendPageState extends State<WalletSendPage> {
   Widget _buildCompletedList(BuildContext context) {
     // TODO: We only support one recipient right now!
     final recipient = state.recipient(recipient: 0);
+    final isSilent = recipient?.silentPaymentAddress != null;
+    final displayAddr = isSilent
+        ? (recipient?.silentPaymentAddress ?? '')
+        : (recipient?.address?.toString() ?? '');
 
     return AnimatedSize(
       duration: Durations.short4,
@@ -211,12 +215,24 @@ class _WalletSendPageState extends State<WalletSendPage> {
             ListTile(
               onTap: () => setState(() => pageIndex = SendPageIndex.recipient),
               leading: completedCardLabel(context, 'Recipient'),
-              title: Text(
-                // addressModel.formattedAddress,
-                spacedHex(recipient?.address?.toString() ?? '', groupSize: 4),
-                textWidthBasis: TextWidthBasis.longestLine,
-                textAlign: TextAlign.right,
-                style: monospaceTextStyle,
+              title: Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (isSilent)
+                    Text(
+                      'Silent payment',
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  Text(
+                    spacedHex(displayAddr, groupSize: 4),
+                    textWidthBasis: TextWidthBasis.longestLine,
+                    textAlign: TextAlign.right,
+                    style: monospaceTextStyle,
+                  ),
+                ],
               ),
             ),
           if (pageIndex.index > SendPageIndex.amount.index)

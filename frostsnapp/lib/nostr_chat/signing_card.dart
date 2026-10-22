@@ -5,9 +5,11 @@ import 'package:frostsnap/nostr_chat/chat_page.dart' show MessageStatus;
 import 'package:frostsnap/nostr_chat/nostr_profile.dart';
 import 'package:frostsnap/src/rust/api/nostr.dart';
 import 'package:frostsnap/src/rust/api/signing.dart';
+import 'package:frostsnap/src/rust/api/bitcoin.dart' show BitcoinNetwork;
 import 'package:frostsnap/theme.dart';
 import 'package:frostsnap/wallet.dart';
 import 'package:frostsnap/wallet_tx_details.dart';
+import 'package:frostsnap/src/rust/lib.dart' show WireSignTask;
 
 class SigningRequestState extends ChangeNotifier {
   final SigningEvent_Request request;
@@ -69,29 +71,99 @@ class SigningRequestState extends ChangeNotifier {
       DateTime.fromMillisecondsSinceEpoch(request.timestamp * 1000);
 }
 
-String signingDetailsText(SigningDetails details, {WalletContext? walletCtx}) =>
-    switch (details) {
-      SigningDetails_Message(:final message) => message,
-      SigningDetails_Nostr(:final content) => content,
-      SigningDetails_Transaction(:final transaction) => () {
-        if (walletCtx == null) return 'Bitcoin Transaction';
-        final recipients = transaction
-            .recipients()
-            .where((r) => !r.isMine)
-            .toList();
-        if (recipients.isEmpty) return 'Bitcoin Transaction';
-        final r = recipients.first;
-        final addr = r.address(network: walletCtx.network)?.toString() ?? '?';
-        return 'Send ${r.amount} sats to $addr';
-      }(),
-    };
+/// The recipients of a silent payment send as (address, sats) pairs, in output order.
+List<(String, int)> spRecipients({
+  required WireSignTask signTask,
+  WalletContext? walletCtx,
+}) {
+  final network = walletCtx?.network ?? BitcoinNetwork.bitcoin;
+  return [
+    for (final r in sendRecipients(signTask: signTask, network: network))
+      (r.address, r.amountSat),
+  ];
+}
+
+String signingDetailsText(
+  SigningDetails details, {
+  WalletContext? walletCtx,
+  WireSignTask? signTask,
+}) {
+  if (signTask != null && signTaskIsSilentPayment(signTask: signTask)) {
+    final net = walletCtx?.network ?? BitcoinNetwork.bitcoin;
+    final recips = sendRecipients(
+      signTask: signTask,
+      network: net,
+    ).map((r) => (r.address, r.amountSat)).toList();
+    if (recips.isNotEmpty) {
+      final addrs = recips.map((r) => r.$1).join(', ');
+      return 'Silent payment send to $addrs';
+    }
+    return 'Silent payment send';
+  }
+  return switch (details) {
+    SigningDetails_Message(:final message) => message,
+    SigningDetails_Nostr(:final content) => content,
+    SigningDetails_Transaction(:final transaction) => () {
+      if (walletCtx == null) return 'Bitcoin Transaction';
+      final recipients = transaction
+          .recipients()
+          .where((r) => !r.isMine)
+          .toList();
+      if (recipients.isEmpty) return 'Bitcoin Transaction';
+      final r = recipients.first;
+      final addr = r.address(network: walletCtx.network)?.toString() ?? '?';
+      return 'Send ${r.amount} sats to $addr';
+    }(),
+  };
+}
 
 Widget _buildSigningDetails(
   BuildContext context,
   ThemeData theme,
   SigningDetails details, {
   VoidCallback? onTap,
+  WireSignTask? signTask,
 }) {
+  if (signTask != null && signTaskIsSilentPayment(signTask: signTask)) {
+    final recips = spRecipients(
+      signTask: signTask,
+      walletCtx: WalletContext.of(context),
+    );
+    return Container(
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          ListTile(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+            leading: const Icon(Icons.currency_bitcoin),
+            title: const Text('Silent payment send'),
+            onTap: onTap,
+          ),
+          for (final (addr, sats) in recips)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('$sats sats', style: theme.textTheme.labelMedium),
+                  Text(
+                    spacedHex(addr, groupSize: 4),
+                    style: monospaceTextStyle.copyWith(fontSize: 12),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
   if (details is SigningDetails_Transaction) {
     final walletCtx = WalletContext.of(context);
     final tx = details.transaction;
@@ -528,6 +600,7 @@ class SigningRequestCard extends StatelessWidget {
                   theme,
                   signingDetails(signTask: request.signTask),
                   onTap: onTap,
+                  signTask: request.signTask,
                 ),
                 if (request.message.isNotEmpty) ...[
                   const SizedBox(height: 6),
