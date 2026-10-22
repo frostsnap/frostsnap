@@ -205,9 +205,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 None => {
                     // Output all shares to stdout with formatting
-                    for (i, share) in shares.iter().enumerate() {
+                    for share in shares.iter() {
+                        let index_u32: u32 = share.index().try_into().unwrap();
                         eprintln!("════════════════════════════════════════════════");
-                        eprintln!("SHARE #{} - STORE THIS SEPARATELY:", i + 1);
+                        eprintln!("SHARE #{} - STORE THIS SEPARATELY:", index_u32);
                         eprintln!("════════════════════════════════════════════════");
                         println!("{}", share);
                         eprintln!();
