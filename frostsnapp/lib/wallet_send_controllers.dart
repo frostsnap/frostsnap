@@ -117,6 +117,11 @@ enum AmountUnit {
   final String hintText;
   final bool hasDecimal;
 
+  AmountDenomination get denomination => switch (this) {
+    AmountUnit.satoshi => AmountDenomination.satoshi,
+    AmountUnit.bitcoin => AmountDenomination.bitcoin,
+  };
+
   TextInputFormatter get formatter {
     switch (this) {
       case AmountUnit.satoshi:
@@ -223,28 +228,19 @@ class AmountInputController with ChangeNotifier {
     int? newAmount;
     String? newError;
 
-    switch (_unit) {
-      case AmountUnit.satoshi:
-        final parsedAmount = int.tryParse(text);
-        if (parsedAmount == null) {
-          newAmount = _amount;
-          newError = 'Invalid satoshi amount.';
-        } else {
-          newAmount = parsedAmount;
-          newError = null;
-        }
-      case AmountUnit.bitcoin:
-        final parsedAmount = double.tryParse(text);
-        if (parsedAmount == null) {
-          newAmount = _amount;
-          newError = 'Invalid bitcoin amount.';
-        } else if (getDecimalPlaceCount(parsedAmount) > 8) {
-          newAmount = _amount;
-          newError = 'Too many decimal places.';
-        } else {
-          newAmount = (parsedAmount * satoshisInOneBtc).round();
-          newError = null;
-        }
+    try {
+      newAmount = parseAmount(text: text, denomination: _unit.denomination);
+      newError = null;
+    } on ParseAmountError catch (e) {
+      newAmount = _amount;
+      newError = switch (e) {
+        ParseAmountError.tooPrecise => 'Too many decimal places.',
+        ParseAmountError.tooLarge => 'Amount is too large.',
+        ParseAmountError.invalid => switch (_unit) {
+          AmountUnit.satoshi => 'Invalid satoshi amount.',
+          AmountUnit.bitcoin => 'Invalid bitcoin amount.',
+        },
+      };
     }
 
     if (newAmount != null) {
@@ -258,21 +254,6 @@ class AmountInputController with ChangeNotifier {
     _customError = null;
     if (isChanged) notifyListeners();
   }
-}
-
-int getDecimalPlaceCount(double number) {
-  // Convert the double to a string
-  String numberString = number.toString();
-
-  // Check if the string contains a decimal point
-  if (numberString.contains('.')) {
-    return numberString
-        .split('.')[1]
-        .length; // Return the length of the fractional part
-  }
-
-  // No decimal places
-  return 0;
 }
 
 class AmountInput extends StatelessWidget {

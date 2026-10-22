@@ -593,3 +593,94 @@ pub enum TryFinishTxError {
     IncompleteRecipientValues,
     InsufficientBalance,
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AmountDenomination {
+    Bitcoin,
+    Satoshi,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ParseAmountError {
+    TooPrecise,
+    TooLarge,
+    Invalid,
+}
+
+#[frb(sync)]
+pub fn parse_amount(text: &str, denomination: AmountDenomination) -> Result<u64, ParseAmountError> {
+    use bitcoin::amount::{Denomination, ParseAmountError as E};
+    let denomination = match denomination {
+        AmountDenomination::Bitcoin => Denomination::Bitcoin,
+        AmountDenomination::Satoshi => Denomination::Satoshi,
+    };
+    let amount = bitcoin::Amount::from_str_in(text, denomination).map_err(|e| match e {
+        E::TooPrecise(_) => ParseAmountError::TooPrecise,
+        E::OutOfRange(e) if e.is_above_max() => ParseAmountError::TooLarge,
+        E::InputTooLarge(_) => ParseAmountError::TooLarge,
+        _ => ParseAmountError::Invalid,
+    })?;
+    // Also keeps the result inside Dart's int, which the bridge would otherwise saturate.
+    if amount > bitcoin::Amount::MAX_MONEY {
+        return Err(ParseAmountError::TooLarge);
+    }
+    Ok(amount.to_sat())
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    fn btc(text: &str) -> Result<u64, ParseAmountError> {
+        parse_amount(text, AmountDenomination::Bitcoin)
+    }
+
+    fn sat(text: &str) -> Result<u64, ParseAmountError> {
+        parse_amount(text, AmountDenomination::Satoshi)
+    }
+
+    #[test]
+    fn bitcoin_amounts() {
+        assert_eq!(btc("0.00000001"), Ok(1));
+        assert_eq!(btc("0.0000001"), Ok(10));
+        assert_eq!(btc("1.5"), Ok(150_000_000));
+        assert_eq!(btc("1."), Ok(100_000_000));
+        assert_eq!(btc(".5"), Ok(50_000_000));
+        assert_eq!(btc("."), Ok(0));
+    }
+
+    #[test]
+    fn sub_satoshi_bitcoin_amounts_are_too_precise() {
+        assert_eq!(btc("0.000000001"), Err(ParseAmountError::TooPrecise));
+        assert_eq!(btc("0.000000019"), Err(ParseAmountError::TooPrecise));
+        assert_eq!(btc("0.00000012345"), Err(ParseAmountError::TooPrecise));
+    }
+
+    #[test]
+    fn satoshi_amounts() {
+        assert_eq!(sat("123"), Ok(123));
+        assert_eq!(sat("1.5"), Err(ParseAmountError::TooPrecise));
+    }
+
+    #[test]
+    fn too_large_amounts() {
+        assert_eq!(btc("21000000"), Ok(2_100_000_000_000_000));
+        assert_eq!(btc("21000000.00000001"), Err(ParseAmountError::TooLarge));
+        assert_eq!(sat("2100000000000000"), Ok(2_100_000_000_000_000));
+        assert_eq!(sat("2100000000000001"), Err(ParseAmountError::TooLarge));
+        assert_eq!(sat("9223372036854775808"), Err(ParseAmountError::TooLarge));
+        assert_eq!(sat("18446744073709551616"), Err(ParseAmountError::TooLarge));
+        assert_eq!(
+            btc("184467440737.09551616"),
+            Err(ParseAmountError::TooLarge)
+        );
+    }
+
+    #[test]
+    fn malformed_amounts_are_invalid() {
+        for text in ["", "abc", "1,5", "-1", " 1"] {
+            assert_eq!(btc(text), Err(ParseAmountError::Invalid), "{text:?}");
+            assert_eq!(sat(text), Err(ParseAmountError::Invalid), "{text:?}");
+        }
+    }
+}
