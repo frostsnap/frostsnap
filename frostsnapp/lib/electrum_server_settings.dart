@@ -70,10 +70,12 @@ class _NetworkServerCard extends StatelessWidget {
 
   ChainStatusState? _getServerStatus(ChainStatus? chainStatus, bool isBackup) {
     if (chainStatus == null) return null;
+    final electrum = chainStatus.electrum;
+    if (electrum == null) return null;
     final state = chainStatus.state;
     if (state == ChainStatusState.idle) return ChainStatusState.idle;
     if (state == ChainStatusState.connected) {
-      return chainStatus.onBackup == isBackup
+      return electrum.onBackup == isBackup
           ? ChainStatusState.connected
           : ChainStatusState.idle;
     }
