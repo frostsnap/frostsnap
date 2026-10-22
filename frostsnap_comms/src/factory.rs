@@ -7,7 +7,25 @@ use frostsnap_core::Gist;
 pub const DS_KEY_SIZE_BITS: usize = 3072;
 pub const DS_KEY_SIZE_BYTES: usize = DS_KEY_SIZE_BITS / 8;
 
-pub fn pad_message_for_rsa(message_digest: &[u8]) -> [u8; DS_KEY_SIZE_BYTES] {
+/// A SHA-256 digest in the PKCS#1 v1.5 block the DS peripheral exponentiates:
+/// `0x00 ‖ 0x01 ‖ 0xFF… ‖ 0x00 ‖ DigestInfo ‖ digest`.
+#[derive(Clone, PartialEq, Eq)]
+pub struct PaddedMessageBlock(pub [u8; DS_KEY_SIZE_BYTES]);
+
+frostsnap_core::impl_display_debug_serialize! {
+    fn to_bytes(block: &PaddedMessageBlock) -> [u8;384] {
+        block.0
+    }
+}
+
+frostsnap_core::impl_fromstr_deserialize! {
+    name => "padded message block",
+    fn from_bytes(bytes: [u8;384]) -> PaddedMessageBlock {
+        PaddedMessageBlock(bytes)
+    }
+}
+
+pub fn pad_message_for_rsa(message_digest: &[u8]) -> PaddedMessageBlock {
     // Hard-code the ASN.1 DigestInfo prefix for SHA-256
     const SHA256_ASN1_PREFIX: &[u8] = &[
         0x30, 0x31, 0x30, 0x0d, 0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x01,
@@ -41,7 +59,7 @@ pub fn pad_message_for_rsa(message_digest: &[u8]) -> [u8; DS_KEY_SIZE_BYTES] {
     padded_block[digest_offset..(digest_offset + message_digest.len())]
         .copy_from_slice(message_digest);
 
-    padded_block
+    PaddedMessageBlock(padded_block)
 }
 
 #[derive(Debug, Clone)]

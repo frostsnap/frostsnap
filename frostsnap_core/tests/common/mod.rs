@@ -1,5 +1,5 @@
 use bitcoin::hashes::{sha256, Hash, HashEngine, Hmac, HmacEngine};
-use frostsnap_core::device::{DeviceSecretDerivation, DeviceToUserMessage, KeyPurpose};
+use frostsnap_core::device::{DevicePrf, DeviceToUserMessage, KeyPurpose};
 use frostsnap_core::message::{CoordinatorToDeviceMessage, DeviceSend, DeviceToCoordinatorMessage};
 use frostsnap_core::{
     coordinator::{
@@ -7,11 +7,9 @@ use frostsnap_core::{
         FrostCoordinator,
     },
     device::FrostSigner,
-    DeviceId, SymmetricKey,
+    DeviceId, MessageResult, SymmetricKey,
 };
-use frostsnap_core::{AccessStructureRef, MessageResult};
 use rand::RngCore;
-use schnorr_fun::frost::ShareIndex;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 pub const TEST_ENCRYPTION_KEY: SymmetricKey = SymmetricKey([42u8; 32]);
@@ -78,29 +76,13 @@ impl Send {
 
 pub struct TestDeviceKeyGen;
 
-impl DeviceSecretDerivation for TestDeviceKeyGen {
-    fn get_share_encryption_key(
-        &mut self,
-        _access_structure_ref: AccessStructureRef,
-        _party_index: ShareIndex,
-        _coord_key: frostsnap_core::CoordShareDecryptionContrib,
-    ) -> SymmetricKey {
-        TEST_ENCRYPTION_KEY
-    }
-
-    fn derive_nonce_seed(
-        &mut self,
-        nonce_stream_id: frostsnap_core::nonce_stream::NonceStreamId,
-        index: u32,
-        seed_material: &[u8; 32],
-    ) -> [u8; 32] {
+impl DevicePrf for TestDeviceKeyGen {
+    fn prf(&mut self, message: &[&[u8]]) -> [u8; 32] {
         let mut engine = HmacEngine::<sha256::Hash>::new(&TEST_ENCRYPTION_KEY.0);
-        engine.input(nonce_stream_id.to_bytes().as_slice());
-        engine.input(&index.to_le_bytes());
-        engine.input(seed_material);
-        let hmac_result = Hmac::<sha256::Hash>::from_engine(engine);
-
-        *hmac_result.as_byte_array()
+        for part in message {
+            engine.input(part);
+        }
+        *Hmac::<sha256::Hash>::from_engine(engine).as_byte_array()
     }
 }
 

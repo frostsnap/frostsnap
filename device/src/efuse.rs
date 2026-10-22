@@ -1,11 +1,7 @@
-use alloc::rc::Rc;
+use crate::crypto::HmacKeyIds;
 use alloc::vec::Vec;
-use core::cell::RefCell;
 use esp_hal::efuse::{self as hal_efuse};
 use esp_hal::peripherals::EFUSE;
-use frostsnap_core::AccessStructureRef;
-use rand_chacha::rand_core::RngCore;
-use rand_core::SeedableRng;
 use reed_solomon;
 
 // See table Table 4.3-1 and Table 4.3-2 from esp32c3 technical reference
@@ -286,6 +282,15 @@ pub struct DiscoveredEfuses {
     pub ds: Option<esp_hal::hmac::KeyId>,
 }
 
+impl DiscoveredEfuses {
+    pub fn hmac_key_ids(&self) -> Result<HmacKeyIds, EfuseError> {
+        Ok(HmacKeyIds {
+            share_encryption: self.share_encryption.ok_or(EfuseError::EfuseReadError)?,
+            fixed_entropy: self.fixed_entropy.ok_or(EfuseError::EfuseReadError)?,
+        })
+    }
+}
+
 /// Builder for writing multiple efuse keys with their purposes in a single operation
 pub struct EfuseKeyWriter<'a> {
     efuse: &'a EfuseController,
@@ -322,28 +327,21 @@ impl<'a> EfuseKeyWriter<'a> {
 
     /// Add the share encryption key
     pub fn add_encryption_key(mut self, value: [u8; 32]) -> Self {
-        self.keys.push((
-            EfuseHmacKeys::ENCRYPTION_KEYID,
-            value,
-            KeyPurpose::HmacUpstream,
-        ));
+        self.keys
+            .push((ENCRYPTION_KEYID, value, KeyPurpose::HmacUpstream));
         self
     }
 
     /// Add the fixed entropy key
     pub fn add_entropy_key(mut self, value: [u8; 32]) -> Self {
-        self.keys.push((
-            EfuseHmacKeys::FIXED_ENTROPY_KEYID,
-            value,
-            KeyPurpose::HmacUpstream,
-        ));
+        self.keys
+            .push((FIXED_ENTROPY_KEYID, value, KeyPurpose::HmacUpstream));
         self
     }
 
     /// Add the DS (Digital Signature) key for hardware attestation
     pub fn add_ds_key(mut self, value: [u8; 32]) -> Self {
-        self.keys
-            .push((EfuseHmacKeys::DS_KEYID, value, KeyPurpose::Ds));
+        self.keys.push((DS_KEYID, value, KeyPurpose::Ds));
         self
     }
 
@@ -385,38 +383,9 @@ impl<'a> EfuseKeyWriter<'a> {
     }
 }
 
-pub struct EfuseHmacKeys<'a> {
-    pub share_encryption: EfuseHmacKey<'a>,
-    pub fixed_entropy: EfuseHmacKey<'a>,
-}
-
-impl<'a> EfuseHmacKeys<'a> {
-    pub const ENCRYPTION_KEYID: esp_hal::hmac::KeyId = esp_hal::hmac::KeyId::Key2;
-    pub const FIXED_ENTROPY_KEYID: esp_hal::hmac::KeyId = esp_hal::hmac::KeyId::Key3;
-    pub const DS_KEYID: esp_hal::hmac::KeyId = esp_hal::hmac::KeyId::Key4;
-
-    /// Load existing HMAC keys from eFuse memory
-    /// Keys must have been previously initialized
-    pub fn load(
-        efuse: &EfuseController,
-        hmac: Rc<RefCell<esp_hal::hmac::Hmac<'a>>>,
-    ) -> Result<Self, EfuseError> {
-        // Discover which slots contain our keys
-        let discovered = efuse.discover_efuses();
-
-        // Ensure we have the required keys
-        let share_encryption_id = discovered
-            .share_encryption
-            .ok_or(EfuseError::EfuseReadError)?;
-        let fixed_entropy_id = discovered.fixed_entropy.ok_or(EfuseError::EfuseReadError)?;
-
-        // Create and return the key handles with discovered slots
-        Ok(EfuseHmacKeys {
-            share_encryption: EfuseHmacKey::new(hmac.clone(), share_encryption_id),
-            fixed_entropy: EfuseHmacKey::new(hmac, fixed_entropy_id),
-        })
-    }
-}
+pub const ENCRYPTION_KEYID: esp_hal::hmac::KeyId = esp_hal::hmac::KeyId::Key2;
+pub const FIXED_ENTROPY_KEYID: esp_hal::hmac::KeyId = esp_hal::hmac::KeyId::Key3;
+pub const DS_KEYID: esp_hal::hmac::KeyId = esp_hal::hmac::KeyId::Key4;
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum KeyPurpose {
@@ -457,92 +426,4 @@ pub enum EfuseError {
     EfuseAlreadyBurned,
     EfuseError,
     ReadProtectNotLatched(esp_hal::hmac::KeyId),
-}
-
-pub struct EfuseHmacKey<'a> {
-    hmac: Rc<RefCell<esp_hal::hmac::Hmac<'a>>>,
-    hmac_key_id: esp_hal::hmac::KeyId,
-}
-
-impl<'a> EfuseHmacKey<'a> {
-    pub fn new(
-        hmac: Rc<RefCell<esp_hal::hmac::Hmac<'a>>>,
-        hmac_key_id: esp_hal::hmac::KeyId,
-    ) -> Self {
-        Self { hmac, hmac_key_id }
-    }
-
-    pub fn hash(
-        &mut self,
-        domain_separator: &str,
-        input: &[u8],
-    ) -> Result<[u8; 32], esp_hal::hmac::Error> {
-        let mut hmac = self.hmac.borrow_mut();
-        let mut output = [0u8; 32];
-        let mut remaining = input;
-
-        hmac.init();
-        nb::block!(hmac.configure(esp_hal::hmac::HmacPurpose::ToUser, self.hmac_key_id))?;
-
-        let len_byte = [domain_separator.len() as u8];
-        let _its_one_byte = nb::block!(hmac.update(&len_byte[..])).unwrap();
-        let mut ds_remaining = domain_separator.as_bytes();
-
-        while !ds_remaining.is_empty() {
-            ds_remaining = nb::block!(hmac.update(ds_remaining)).unwrap();
-        }
-
-        while !remaining.is_empty() {
-            remaining = nb::block!(hmac.update(remaining)).unwrap();
-        }
-
-        nb::block!(hmac.finalize(output.as_mut_slice())).unwrap();
-
-        Ok(output)
-    }
-
-    pub fn mix_in_rng(&mut self, rng: &mut impl RngCore) -> rand_chacha::ChaCha20Rng {
-        let mut entropy = [0u8; 64];
-        rng.fill_bytes(&mut entropy);
-        let chacha_seed = self.hash("mix-in-rng", &entropy).expect("entropy hash");
-        rand_chacha::ChaCha20Rng::from_seed(chacha_seed)
-    }
-}
-
-impl frostsnap_core::device::DeviceSecretDerivation for EfuseHmacKey<'_> {
-    fn get_share_encryption_key(
-        &mut self,
-        access_structure_ref: AccessStructureRef,
-        party_index: frostsnap_core::schnorr_fun::frost::ShareIndex,
-        coord_key: frostsnap_core::CoordShareDecryptionContrib,
-    ) -> frostsnap_core::SymmetricKey {
-        let mut src = [0u8; 128];
-        src[..32].copy_from_slice(access_structure_ref.key_id.to_bytes().as_slice());
-        src[32..64].copy_from_slice(
-            access_structure_ref
-                .access_structure_id
-                .to_bytes()
-                .as_slice(),
-        );
-        src[64..96].copy_from_slice(party_index.to_bytes().as_slice());
-        src[96..128].copy_from_slice(coord_key.to_bytes().as_slice());
-
-        let output = self.hash("share-encryption", &src).unwrap();
-
-        frostsnap_core::SymmetricKey(output)
-    }
-
-    fn derive_nonce_seed(
-        &mut self,
-        nonce_stream_id: frostsnap_core::nonce_stream::NonceStreamId,
-        index: u32,
-        seed_material: &[u8; 32],
-    ) -> [u8; 32] {
-        let mut input = [0u8; 52]; // 16 (stream_id) + 4 (index) + 32 (seed_material)
-        input[..16].copy_from_slice(nonce_stream_id.to_bytes().as_slice());
-        input[16..20].copy_from_slice(&index.to_be_bytes());
-        input[20..52].copy_from_slice(seed_material);
-
-        self.hash("nonce-seed", &input).unwrap()
-    }
 }
