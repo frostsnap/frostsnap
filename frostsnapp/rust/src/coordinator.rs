@@ -813,19 +813,12 @@ impl FfiCoordinator {
     ) -> Result<RestorationId> {
         let restoration_id = {
             let mut coordinator = self.coordinator.lock().unwrap();
-
-            if let Some(access_structure_ref) = recover_share.held_share.access_structure_ref {
-                if coordinator
-                    .get_access_structure(access_structure_ref)
-                    .is_some()
-                {
-                    return Err(anyhow!("we already know about this access structure"));
-                }
-            }
             let mut db = self.db.lock().unwrap();
             coordinator.staged_mutate(&mut *db, |coordinator| {
                 let restoration_id = RestorationId::new(&mut rand::thread_rng());
-                coordinator.start_restoring_key_from_recover_share(recover_share, restoration_id);
+                // Refuses a wallet that already exists or is already being restored.
+                coordinator
+                    .start_restoring_key_from_recover_share(recover_share, restoration_id)?;
                 Ok(restoration_id)
             })?
         };
