@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:frostsnap/animated_check.dart';
+import 'package:frostsnap/contexts.dart';
 import 'package:frostsnap/device_action_fullscreen_dialog.dart';
 import 'package:frostsnap/global.dart';
 import 'package:frostsnap/nostr_chat/nostr_profile.dart';
@@ -576,11 +577,25 @@ class _NostrSigningPageState extends State<NostrSigningPage> {
                 ),
                 child: Padding(
                   padding: const EdgeInsets.symmetric(vertical: 8.0),
-                  child: buildDetailsColumn(
-                    context,
-                    txDetails: widget.txDetails,
-                    dense: true,
-                    showConfirmations: false,
+                  child: Builder(
+                    builder: (ctx) {
+                      final walletCtx = WalletContext.of(ctx);
+                      final signTask = widget.signingState.request.signTask;
+                      final checkCode = walletCtx != null
+                          ? outputsCheckCode(
+                              signTask: signTask,
+                              network: walletCtx.network,
+                            )
+                          : null;
+                      return buildDetailsColumn(
+                        ctx,
+                        txDetails: widget.txDetails,
+                        dense: true,
+                        showConfirmations: false,
+                        checkCode: checkCode,
+                        signTask: signTask,
+                      );
+                    },
                   ),
                 ),
               ),

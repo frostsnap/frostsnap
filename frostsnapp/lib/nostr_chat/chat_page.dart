@@ -3225,18 +3225,16 @@ class _OfferSignSheetState extends State<_OfferSignSheet> {
       );
     }
 
-    final details = signingDetails(signTask: widget.state.request.signTask);
+    final signTask = widget.state.request.signTask;
+    final details = signingDetails(signTask: signTask);
     final walletCtx = WalletContext.of(context);
-    final isSp = signTaskIsSilentPayment(
-      signTask: widget.state.request.signTask,
-    );
+    final isSp = signTaskIsSilentPayment(signTask: signTask);
     final spRecips = isSp
-        ? spRecipients(
-            signTask: widget.state.request.signTask,
-            walletCtx: walletCtx,
-          )
+        ? spRecipients(signTask: signTask, walletCtx: walletCtx)
         : const <(String, int)>[];
-
+    final checkCode = walletCtx != null
+        ? outputsCheckCode(signTask: signTask, network: walletCtx.network)
+        : null;
     return SingleChildScrollView(
       controller: widget.scrollController,
       child: Column(
@@ -3244,15 +3242,10 @@ class _OfferSignSheetState extends State<_OfferSignSheet> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           if (isSp && spRecips.isNotEmpty) ...[
-            for (final (addr, sats) in spRecips)
-              ListTile(
-                leading: const Icon(Icons.currency_bitcoin),
-                title: Text('$sats sats'),
-                subtitle: Text(
-                  spacedHex(addr, groupSize: 4),
-                  style: monospaceTextStyle,
-                ),
-              ),
+            CollapsibleChatRecipients(
+              recipients: spRecips,
+              checkCode: checkCode,
+            ),
             if (details is SigningDetails_Transaction &&
                 details.transaction.fee() != null)
               ListTile(title: Text('Fee ${details.transaction.fee()} sats')),
@@ -3274,6 +3267,8 @@ class _OfferSignSheetState extends State<_OfferSignSheet> {
                 now: DateTime.now(),
               ),
               showConfirmations: false,
+              checkCode: checkCode,
+              signTask: signTask,
             ),
             const Divider(),
           ] else if (details is SigningDetails_Message) ...[
