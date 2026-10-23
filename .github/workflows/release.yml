@@ -71,12 +71,12 @@ jobs:
           env: prod
       - name: Upload APK to release
         run: |
-          cp frostsnapp/build/app/outputs/flutter-apk/app-direct-release.apk "Frostsnap-${{ env.TAG_NAME }}.apk"
-          gh release upload ${{ env.TAG_NAME }} "Frostsnap-${{ env.TAG_NAME }}.apk#Frostsnap-android.apk" --clobber
+          cp frostsnapp/build/app/outputs/flutter-apk/app-direct-release.apk "Frostsnap-${{ env.TAG_NAME }}-android.apk"
+          gh release upload ${{ env.TAG_NAME }} "Frostsnap-${{ env.TAG_NAME }}-android.apk" --clobber
       - name: Upload App Bundle to release
         run: |
-          cp frostsnapp/build/app/outputs/bundle/playstoreRelease/app-playstore-release.aab "Frostsnap-${{ env.TAG_NAME }}.aab"
-          gh release upload ${{ env.TAG_NAME }} "Frostsnap-${{ env.TAG_NAME }}.aab#Frostsnap-android.aab" --clobber
+          cp frostsnapp/build/app/outputs/bundle/playstoreRelease/app-playstore-release.aab "Frostsnap-${{ env.TAG_NAME }}-android.aab"
+          gh release upload ${{ env.TAG_NAME }} "Frostsnap-${{ env.TAG_NAME }}-android.aab" --clobber
 
   build-linux:
     name: "Build Linux"
@@ -112,8 +112,8 @@ jobs:
       - run: just build-appimage
       - name: Upload AppImage to release
         run: |
-          mv Frostsnap-x86_64.AppImage "Frostsnap-${{ env.TAG_NAME }}.AppImage"
-          gh release upload ${{ env.TAG_NAME }} "Frostsnap-${{ env.TAG_NAME }}.AppImage#Frostsnap-linux-x86_64.AppImage" --clobber
+          mv Frostsnap-x86_64.AppImage "Frostsnap-${{ env.TAG_NAME }}-linux-x86_64.AppImage"
+          gh release upload ${{ env.TAG_NAME }} "Frostsnap-${{ env.TAG_NAME }}-linux-x86_64.AppImage" --clobber
 
   build-windows:
     name: "Build Windows"
@@ -130,9 +130,9 @@ jobs:
           firmware_path: firmware/firmware.bin
           env: prod
       - name: Zip Windows build
-        run: Compress-Archive -Path frostsnapp/build/windows/x64/runner/Release/* -DestinationPath Frostsnap-${{ env.TAG_NAME }}.zip
+        run: Compress-Archive -Path frostsnapp/build/windows/x64/runner/Release/* -DestinationPath Frostsnap-${{ env.TAG_NAME }}-windows.zip
       - name: Upload Windows build to release
-        run: gh release upload ${{ env.TAG_NAME }} "Frostsnap-${{ env.TAG_NAME }}.zip#Frostsnap-windows.zip" --clobber
+        run: gh release upload ${{ env.TAG_NAME }} "Frostsnap-${{ env.TAG_NAME }}-windows.zip" --clobber
 
   build-macos:
     name: "Build macOS"
