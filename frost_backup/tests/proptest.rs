@@ -1,8 +1,8 @@
 use core::convert::TryInto;
+use frost_backup::schnorr_fun_shim::ShareImage;
 use frost_backup::*;
 use proptest::prelude::*;
 use rand::seq::SliceRandom;
-use schnorr_fun::frost::ShareImage;
 use secp256kfun::{
     marker::*,
     proptest::{
@@ -44,9 +44,10 @@ proptest! {
         // Verify we got the right number of shares
         prop_assert_eq!(shares.len(), n_parties);
 
-        // Verify share indices are sequential from 1
+        // Verify share indices are sequential from 1, or all `#0` for a threshold-1 key
         for (i, share) in shares.iter().enumerate() {
-            prop_assert_eq!(TryInto::<u32>::try_into(share.index()).unwrap(), (i + 1) as u32);
+            let expected = if threshold == 1 { 0 } else { i + 1 };
+            prop_assert_eq!(TryInto::<u32>::try_into(share.index()).unwrap(), expected as u32);
         }
 
         // Test encoding and decoding of each share
@@ -123,7 +124,7 @@ proptest! {
     fn find_valid_subset_with_noise(
         (bogus_indices, bogus_points) in (0usize..10)
             .prop_flat_map(|n| (
-                prop::collection::vec(1u32..6, n),
+                prop::collection::vec(0u32..6, n),
                 prop::collection::vec(any::<Point<Normal, Public, Zero>>(), n)
             ))
     ) {
@@ -151,7 +152,7 @@ proptest! {
         // Add bogus shares at random indices
         for (idx, point) in bogus_indices.iter().zip(bogus_points.iter()) {
             // Generate a bogus share using a pre-generated random point
-            let bogus_index = Scalar::<Public, _>::from(*idx).non_zero().expect("non-zero");
+            let bogus_index = Scalar::<Public, _>::from(*idx);
             let bogus_image = ShareImage {
                 index: bogus_index,
                 image: *point,
@@ -167,15 +168,79 @@ proptest! {
         // Should always find exactly the 3 valid shares
         prop_assert!(result.is_some(), "Should find valid shares among noise");
 
-        let (found_shares, _) = result.unwrap();
+        let found_shares = result.unwrap().compatible;
         prop_assert_eq!(found_shares.len(), 3, "Should find exactly 3 shares");
 
         // Verify all found shares are from the valid set
         for found in &found_shares {
             prop_assert!(
-                valid_images.contains(found),
+                valid_images.contains(&(*found).into()),
                 "Found share should be one of the valid shares"
             );
         }
+    }
+
+    #[test]
+    fn duplicates_never_change_recovery(
+        secret in any::<Scalar<Secret, NonZero>>(),
+        other_secret in any::<Scalar<Secret, NonZero>>(),
+        (n_parties, threshold) in (1usize..=4).prop_flat_map(|n| (Just(n), 1usize..=n)),
+        n_selected in 0usize..=4,
+        with_zero in any::<bool>(),
+        with_other_zero in any::<bool>(),
+        with_other_share in any::<bool>(),
+        known_threshold in prop::option::of(1usize..=4),
+        duplicates in prop::collection::vec(any::<prop::sample::Index>(), 1..4),
+    ) {
+        let mut rng = TestRng::deterministic_rng(RngAlgorithm::ChaCha);
+        let fingerprint = schnorr_fun::frost::Fingerprint {
+            bits_per_coeff: 7,
+            max_bits_total: 14,
+            tag: "test",
+        };
+        let (shares, _) =
+            ShareBackup::generate_shares(secret, threshold, n_parties, fingerprint, &mut rng);
+        let (other_shares, _) =
+            ShareBackup::generate_shares(other_secret, 2, 3, fingerprint, &mut rng);
+        let zero_of = |secret| ShareBackup::generate_shares(secret, 1, 1, fingerprint, &mut TestRng::deterministic_rng(RngAlgorithm::ChaCha)).0.remove(0);
+
+        let mut backups: Vec<ShareBackup> = shares.into_iter().take(n_selected).collect();
+        if with_zero {
+            backups.push(zero_of(secret));
+        }
+        if with_other_zero {
+            backups.push(zero_of(other_secret));
+        }
+        if with_other_share {
+            backups.push(other_shares[0].clone());
+        }
+        prop_assume!(!backups.is_empty());
+
+        let mut duplicated = backups.clone();
+        for duplicate in &duplicates {
+            let i = duplicate.index(duplicated.len());
+            duplicated.insert(i + 1, duplicated[i].clone());
+        }
+
+        let fuzzy = |backups: &[ShareBackup]| {
+            recovery::recover_secret_fuzzy(backups, fingerprint, known_threshold).map(|r| {
+                (r.secret, r.shared_key, r.full_secret_backup, r.compatible_shares)
+            })
+        };
+        prop_assert_eq!(fuzzy(&backups), fuzzy(&duplicated));
+
+        let subset = |backups: &[ShareBackup]| {
+            let images: Vec<_> = backups.iter().map(ShareBackup::share_image).collect();
+            recovery::find_valid_subset(&images, fingerprint, known_threshold)
+                .map(|s| (s.shared_key, s.includes_full_secret_backup, s.compatible))
+        };
+        prop_assert_eq!(subset(&backups), subset(&duplicated));
+
+        let strict = |backups: &[ShareBackup]| {
+            recovery::recover_secret(backups, fingerprint).map(|r| {
+                (r.secret, r.shared_key, r.full_secret_backup, r.compatible_shares)
+            })
+        };
+        prop_assert_eq!(strict(&backups), strict(&duplicated));
     }
 }

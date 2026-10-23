@@ -1,8 +1,9 @@
+use crate::schnorr_fun_shim::{self, SecretShare, ShareImage, ShareIndex};
 use crate::ShareBackup;
 use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::vec::Vec;
 use schnorr_fun::{
-    frost::{Fingerprint, SecretShare, ShareImage, ShareIndex, SharedKey},
+    frost::{self, Fingerprint, SharedKey},
     fun::prelude::*,
 };
 
@@ -39,10 +40,30 @@ impl std::error::Error for RecoveryError {}
 pub struct RecoveredSecret {
     /// The recovered secret scalar
     pub secret: Scalar<Secret, Zero>,
-    /// The shares that were compatible with the recovered shared_key
+    /// The `#0` backup used, if any: it holds the full secret.
+    pub full_secret_backup: Option<ShareBackup>,
+    /// The `#i` (`i > 0`) shares that were compatible with the recovered shared_key
     pub compatible_shares: Vec<ShareBackup>,
     /// The shared key reconstructed from the shares
     pub shared_key: SharedKey<Normal, Zero>,
+}
+
+impl RecoveredSecret {
+    fn new(
+        secret: Scalar<Secret, Zero>,
+        shared_key: SharedKey<Normal, Zero>,
+        backups: Vec<ShareBackup>,
+    ) -> Self {
+        let (full_secret_backups, compatible_shares): (Vec<_>, Vec<_>) = backups
+            .into_iter()
+            .partition(|backup| backup.index().is_zero());
+        RecoveredSecret {
+            secret,
+            full_secret_backup: full_secret_backups.into_iter().next(),
+            compatible_shares,
+            shared_key,
+        }
+    }
 }
 
 /// Recovers the original secret from a threshold number of shares.
@@ -58,9 +79,19 @@ pub fn recover_secret(
         return Err(RecoveryError::NoSharesProvided);
     }
 
+    // A threshold-1 key's `#0` cards are identical, and interpolating a point
+    // twice would corrupt the polynomial
+    let mut unique: Vec<ShareBackup> = Vec::with_capacity(shares.len());
+    for share in shares {
+        if !unique.contains(share) {
+            unique.push(share.clone());
+        }
+    }
+    let shares = &unique[..];
+
     // Reconstruct the SharedKey from share images
     let share_images: Vec<_> = shares.iter().map(|backup| backup.share_image()).collect();
-    let shared_key = SharedKey::from_share_images(share_images);
+    let shared_key = schnorr_fun_shim::shared_key_from_share_images(share_images);
 
     // Verify the fingerprint matches
     if shared_key
@@ -83,11 +114,11 @@ pub fn recover_secret(
     // Reconstruct the secret
     let reconstructed = SecretShare::recover_secret(&secret_shares);
 
-    Ok(RecoveredSecret {
-        secret: reconstructed,
-        compatible_shares: shares.to_vec(),
+    Ok(RecoveredSecret::new(
+        reconstructed,
         shared_key,
-    })
+        shares.to_vec(),
+    ))
 }
 
 /// Recovers the secret from a collection of shares by automatically discovering compatible subsets.
@@ -121,14 +152,20 @@ pub fn recover_secret_fuzzy(
     let share_images: Vec<ShareImage> = shares.iter().map(|s| s.share_image()).collect();
 
     // Try to find a valid subset of shares
-    let (compatible_images, shared_key) =
-        find_valid_subset(&share_images, fingerprint, known_threshold)?;
+    let subset = find_valid_subset(&share_images, fingerprint, known_threshold)?;
+    let shared_key = subset.shared_key;
+    let full_secret_image = subset
+        .includes_full_secret_backup
+        .then(|| schnorr_fun_shim::share_image(&shared_key, Scalar::zero()));
+    let compatible_images = full_secret_image
+        .into_iter()
+        .chain(subset.compatible.into_iter().map(ShareImage::from));
 
     // Find the ShareBackups that correspond to the compatible images
     let mut compatible_shares = Vec::new();
-    for image in &compatible_images {
+    for image in compatible_images {
         // Find the first share that has this image (guaranteed present — the images came from the shares)
-        let share = shares.iter().find(|s| &s.share_image() == image)?;
+        let share = shares.iter().find(|s| s.share_image() == image)?;
         compatible_shares.push(share.clone());
     }
 
@@ -142,11 +179,21 @@ pub fn recover_secret_fuzzy(
     // Reconstruct the secret
     let reconstructed = SecretShare::recover_secret(&secret_shares);
 
-    Some(RecoveredSecret {
-        secret: reconstructed,
-        compatible_shares,
+    Some(RecoveredSecret::new(
+        reconstructed,
         shared_key,
-    })
+        compatible_shares,
+    ))
+}
+
+/// A key found by [`find_valid_subset`] and the inputs that lie on it.
+#[derive(Debug, Clone)]
+pub struct ValidSubset {
+    pub shared_key: SharedKey<Normal, Zero>,
+    /// Whether a `#0` (full secret) backup among the inputs lies on `shared_key`
+    pub includes_full_secret_backup: bool,
+    /// The `#i` (`i > 0`) images among the inputs that lie on `shared_key`
+    pub compatible: BTreeSet<frost::ShareImage>,
 }
 
 /// Finds a valid subset of ShareImages that can reconstruct a SharedKey matching the given fingerprint.
@@ -163,17 +210,18 @@ pub fn recover_secret_fuzzy(
 /// * `fingerprint` - The fingerprint that the reconstructed SharedKey must match
 ///
 /// # Returns
-/// * `Some((share_subset, shared_key))` - A valid subset of shares and the reconstructed SharedKey
+/// * `Some(ValidSubset)` - The reconstructed SharedKey and the images that lie on it
 /// * `None` - If no valid subset is found
 pub fn find_valid_subset(
     images: &[ShareImage],
     fingerprint: Fingerprint,
     known_threshold: Option<usize>,
-) -> Option<(BTreeSet<ShareImage>, SharedKey<Normal, Zero>)> {
+) -> Option<ValidSubset> {
     // We need at least 2 images for the fingerprint to actually filter anything
     // -- unless we know explicitly that it's the trivial 1-of-n case then we
-    // can just go ahead and choose one.
-    let min_shares_needed = known_threshold.unwrap_or(2);
+    // can just go ahead and choose one. A lone `#0` is let through to the
+    // fallback below.
+    let min_shares_needed = known_threshold.unwrap_or(1);
     if images.len() < min_shares_needed {
         return None;
     }
@@ -181,10 +229,7 @@ pub fn find_valid_subset(
     // Group shares by index to handle duplicates
     let mut shares_by_index: BTreeMap<ShareIndex, Vec<ShareImage>> = BTreeMap::new();
     for image in images {
-        shares_by_index
-            .entry(image.index)
-            .or_insert_with(Vec::new)
-            .push(*image);
+        shares_by_index.entry(image.index).or_default().push(*image);
     }
 
     // Get unique indices
@@ -203,7 +248,8 @@ pub fn find_valid_subset(
             // For this combination of indices, try all possible share selections
             for share_combo in generate_share_combinations(&index_combo, &shares_by_index) {
                 // Try to reconstruct SharedKey from this combination
-                let shared_key = SharedKey::from_share_images(share_combo.clone());
+                let shared_key =
+                    schnorr_fun_shim::shared_key_from_share_images(share_combo.clone());
 
                 // If threshold was specified, enforce strict matching. You
                 // might think that since we're only generating combinations of
@@ -238,15 +284,31 @@ pub fn find_valid_subset(
         }
     }
 
-    let shared_key = best_match.map(|(key, _)| key)?;
+    let shared_key = match best_match {
+        Some((key, _)) => key,
+        // No fingerprint can vouch for a lone point, but a `#0` is a key by
+        // itself: the 1-of-1 key `[s·G]`
+        None if known_threshold.is_none() => {
+            let full_secret = images.iter().find(|image| image.index.is_zero())?;
+            schnorr_fun_shim::shared_key_from_share_images([*full_secret])
+        }
+        None => return None,
+    };
 
-    let compatible = images
+    let compatible: Vec<ShareImage> = images
         .iter()
         .cloned()
-        .filter(|image| shared_key.share_image(image.index) == *image)
+        .filter(|image| schnorr_fun_shim::share_image(&shared_key, image.index) == *image)
         .collect();
 
-    Some((compatible, shared_key))
+    Some(ValidSubset {
+        includes_full_secret_backup: compatible.iter().any(|image| image.index.is_zero()),
+        compatible: compatible
+            .into_iter()
+            .filter_map(ShareImage::non_zero)
+            .collect(),
+        shared_key,
+    })
 }
 
 /// Generate all combinations of k elements from a slice
