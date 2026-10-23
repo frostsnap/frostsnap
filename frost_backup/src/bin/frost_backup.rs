@@ -205,9 +205,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 None => {
                     // Output all shares to stdout with formatting
-                    for (i, share) in shares.iter().enumerate() {
+                    for share in &shares {
+                        let index: u32 = share.index().try_into().expect("index fits in u32");
                         eprintln!("════════════════════════════════════════════════");
-                        eprintln!("SHARE #{} - STORE THIS SEPARATELY:", i + 1);
+                        eprintln!("SHARE #{} - STORE THIS SEPARATELY:", index);
                         eprintln!("════════════════════════════════════════════════");
                         println!("{}", share);
                         eprintln!();
@@ -307,8 +308,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             // Show which share indices were used
             let used_indices: Vec<String> = recovered
-                .compatible_shares
+                .full_secret_backup
                 .iter()
+                .chain(&recovered.compatible_shares)
                 .map(|idx| format!("#{}", idx))
                 .collect();
             eprintln!("📊 Compatible shares found: {}", used_indices.join(", "));
