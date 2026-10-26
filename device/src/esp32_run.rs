@@ -26,7 +26,6 @@ use frostsnap_core::{Gist, Kind};
 use frostsnap_embedded::NonceAbSlot;
 use rand_core::RngCore;
 
-use crate::ds::HardwareDs;
 use crate::efuse::EfuseHmacKeys;
 use crate::frosty_ui::FrostyUi;
 use crate::ota::OtaPartitions;
@@ -49,8 +48,6 @@ struct DeviceLoop<'a> {
     // Borrowed from Resources
     rng: &'a mut ChaCha20Rng,
     hmac_keys: &'a mut EfuseHmacKeys<'a>,
-    hardware_rsa: &'a mut Option<HardwareDs<'a>>,
-    certificate: &'a Option<frostsnap_comms::genuine_certificate::Certificate>,
     ota_partitions: &'a mut OtaPartitions<'a>,
     ui: &'a mut FrostyUi<'a>,
     sha256: &'a mut Sha<'a>,
@@ -89,8 +86,8 @@ impl<'a> DeviceLoop<'a> {
         let Resources {
             ref mut rng,
             ref mut hmac_keys,
-            ds: ref mut hardware_rsa,
-            ref certificate,
+            ds: _,
+            certificate: _,
             ref mut nvs,
             ota: ref mut ota_partitions,
             ref mut ui,
@@ -175,8 +172,6 @@ impl<'a> DeviceLoop<'a> {
         Box::new(Self {
             rng,
             hmac_keys,
-            hardware_rsa,
-            certificate,
             ota_partitions,
             ui,
             sha256,
@@ -554,19 +549,8 @@ impl<'a> DeviceLoop<'a> {
                 CoordinatorSendBody::DataErase => self
                     .ui
                     .set_workflow(ui::Workflow::prompt(ui::Prompt::EraseDevice)),
-                CoordinatorSendBody::Challenge(challenge) => {
-                    if let (Some(hw_rsa), Some(cert)) =
-                        (self.hardware_rsa.as_mut(), self.certificate.as_ref())
-                    {
-                        let signature = hw_rsa.sign(&challenge.0, self.sha256);
-                        self.upstream_connection.send_to_coordinator([
-                            DeviceSendBody::SignedChallenge {
-                                signature: Box::new(signature),
-                                certificate: Box::new(cert.clone()),
-                            },
-                        ]);
-                    }
-                }
+                CoordinatorSendBody::_LegacyChallenge(_) => {}
+                CoordinatorSendBody::GenuineCheck(_) => {}
             }
         }
         self.inbox = inbox;

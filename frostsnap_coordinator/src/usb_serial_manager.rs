@@ -2,17 +2,11 @@
 const USB_VID: u16 = 12346;
 const USB_PID: u16 = 4097;
 
-// The genuine check as currently implemented is vulnerable to a MITM:
-// a malicious device can forward a received challenge to a genuine
-// device and relay the response back, passing the check without
-// actually holding the DS key. The signature needs to be over the
-// device's own DeviceId to bind it. Disabled until that's fixed.
-const DO_GENUINE_CHECK: bool = false;
-
 use crate::firmware::ValidatedFirmwareBin;
 use crate::PortOpenError;
 use crate::{FramedSerialPort, Serial};
 use anyhow::anyhow;
+use frostsnap_comms::genuine_check;
 use frostsnap_comms::DeviceName;
 use frostsnap_comms::{CommsMisc, ReceiveSerial};
 use frostsnap_comms::{
@@ -21,7 +15,6 @@ use frostsnap_comms::{
 };
 use frostsnap_comms::{CoordinatorSendMessage, MAGIC_BYTES_PERIOD};
 use frostsnap_core::message::DeviceToCoordinatorMessage;
-use frostsnap_core::schnorr_fun::fun::{marker::EvenY, Point};
 use frostsnap_core::{DeviceId, Gist};
 use std::collections::BTreeSet;
 use std::collections::HashMap;
@@ -57,12 +50,6 @@ pub struct UsbSerialManager {
     outbox_sender: std::sync::mpsc::Sender<CoordinatorSendMessage>,
     /// The firmware binary provided to devices who are doing an upgrade
     firmware_bin: Option<ValidatedFirmwareBin>,
-    /// Genuine certificate public key for verifying device certificates
-    genuine_cert_key: Option<Point<EvenY>>,
-    /// Ongoing genuine check challenges to devices
-    challenges: HashMap<DeviceId, frostsnap_comms::GenuineChallenge>,
-    /// Devices that passed genuine certificate verification
-    genuine_devices: HashMap<DeviceId, frostsnap_comms::genuine_certificate::CertificateBody>,
 }
 
 pub struct DevicePort {
@@ -96,19 +83,11 @@ impl UsbSerialManager {
             port_outbox: receiver,
             outbox_sender: sender,
             firmware_bin: None,
-            genuine_cert_key: None,
-            challenges: Default::default(),
-            genuine_devices: Default::default(),
         }
     }
 
     pub fn with_firmware_bin(mut self, firmware_bin: ValidatedFirmwareBin) -> Self {
         self.firmware_bin = Some(firmware_bin);
-        self
-    }
-
-    pub fn with_genuine_cert_key(mut self, key: Point<EvenY>) -> Self {
-        self.genuine_cert_key = Some(key);
         self
     }
 
@@ -131,8 +110,6 @@ impl UsbSerialManager {
                     changes.push(DeviceChange::Disconnected { id: device_id });
                 }
                 self.registered_devices.remove(&device_id);
-                self.challenges.remove(&device_id);
-                self.genuine_devices.remove(&device_id);
                 event!(
                     Level::DEBUG,
                     port = port,
@@ -413,39 +390,12 @@ impl UsbSerialManager {
                                         body: AppMessageBody::Misc(inner),
                                     }))
                                 }
-                                DeviceSendBody::SignedChallenge {
-                                    signature,
-                                    certificate,
-                                } => {
-                                    let Some(challenge) = self.challenges.remove(&message.from)
-                                    else {
-                                        event!(
-                                            Level::WARN,
-                                            device = message.from.to_string(),
-                                            "received SignedChallenge but no challenge was pending"
-                                        );
-                                        continue;
-                                    };
-                                    match self.genuine_cert_key.and_then(|key| {
-                                        frostsnap_comms::genuine_certificate::verify_genuine(
-                                            &certificate,
-                                            key,
-                                            challenge,
-                                            &signature,
-                                        )
-                                    }) {
-                                        Some(certificate_body) => {
-                                            self.genuine_devices
-                                                .insert(message.from, certificate_body.clone());
-                                            device_changes.push(DeviceChange::GenuineDevice {
-                                                id: message.from,
-                                                certificate: certificate_body,
-                                            });
-                                        }
-                                        None => {
-                                            event!(Level::WARN, device = message.from.to_string(), "genuine check failed — invalid certificate or challenge response");
-                                        }
-                                    }
+                                DeviceSendBody::_LegacySignedChallenge { .. } => {}
+                                DeviceSendBody::GenuineCheck(genuine) => {
+                                    device_changes.push(DeviceChange::GenuineCheck {
+                                        from: message.from,
+                                        message: genuine,
+                                    })
                                 }
                             }
                         }
@@ -576,25 +526,27 @@ impl UsbSerialManager {
         firmware_digest: Sha256Digest,
         device_changes: &mut Vec<DeviceChange>,
     ) {
-        match self.device_ports.insert(
+        // A device announces once per handshake, so this is a new connection even under a known
+        // id: whatever the old connection proved, this one has to prove again.
+        if let Some(old_port) = self.device_ports.insert(
             from,
             DevicePort {
                 port: port_name.to_string(),
                 firmware_digest,
             },
         ) {
-            Some(old_port_name) => {
-                self.reverse_device_ports
-                    .entry(old_port_name.port)
-                    .or_default()
-                    .retain(|device_id| *device_id != from);
-            }
-            None => device_changes.push(DeviceChange::Connected {
-                id: from,
-                firmware_digest,
-                latest_firmware_digest: self.firmware_bin.map(|firmware_bin| firmware_bin.digest()),
-            }),
+            self.reverse_device_ports
+                .entry(old_port.port)
+                .or_default()
+                .retain(|device_id| *device_id != from);
+            self.registered_devices.remove(&from);
+            device_changes.push(DeviceChange::Disconnected { id: from });
         }
+        device_changes.push(DeviceChange::Connected {
+            id: from,
+            firmware_digest,
+            latest_firmware_digest: self.firmware_bin.map(|firmware_bin| firmware_bin.digest()),
+        });
 
         self.outbox_sender
             .send(CoordinatorSendMessage::to(
@@ -602,17 +554,6 @@ impl UsbSerialManager {
                 CoordinatorSendBody::AnnounceAck,
             ))
             .unwrap();
-
-        if DO_GENUINE_CHECK && self.genuine_cert_key.is_some() {
-            let challenge = frostsnap_comms::GenuineChallenge::random(&mut rand::thread_rng());
-            self.challenges.insert(from, challenge);
-            self.outbox_sender
-                .send(CoordinatorSendMessage::to(
-                    from,
-                    CoordinatorSendBody::Challenge(Box::new(challenge)),
-                ))
-                .unwrap();
-        }
 
         self.reverse_device_ports
             .entry(port_name.to_string())
@@ -846,9 +787,9 @@ pub enum DeviceChange {
         id: DeviceId,
     },
     AppMessage(AppMessage),
-    GenuineDevice {
-        id: DeviceId,
-        certificate: frostsnap_comms::genuine_certificate::CertificateBody,
+    GenuineCheck {
+        from: DeviceId,
+        message: genuine_check::DeviceMessage,
     },
 }
 
@@ -862,4 +803,94 @@ pub struct AppMessage {
 pub enum AppMessageBody {
     Core(Box<DeviceToCoordinatorMessage>),
     Misc(CommsMisc),
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::firmware::FirmwareVersion;
+    use crate::genuine_check::test::{self as genuine_test, TestDevice, FACTORY};
+    use crate::genuine_check::GenuineCheck;
+    use crate::PortDesc;
+    use rand::{rngs::StdRng, SeedableRng};
+    use std::collections::VecDeque;
+
+    struct NoPorts;
+
+    impl Serial for NoPorts {
+        fn available_ports(&self) -> Vec<PortDesc> {
+            vec![]
+        }
+
+        fn open_device_port(&self, _: &str, _: u32) -> Result<crate::SerialPort, PortOpenError> {
+            Err(PortOpenError::DeviceBusy)
+        }
+    }
+
+    /// What the app's coordinator loop does with each change. `None` is a device that never answers.
+    fn apply(
+        check: &mut GenuineCheck,
+        changes: Vec<DeviceChange>,
+        device: Option<&TestDevice>,
+        rng: &mut StdRng,
+    ) {
+        for change in changes {
+            match change {
+                DeviceChange::Connected {
+                    id,
+                    firmware_digest,
+                    ..
+                } => {
+                    let mut next = check.connected(id, FirmwareVersion::new(firmware_digest), rng);
+                    while let (Some(request), Some(device)) = (next, device) {
+                        next = check
+                            .recv(id, device.answer(&request), &mut VecDeque::new(), rng)
+                            .unwrap();
+                    }
+                }
+                DeviceChange::Disconnected { id } => check.disconnected(id),
+                _ => {}
+            }
+        }
+    }
+
+    #[test]
+    fn re_announcing_an_id_on_another_port_starts_a_new_connection() {
+        let device = TestDevice::new(50);
+        let mut manager = UsbSerialManager::new(Box::new(NoPorts));
+        let mut check = GenuineCheck::new(FACTORY.public_key());
+        let mut rng = StdRng::seed_from_u64(0);
+        let digest = genuine_test::supported().digest;
+
+        let mut changes = vec![];
+        manager.handle_announce("port-1", device.id, digest, &mut changes);
+        apply(&mut check, changes, Some(&device), &mut rng);
+        assert!(genuine_test::is_genuine(&check, device.id));
+
+        let mut changes = vec![];
+        manager.handle_announce("port-2", device.id, digest, &mut changes);
+        assert!(matches!(
+            changes.as_slice(),
+            [
+                DeviceChange::Disconnected { id: gone },
+                DeviceChange::Connected { id: back, .. },
+            ] if *gone == device.id && *back == device.id
+        ));
+        apply(&mut check, changes, None, &mut rng);
+        assert!(!genuine_test::is_genuine(&check, device.id));
+
+        let mut changes = vec![];
+        manager.disconnect("port-1", &mut changes);
+        assert!(changes.is_empty());
+        assert_eq!(manager.device_ports[&device.id].port, "port-2");
+
+        manager.disconnect("port-2", &mut changes);
+        assert!(matches!(
+            changes.as_slice(),
+            [DeviceChange::Disconnected { id }] if *id == device.id
+        ));
+        assert!(manager.device_ports.is_empty());
+        assert!(manager.reverse_device_ports.is_empty());
+        assert!(manager.registered_devices.is_empty());
+    }
 }
