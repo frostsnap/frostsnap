@@ -11,6 +11,8 @@ use crate::{
     DownstreamConnectionState, Duration, Instant, UpstreamConnection, UpstreamConnectionState,
 };
 use alloc::{boxed::Box, collections::VecDeque, string::ToString, vec::Vec};
+use frostsnap_comms::genuine_certificate::DsSignature;
+use frostsnap_comms::genuine_check::{self, AttestationSignature, AttestedDevice, DsSignedMessage};
 use frostsnap_comms::{
     CommsMisc, CoordinatorSendBody, CoordinatorUpgradeMessage, DeviceName, DeviceSendBody,
     ReceiveSerial, Sha256Digest, Upstream, MAGIC_BYTES_PERIOD,
@@ -25,7 +27,7 @@ use frostsnap_core::{Gist, Kind};
 use frostsnap_embedded::NonceAbSlot;
 use rand_core::RngCore;
 
-use crate::crypto::EspCrypto;
+use crate::crypto::{AttestError, AttestPoll, EspCrypto};
 use crate::frosty_ui::FrostyUi;
 use crate::ota::OtaPartitions;
 use crate::partitions::EspFlashPartition;
@@ -66,6 +68,7 @@ struct DeviceLoop<'a> {
     soft_reset: bool,
     downstream_connection_state: DownstreamConnectionState,
     outbox: VecDeque<DeviceSend>,
+    ui_events: VecDeque<UiEvent>,
     nonce_task_batch: Option<NonceJobBatch>,
     inbox: Vec<CoordinatorSendBody>,
     next_write_magic_bytes_downstream: Instant,
@@ -182,6 +185,7 @@ impl<'a> DeviceLoop<'a> {
             soft_reset: true,
             downstream_connection_state: DownstreamConnectionState::Disconnected,
             outbox: VecDeque::new(),
+            ui_events: VecDeque::new(),
             nonce_task_batch: None,
             inbox: vec![],
             next_write_magic_bytes_downstream: Instant::EPOCH,
@@ -240,6 +244,9 @@ impl<'a> DeviceLoop<'a> {
             self.pending_device_name = None;
             self.outbox.clear();
             self.nonce_task_batch = None;
+            self.crypto.force_normal_mode();
+            self.inbox.clear();
+            self.ui_events.clear();
         }
 
         let is_usb_connected_downstream = !self.downstream_detect.is_high();
@@ -478,15 +485,31 @@ impl<'a> DeviceLoop<'a> {
             }
         }
 
-        let mut crypto = self.crypto.force_normal_mode();
+        if let Some(message) = self.upstream_connection.dequeue_message() {
+            self.upstream_serial
+                .send(message)
+                .expect("failed to send message upstream");
+        }
+
+        self.ui_events.extend(self.ui.poll());
+
+        if let AttestPoll::Done(outcome) = self.crypto.poll() {
+            self.send_factory_attestation(outcome);
+        }
+        let Some(mut crypto) = self.crypto.try_normal_mode() else {
+            return;
+        };
 
         // Process inbox messages
-        let mut inbox = core::mem::take(&mut self.inbox);
-        for message_body in inbox.drain(..) {
+        // Answered at the end of the iteration: a factory attestation starts the DS, which must not
+        // run while the HMAC is still to be used below.
+        let mut genuine_check = None;
+        for message_body in self.inbox.drain(..) {
             match &message_body {
                 CoordinatorSendBody::Cancel => {
                     self.signer.clear_tmp_data();
                     self.ui.go_to_default();
+                    self.ui_events.clear();
                     self.pending_device_name = None;
                     self.upgrade = None;
                 }
@@ -552,10 +575,11 @@ impl<'a> DeviceLoop<'a> {
                     .ui
                     .set_workflow(ui::Workflow::prompt(ui::Prompt::EraseDevice)),
                 CoordinatorSendBody::_LegacyChallenge(_) => {}
-                CoordinatorSendBody::GenuineCheck(_) => {}
+                CoordinatorSendBody::GenuineCheck(message) => {
+                    genuine_check = Some(message.clone());
+                }
             }
         }
-        self.inbox = inbox;
 
         // Apply any staged mutations
         {
@@ -719,7 +743,7 @@ impl<'a> DeviceLoop<'a> {
         }
 
         // Handle UI events
-        if let Some(ui_event) = self.ui.poll() {
+        while let Some(ui_event) = self.ui_events.pop_front() {
             match ui_event {
                 UiEvent::KeyGenConfirm { phase } => {
                     self.outbox.extend(
@@ -772,11 +796,69 @@ impl<'a> DeviceLoop<'a> {
             }
         }
 
-        if let Some(message) = self.upstream_connection.dequeue_message() {
-            self.upstream_serial
-                .send(message)
-                .expect("failed to send message upstream");
+        if let Some(message) = genuine_check {
+            self.genuine_check(&message);
         }
+    }
+
+    fn genuine_check(&mut self, message: &genuine_check::CoordinatorMessage) {
+        let Some(attested) = self.attested_device() else {
+            return;
+        };
+        let attested_digest = attested.digest();
+        match message.device_action(attested_digest) {
+            genuine_check::DeviceAction::FactoryAttest(challenge) => {
+                let signed = DsSignedMessage::GenuineAttestationV0 {
+                    challenge,
+                    attested,
+                };
+                if let Err(e) = self.crypto.start_attestation(&signed.digest()) {
+                    log!("factory attestation failed to start: {e:?}");
+                }
+            }
+            genuine_check::DeviceAction::IdentityAttest(challenge) => {
+                let schnorr = frostsnap_core::schnorr_fun::new_with_deterministic_nonces::<
+                    frostsnap_core::sha2::Sha256,
+                >();
+                let signature = genuine_check::sign_identity_attestation(
+                    &schnorr,
+                    self.signer.keypair(),
+                    challenge,
+                    attested_digest,
+                );
+                self.upstream_connection
+                    .send_to_coordinator([DeviceSendBody::GenuineCheck(
+                        genuine_check::DeviceMessage::IdentityAttestation { signature },
+                    )]);
+            }
+        }
+    }
+
+    fn send_factory_attestation(&mut self, outcome: Result<Box<DsSignature>, AttestError>) {
+        let signature = match outcome {
+            Ok(signature) => signature,
+            Err(e) => {
+                log!("factory attestation failed: {e:?}");
+                return;
+            }
+        };
+        let Some(attested) = self.attested_device() else {
+            return;
+        };
+        self.upstream_connection
+            .send_to_coordinator([DeviceSendBody::GenuineCheck(
+                genuine_check::DeviceMessage::FactoryAttestation {
+                    attested: Box::new(attested),
+                    signature: Box::new(AttestationSignature::Rsa3072(*signature)),
+                },
+            )]);
+    }
+
+    fn attested_device(&self) -> Option<AttestedDevice> {
+        Some(AttestedDevice::V0 {
+            device_id: self.device_id,
+            certificate: self.crypto.certificate()?,
+        })
     }
 }
 
