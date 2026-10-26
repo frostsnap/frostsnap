@@ -21,16 +21,15 @@ use frostsnap_core::{
     message::{self, DeviceSend},
     DeviceId,
 };
-#[cfg(feature = "debug_log")]
 use frostsnap_core::{Gist, Kind};
 use frostsnap_embedded::NonceAbSlot;
 use rand_core::RngCore;
 
-use crate::efuse::EfuseHmacKeys;
+use crate::crypto::EspCrypto;
 use crate::frosty_ui::FrostyUi;
 use crate::ota::OtaPartitions;
 use crate::partitions::EspFlashPartition;
-use esp_hal::{gpio::Input, rsa::Rsa, sha::Sha, Blocking};
+use esp_hal::gpio::Input;
 use frostsnap_comms::Downstream;
 use rand_chacha::ChaCha20Rng;
 
@@ -47,14 +46,12 @@ const MAGIC_BYTES_RESET_THRESHOLD: u32 = 9;
 struct DeviceLoop<'a> {
     // Borrowed from Resources
     rng: &'a mut ChaCha20Rng,
-    hmac_keys: &'a mut EfuseHmacKeys<'a>,
+    crypto: &'a mut EspCrypto<'a>,
     ota_partitions: &'a mut OtaPartitions<'a>,
     ui: &'a mut FrostyUi<'a>,
-    sha256: &'a mut Sha<'a>,
     upstream_serial: &'a mut EspSerial<'a, Upstream>,
     downstream_serial: &'a mut EspSerial<'a, Downstream>,
     downstream_detect: &'a mut Input<'a>,
-    rsa: &'a mut Rsa<'a, Blocking>,
 
     // Owned values created during init
     full_nvs: EspFlashPartition<'a>,
@@ -85,17 +82,13 @@ impl<'a> DeviceLoop<'a> {
     fn new(resources: &'a mut Resources<'a>) -> Box<Self> {
         let Resources {
             ref mut rng,
-            ref mut hmac_keys,
-            ds: _,
-            certificate: _,
+            ref mut crypto,
             ref mut nvs,
             ota: ref mut ota_partitions,
             ref mut ui,
-            ref mut sha256,
             ref mut upstream_serial,
             ref mut downstream_serial,
             ref mut downstream_detect,
-            ref mut rsa,
         } = resources;
         let ui = &mut **ui;
 
@@ -114,7 +107,7 @@ impl<'a> DeviceLoop<'a> {
                 header_flash.init(rng)
             }
         };
-        let device_keypair = header.device_keypair(&mut hmac_keys.fixed_entropy);
+        let device_keypair = header.device_keypair(&mut crypto.force_normal_mode().fixed_entropy());
 
         let share_partition = nvs.split_off_front(2);
 
@@ -151,7 +144,9 @@ impl<'a> DeviceLoop<'a> {
         let active_partition = ota_partitions.active_partition();
         let (firmware_size, _firmware_and_signature_block_size) =
             active_partition.firmware_size().unwrap();
-        let active_firmware_digest = active_partition.sha256_digest(sha256, Some(firmware_size));
+        let active_firmware_digest = crypto
+            .force_normal_mode()
+            .digest(&active_partition, Some(firmware_size));
 
         let device_id = signer.device_id();
 
@@ -171,14 +166,12 @@ impl<'a> DeviceLoop<'a> {
 
         Box::new(Self {
             rng,
-            hmac_keys,
+            crypto,
             ota_partitions,
             ui,
-            sha256,
             upstream_serial,
             downstream_serial,
             downstream_detect,
-            rsa,
             full_nvs,
             mutation_log,
             signer,
@@ -199,27 +192,35 @@ impl<'a> DeviceLoop<'a> {
         })
     }
 
-    fn update_default_workflow(&mut self) {
-        let workflow = match (self.name.as_ref(), self.signer.held_shares().next()) {
+    fn update_default_workflow(
+        name: &Option<DeviceName>,
+        signer: &EspSigner<'a>,
+        ui: &mut FrostyUi<'a>,
+    ) {
+        let workflow = match (name.as_ref(), signer.held_shares().next()) {
             (Some(device_name), Some(held_share)) => ui::Workflow::Standby {
                 device_name: device_name.clone(),
                 held_share,
             },
             _ => ui::Workflow::None,
         };
-        self.ui.set_default_workflow(workflow);
+        ui.set_default_workflow(workflow);
     }
 
-    fn save_pending_device_name(&mut self) -> bool {
-        let Some(new_name) = self.pending_device_name.take() else {
+    fn save_pending_device_name(
+        pending_device_name: &mut Option<DeviceName>,
+        name: &mut Option<DeviceName>,
+        mutation_log: &mut EspMutationLog<'a>,
+        upstream_connection: &mut UpstreamConnection,
+    ) -> bool {
+        let Some(new_name) = pending_device_name.take() else {
             return false;
         };
-        self.name = Some(new_name.clone());
-        self.mutation_log
+        *name = Some(new_name.clone());
+        mutation_log
             .push(Mutation::Name(new_name.to_string()))
             .expect("flash write fail");
-        self.upstream_connection
-            .send_to_coordinator([DeviceSendBody::SetName { name: new_name }]);
+        upstream_connection.send_to_coordinator([DeviceSendBody::SetName { name: new_name }]);
         true
     }
 
@@ -233,7 +234,7 @@ impl<'a> DeviceLoop<'a> {
             self.upstream_connection
                 .set_state(UpstreamConnectionState::PowerOn, self.ui);
             self.next_write_magic_bytes_downstream = Instant::EPOCH;
-            self.update_default_workflow();
+            Self::update_default_workflow(&self.name, &self.signer, self.ui);
             self.ui.go_to_default();
             self.upgrade = None;
             self.pending_device_name = None;
@@ -397,8 +398,7 @@ impl<'a> DeviceLoop<'a> {
                                                             None
                                                         },
                                                         self.ui,
-                                                        self.sha256,
-                                                        self.rsa,
+                                                        &mut self.crypto.force_normal_mode(),
                                                     );
                                                     match outcome {
                                                         ota::UpgradeOutcome::Committed => {
@@ -477,6 +477,8 @@ impl<'a> DeviceLoop<'a> {
                 }
             }
         }
+
+        let mut crypto = self.crypto.force_normal_mode();
 
         // Process inbox messages
         let mut inbox = core::mem::take(&mut self.inbox);
@@ -573,7 +575,7 @@ impl<'a> DeviceLoop<'a> {
         // Poll nonce job batch
         if let Some(batch) = self.nonce_task_batch.as_mut() {
             log_and_redraw!(self.ui, "nonce batch start");
-            if batch.do_work(&mut self.hmac_keys.share_encryption) {
+            if batch.do_work(&mut crypto.share_encryption()) {
                 log_and_redraw!(self.ui, "nonce batch finish");
                 let completed_batch = self.nonce_task_batch.take().unwrap();
                 let segments = completed_batch.into_segments();
@@ -597,11 +599,16 @@ impl<'a> DeviceLoop<'a> {
                     match *boxed {
                         DeviceToUserMessage::FinalizeKeyGen { key_name: _ } => {
                             assert!(
-                                self.save_pending_device_name(),
+                                Self::save_pending_device_name(
+                                    &mut self.pending_device_name,
+                                    &mut self.name,
+                                    &mut self.mutation_log,
+                                    &mut self.upstream_connection,
+                                ),
                                 "must have named device before starting keygen"
                             );
                             self.ui.clear_busy_task();
-                            self.update_default_workflow();
+                            Self::update_default_workflow(&self.name, &self.signer, self.ui);
                             self.ui.go_to_default();
                         }
                         DeviceToUserMessage::CheckKeyGen { phase } => {
@@ -636,7 +643,7 @@ impl<'a> DeviceLoop<'a> {
                                     phase,
                                 } => {
                                     let backup = phase
-                                        .decrypt_to_backup(&mut self.hmac_keys.share_encryption)
+                                        .decrypt_to_backup(&mut crypto.share_encryption())
                                         .expect("state changed while displaying backup");
                                     self.ui.set_workflow(ui::Workflow::DisplayBackup {
                                         key_name: key_name.to_string(),
@@ -649,10 +656,19 @@ impl<'a> DeviceLoop<'a> {
                                 }
                                 BackupSaved { .. } => {
                                     assert!(
-                                        self.save_pending_device_name(),
+                                        Self::save_pending_device_name(
+                                            &mut self.pending_device_name,
+                                            &mut self.name,
+                                            &mut self.mutation_log,
+                                            &mut self.upstream_connection,
+                                        ),
                                         "must have named device before loading backup"
                                     );
-                                    self.update_default_workflow();
+                                    Self::update_default_workflow(
+                                        &self.name,
+                                        &self.signer,
+                                        self.ui,
+                                    );
                                     self.ui.go_to_default();
                                 }
                                 CheckBackup {
@@ -661,7 +677,7 @@ impl<'a> DeviceLoop<'a> {
                                     phase,
                                 } => {
                                     let backup = phase
-                                        .decrypt_to_backup(&mut self.hmac_keys.share_encryption)
+                                        .decrypt_to_backup(&mut crypto.share_encryption())
                                         .expect("state changed while checking backup");
                                     let rand_seed = self.rng.next_u32();
                                     self.ui.set_workflow(ui::Workflow::CheckBackup {
@@ -674,13 +690,22 @@ impl<'a> DeviceLoop<'a> {
                                 ConsolidateBackup(phase) => {
                                     // Auto-confirm: the user can't meaningfully verify this
                                     self.outbox.extend(self.signer.finish_consolidation(
-                                        &mut self.hmac_keys.share_encryption,
+                                        &mut crypto.share_encryption(),
                                         phase,
                                         self.rng,
                                     ));
 
-                                    self.save_pending_device_name();
-                                    self.update_default_workflow();
+                                    Self::save_pending_device_name(
+                                        &mut self.pending_device_name,
+                                        &mut self.name,
+                                        &mut self.mutation_log,
+                                        &mut self.upstream_connection,
+                                    );
+                                    Self::update_default_workflow(
+                                        &self.name,
+                                        &self.signer,
+                                        self.ui,
+                                    );
                                     self.ui.go_to_default();
                                 }
                             }
@@ -699,7 +724,7 @@ impl<'a> DeviceLoop<'a> {
                 UiEvent::KeyGenConfirm { phase } => {
                     self.outbox.extend(
                         self.signer
-                            .keygen_ack(*phase, &mut self.hmac_keys.share_encryption, self.rng)
+                            .keygen_ack(*phase, &mut crypto.share_encryption(), self.rng)
                             .expect("state changed while confirming keygen"),
                     );
                     self.ui.clear_busy_task();
@@ -708,7 +733,7 @@ impl<'a> DeviceLoop<'a> {
                     self.ui.set_busy_task(ui::BusyTask::Signing);
                     self.outbox.extend(
                         self.signer
-                            .sign_ack(*phase, &mut self.hmac_keys.share_encryption)
+                            .sign_ack(*phase, &mut crypto.share_encryption())
                             .expect("state changed while acking sign"),
                     );
                 }

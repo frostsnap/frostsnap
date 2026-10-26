@@ -3,7 +3,7 @@ use frostsnap_comms::{HasMagicBytes, MagicBytes, MAGIC_BYTES_LEN};
 use frostsnap_core::schnorr_fun::fun::{KeyPair, Scalar};
 use frostsnap_embedded::{AbSlot, FlashPartition};
 
-use crate::efuse::EfuseHmacKey;
+use frostsnap_core::device::DevicePrf;
 
 #[derive(Debug, Clone, bincode::Encode, bincode::Decode)]
 pub struct HeaderMagicBytes;
@@ -19,12 +19,11 @@ pub struct Header {
 }
 
 impl Header {
-    pub fn device_keypair(&self, hmac: &mut EfuseHmacKey) -> KeyPair {
+    pub fn device_keypair(&self, prf: &mut impl DevicePrf) -> KeyPair {
         KeyPair::new(match self.body {
             HeaderBody::V0 { device_id_seed } => {
-                let secret_scalar_bytes = hmac
-                    .hash("frostsnap-device-keypair", &device_id_seed)
-                    .unwrap();
+                let secret_scalar_bytes =
+                    prf.prf_domain("frostsnap-device-keypair", &device_id_seed);
                 Scalar::from_slice_mod_order(&secret_scalar_bytes)
                     .expect("just got 32 bytes from fixed entropy hash")
                     .non_zero()
