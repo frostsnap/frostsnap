@@ -232,6 +232,10 @@ impl UiProtocol for SigningDispatcher {
                     event!(Level::INFO, "received signatures from all devices");
                     self.emit_state();
                 }
+                CoordinatorToUserSigningMessage::GotSpEcdhShares { .. } => {
+                    // ECDH shares arrive before there is a signing session to update.
+                    return false;
+                }
             }
             true
         } else {

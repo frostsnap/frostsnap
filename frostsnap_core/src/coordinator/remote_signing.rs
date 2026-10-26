@@ -1,8 +1,10 @@
 use super::signing::*;
 use super::*;
+use crate::message::signing::{SpEcdhSessionId, SpProofBundle};
 use crate::message::EncodedSignature;
 use crate::nonce_stream::CoordNonceStreamState;
 use crate::sign_task::SignTaskError;
+use crate::silent_payments::{complete_sp_task, EcdhShare};
 use crate::DeviceId;
 use core::fmt;
 use schnorr_fun::frost::{self, SignatureShare};
@@ -16,6 +18,9 @@ use sha2::Sha256;
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct State {
     pub(super) remote_sign_sessions: BTreeMap<(RemoteSignSessionId, DeviceId), RemoteSignSession>,
+    /// The ECDH shares a device contributed to a silent payment offer, for the sessions that are
+    /// silent payment sends.
+    remote_sp_ecdh: BTreeMap<(RemoteSignSessionId, DeviceId), Vec<EcdhShare>>,
 }
 
 impl State {
@@ -36,6 +41,16 @@ impl State {
             } => {
                 self.remote_sign_sessions
                     .insert((id, device_id), session.clone());
+            }
+            RemoteSigningMutation::NewRemoteSpSignSession {
+                id,
+                device_id,
+                ref session,
+                ref sp_ecdh,
+            } => {
+                self.remote_sign_sessions
+                    .insert((id, device_id), session.clone());
+                self.remote_sp_ecdh.insert((id, device_id), sp_ecdh.clone());
             }
             RemoteSigningMutation::UseRemoteSignSession {
                 id,
@@ -84,6 +99,7 @@ impl State {
                     .cloned()
                     .collect();
                 for key in to_remove {
+                    self.remote_sp_ecdh.remove(&key);
                     if let Some(session) = self.remote_sign_sessions.remove(&key) {
                         if matches!(session.status, RemoteSignStatus::Used { .. }) {
                             let (_, device_id) = key;
@@ -107,8 +123,10 @@ impl State {
     }
 
     pub fn all_used_nonce_streams(&self) -> BTreeSet<crate::nonce_stream::NonceStreamId> {
+        // A completed session already consumed its nonces, so its stream is free again.
         self.remote_sign_sessions
             .values()
+            .filter(|r| !matches!(r.status, RemoteSignStatus::Completed { .. }))
             .map(|r| r.nonce_state.stream_id)
             .collect()
     }
@@ -132,6 +150,7 @@ impl State {
             .map(|(key, _)| *key)
             .collect();
         for key in victims {
+            self.remote_sp_ecdh.remove(&key);
             if let Some(session) = self.remote_sign_sessions.remove(&key) {
                 if matches!(session.status, RemoteSignStatus::Used { .. }) {
                     let (_, device_id) = key;
@@ -187,12 +206,22 @@ pub enum RemoteSigningMutation {
     /// dropped (local_nonces never exposed); `Completed` sessions already had
     /// local_nonces consumed on completion.
     CancelRemoteSignSession { id: RemoteSignSessionId },
+    /// Like `NewRemoteSignSession` for a silent payment send. `session.sign_task` is the template
+    /// with its silent payment scripts still empty, and `sp_ecdh` holds the device's ECDH shares
+    /// that went out in the offer.
+    NewRemoteSpSignSession {
+        id: RemoteSignSessionId,
+        device_id: DeviceId,
+        session: RemoteSignSession,
+        sp_ecdh: Vec<EcdhShare>,
+    },
 }
 
 impl RemoteSigningMutation {
     pub fn tied_to_key(&self, coord: &super::FrostCoordinator) -> Option<crate::KeyId> {
         match self {
-            RemoteSigningMutation::NewRemoteSignSession { session, .. } => {
+            RemoteSigningMutation::NewRemoteSignSession { session, .. }
+            | RemoteSigningMutation::NewRemoteSpSignSession { session, .. } => {
                 Some(session.access_structure_ref.key_id)
             }
             RemoteSigningMutation::UseRemoteSignSession { active, .. } => Some(active.key_id),
@@ -288,6 +317,24 @@ pub struct SignOffer {
     pub id: RemoteSignSessionId,
     pub device_id: DeviceId,
     pub participant_binonces: ParticipantBinonces,
+    /// The device's ECDH shares for a silent payment send, one per scan key. Empty otherwise.
+    pub sp_ecdh: Vec<EcdhShare>,
+}
+
+/// What an offer to sign is for. A silent payment send carries the device's ECDH shares.
+#[derive(Debug, Clone)]
+enum OfferKind {
+    Plain,
+    SilentPayment(Vec<EcdhShare>),
+}
+
+/// What a signer takes from the confirmed subset of a silent payment send: the ECDH shares of the
+/// subset's devices, and the task the requester, or the channel, completed from them.
+/// `sign_with_nonce_reservation` derives the completed task itself and refuses a different one.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SpSubset {
+    pub completed_task: crate::WireSignTask,
+    pub shares: Vec<EcdhShare>,
 }
 
 impl FrostCoordinator {
@@ -309,6 +356,70 @@ impl FrostCoordinator {
         sign_task: crate::WireSignTask,
         device_id: DeviceId,
     ) -> Result<SignOffer, StartSignError> {
+        self.offer_to_sign_inner(
+            id,
+            access_structure_ref,
+            sign_task,
+            device_id,
+            OfferKind::Plain,
+        )
+    }
+
+    /// Reserves binonces for a silent payment send, once the device has answered the ECDH request
+    /// of `start_remote_sp_ecdh`. Like `offer_to_sign`, it commits to the template with its
+    /// scripts still empty. The offer carries the device's ECDH shares and their proofs, which the
+    /// coordinator already checked against the account key share it derives for the device.
+    /// Calling it again for the same `(id, device_id)` returns the same offer.
+    pub fn offer_to_sign_sp(
+        &mut self,
+        id: RemoteSignSessionId,
+        access_structure_ref: AccessStructureRef,
+        sign_task: crate::WireSignTask,
+        device_id: DeviceId,
+        ecdh_session: SpEcdhSessionId,
+    ) -> Result<SignOffer, StartSignError> {
+        let sp_ecdh = match self.remote_signing.remote_sp_ecdh.get(&(id, device_id)) {
+            Some(offered) => offered.clone(),
+            None => {
+                let session = self
+                    .sp_ecdh_sessions
+                    .get(&ecdh_session)
+                    .ok_or(StartSignError::NoSuchSilentPaymentSession)?;
+                if session.access_structure_ref != access_structure_ref
+                    || session.sign_task != sign_task
+                {
+                    return Err(StartSignError::ConflictingRemoteSignSession);
+                }
+                session
+                    .shares
+                    .get(&device_id)
+                    .ok_or(StartSignError::SilentPaymentSharesMissing)?
+                    .clone()
+            }
+        };
+        let offer = self.offer_to_sign_inner(
+            id,
+            access_structure_ref,
+            sign_task,
+            device_id,
+            OfferKind::SilentPayment(sp_ecdh),
+        )?;
+        if self.sp_ecdh_sessions.contains_key(&ecdh_session) {
+            self.mutate(Mutation::Signing(SigningMutation::CloseSpEcdhSession {
+                session_id: ecdh_session,
+            }));
+        }
+        Ok(offer)
+    }
+
+    fn offer_to_sign_inner(
+        &mut self,
+        id: RemoteSignSessionId,
+        access_structure_ref: AccessStructureRef,
+        sign_task: crate::WireSignTask,
+        device_id: DeviceId,
+        kind: OfferKind,
+    ) -> Result<SignOffer, StartSignError> {
         let access_structure = self
             .get_access_structure(access_structure_ref)
             .ok_or(StartSignError::NoSuchAccessStructure)?;
@@ -323,10 +434,25 @@ impl FrostCoordinator {
                 .ok_or(StartSignError::UnknownKey {
                     key_id: access_structure_ref.key_id,
                 })?;
-        let checked = sign_task
-            .clone()
-            .check(key_data.complete_key.master_appkey, key_data.purpose)
-            .map_err(StartSignError::SignTask)?;
+        let master_appkey = key_data.complete_key.master_appkey;
+        let sp_ecdh = match &kind {
+            OfferKind::SilentPayment(shares) => Some(shares),
+            OfferKind::Plain => None,
+        };
+        let checked = match sp_ecdh {
+            Some(_) => {
+                if !matches!(&sign_task, crate::WireSignTask::BitcoinTransaction(template)
+                    if template.has_silent_payment_outputs())
+                {
+                    return Err(StartSignError::NotSilentPayment);
+                }
+                sign_task
+                    .clone()
+                    .check_with(master_appkey, key_data.purpose, SpScripts::Pending)
+            }
+            None => sign_task.clone().check(master_appkey, key_data.purpose),
+        }
+        .map_err(StartSignError::SignTask)?;
         let n_signatures = checked.sign_items().len();
 
         if let Some(existing) = self
@@ -334,8 +460,10 @@ impl FrostCoordinator {
             .remote_sign_sessions
             .get(&(id, device_id))
         {
+            let offered = self.remote_signing.remote_sp_ecdh.get(&(id, device_id));
             if existing.access_structure_ref != access_structure_ref
                 || existing.sign_task != sign_task
+                || offered != sp_ecdh
             {
                 return Err(StartSignError::ConflictingRemoteSignSession);
             }
@@ -346,6 +474,7 @@ impl FrostCoordinator {
                     share_index,
                     binonces: existing.binonces.clone(),
                 },
+                sp_ecdh: sp_ecdh.cloned().unwrap_or_default(),
             });
         }
 
@@ -378,13 +507,20 @@ impl FrostCoordinator {
             status: RemoteSignStatus::Open,
         };
 
-        self.mutate(Mutation::RemoteSigning(
-            RemoteSigningMutation::NewRemoteSignSession {
+        let mutation = match sp_ecdh {
+            Some(sp_ecdh) => RemoteSigningMutation::NewRemoteSpSignSession {
+                id,
+                device_id,
+                session,
+                sp_ecdh: sp_ecdh.to_vec(),
+            },
+            None => RemoteSigningMutation::NewRemoteSignSession {
                 id,
                 device_id,
                 session,
             },
-        ));
+        };
+        self.mutate(Mutation::RemoteSigning(mutation));
 
         Ok(SignOffer {
             id,
@@ -393,6 +529,39 @@ impl FrostCoordinator {
                 share_index,
                 binonces,
             },
+            sp_ecdh: sp_ecdh.cloned().unwrap_or_default(),
+        })
+    }
+
+    /// The silent payment offer already made for `(id, device_id)`, if there is one. It returns the
+    /// same binonces and shares that `offer_to_sign_sp` returned, without reserving anything new.
+    /// A plain offer for the same session is not a silent payment offer, so it gives `None`.
+    pub fn existing_sp_offer(
+        &self,
+        id: RemoteSignSessionId,
+        device_id: DeviceId,
+    ) -> Option<SignOffer> {
+        let session = self
+            .remote_signing
+            .remote_sign_sessions
+            .get(&(id, device_id))?;
+        let share_index = *self
+            .get_access_structure(session.access_structure_ref)?
+            .device_to_share_indicies()
+            .get(&device_id)?;
+        let sp_ecdh = self
+            .remote_signing
+            .remote_sp_ecdh
+            .get(&(id, device_id))?
+            .clone();
+        Some(SignOffer {
+            id,
+            device_id,
+            participant_binonces: ParticipantBinonces {
+                share_index,
+                binonces: session.binonces.clone(),
+            },
+            sp_ecdh,
         })
     }
 
@@ -405,10 +574,12 @@ impl FrostCoordinator {
     /// Does this `(id, device_id)` reservation exist and is it ready to
     /// sign the given `all_binonces`? Returns false if no reservation
     /// exists, the session has already completed, or a retry's binonces
-    /// produce a different `SignSessionId` than the stored `Used` state.
+    /// produce a different `SignSessionId` than the stored `Used` state. `sp` is the confirmed
+    /// subset's silent payment data, `Some` exactly for a silent payment send.
     pub fn can_sign_with_nonce_reservation(
         &self,
         all_binonces: &[ParticipantBinonces],
+        sp: Option<&SpSubset>,
         id: RemoteSignSessionId,
         device_id: DeviceId,
     ) -> bool {
@@ -434,13 +605,23 @@ impl FrostCoordinator {
             return false;
         }
 
+        let signing_key = super::KeyContext {
+            app_shared_key: access_structure.app_shared_key(),
+            purpose: key_data.purpose,
+        };
+        let Ok((sign_task, _)) =
+            completed_remote_task(&session.sign_task, &signing_key, all_binonces, sp)
+        else {
+            return false;
+        };
+
         match &session.status {
             RemoteSignStatus::Open => true,
             RemoteSignStatus::Used {
                 sign_session_id, ..
             } => {
                 let group_request = GroupSignReq::from_binonces(
-                    session.sign_task.clone(),
+                    sign_task,
                     session.access_structure_ref.access_structure_id,
                     all_binonces,
                 );
@@ -455,11 +636,17 @@ impl FrostCoordinator {
     /// structure and sign task are looked up from the stored session — the
     /// caller doesn't re-supply them. `all_binonces` is the session-wide
     /// participant binonce set (only known after RoundConfirmed).
+    ///
+    /// For a silent payment send, `sp` carries the subset's ECDH shares and the completed task.
+    /// The proofs are verified against share images derived from this coordinator's own key,
+    /// and `sp.completed_task` must equal the committed template completed from those shares.
+    /// The completed task is what gets signed, and it goes to the device with the proofs.
     pub fn sign_with_nonce_reservation(
         &mut self,
         id: RemoteSignSessionId,
         device_id: DeviceId,
         all_binonces: &[ParticipantBinonces],
+        sp: Option<&SpSubset>,
         encryption_key: SymmetricKey,
     ) -> Result<RequestDeviceSign, StartSignError> {
         let remote_session = self
@@ -499,18 +686,16 @@ impl FrostCoordinator {
             });
         }
 
-        let group_request = GroupSignReq::from_binonces(
-            remote_session.sign_task.clone(),
-            access_structure_id,
-            all_binonces,
-        );
+        let (sign_task, sp_proofs) =
+            completed_remote_task(&remote_session.sign_task, &signing_key, all_binonces, sp)?;
+        let group_request =
+            GroupSignReq::from_binonces(sign_task.clone(), access_structure_id, all_binonces);
         let session_id = group_request.session_id();
 
         let local_nonces_for_device = match &remote_session.status {
             RemoteSignStatus::Open => {
-                let sessions =
-                    build_sign_sessions(&remote_session.sign_task, &signing_key, all_binonces)
-                        .map_err(StartSignError::SignTask)?;
+                let sessions = build_sign_sessions(&sign_task, &signing_key, all_binonces)
+                    .map_err(StartSignError::SignTask)?;
                 let local_nonces = BTreeMap::from([(device_id, remote_session.nonce_state)]);
                 let active = ActiveSignSession {
                     progress: sessions,
@@ -559,6 +744,7 @@ impl FrostCoordinator {
 
         Ok(RequestDeviceSign {
             device_id,
+            sp_proofs,
             request_sign: RequestSign {
                 group_sign_req: group_request,
                 device_sign_req: DeviceSignReq {
@@ -775,6 +961,36 @@ impl fmt::Display for CombineSignatureError {
 
 #[cfg(feature = "std")]
 impl std::error::Error for CombineSignatureError {}
+
+/// The task a remote signer signs and the proofs that go to its device. A task without silent
+/// payment outputs is signed as committed and takes no `sp`. A silent payment send takes the
+/// subset's `sp`, and `sp.completed_task` must be the committed template completed from its shares.
+fn completed_remote_task(
+    committed: &crate::WireSignTask,
+    signing_key: &super::KeyContext,
+    all_binonces: &[ParticipantBinonces],
+    sp: Option<&SpSubset>,
+) -> Result<(crate::WireSignTask, Option<SpProofBundle>), StartSignError> {
+    let is_sp = matches!(committed, crate::WireSignTask::BitcoinTransaction(template)
+        if template.has_silent_payment_outputs());
+    match (is_sp, sp) {
+        (false, None) => Ok((committed.clone(), None)),
+        (false, Some(_)) => Err(StartSignError::NotSilentPayment),
+        (true, None) => Err(StartSignError::SilentPaymentSharesMissing),
+        (true, Some(sp)) => {
+            let completed = complete_sp_task(committed, signing_key, all_binonces, &sp.shares)
+                .map_err(StartSignError::SilentPaymentShares)?;
+            if completed != sp.completed_task {
+                return Err(StartSignError::SilentPaymentTaskMismatch);
+            }
+            let sp_proofs = SpProofBundle {
+                app_poly: signing_key.app_shared_key.key.point_polynomial().to_vec(),
+                shares: sp.shares.clone(),
+            };
+            Ok((completed, Some(sp_proofs)))
+        }
+    }
+}
 
 fn build_sign_sessions(
     sign_task: &crate::WireSignTask,

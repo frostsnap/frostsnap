@@ -1,12 +1,15 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, RwLock};
 
 use bitcoin::Address;
 use flutter_rust_bridge::frb;
+use frostsnap_coordinator::bitcoin::recipients_file;
+use frostsnap_coordinator::bitcoin::wallet::SendRecipient;
+use frostsnap_core::silent_payments::SilentPaymentRecipient;
 use frostsnap_core::{AccessStructureId, DeviceId, MasterAppkey};
 
-use crate::api::bitcoin::BitcoinNetworkExt;
+use crate::api::bitcoin::{BitcoinNetwork, BitcoinNetworkExt};
 use crate::api::broadcast::Broadcast;
 use crate::api::signing::UnsignedTx;
 use crate::frb_generated::RustAutoOpaque;
@@ -104,14 +107,36 @@ impl AmountType {
 #[derive(Clone, Default)]
 pub struct Recipient {
     pub address: Option<Address>,
+    /// Set for silent payment recipients (the tsp1/sp1 string the user supplied).
+    pub silent_payment_address: Option<String>,
     pub amount: Option<AmountType>,
 }
 
 impl Recipient {
     #[frb(sync)]
     pub fn new(address: Option<Address>, amount: Option<AmountType>) -> Self {
-        Self { address, amount }
+        Self {
+            address,
+            silent_payment_address: None,
+            amount,
+        }
     }
+
+    #[frb(sync)]
+    pub fn is_silent_payment(&self) -> bool {
+        self.silent_payment_address.is_some()
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[frb(type_64bit_int)]
+pub struct RecipientLine {
+    /// The 1-based line of the file the recipient was read from.
+    pub line: u32,
+    pub label: Option<String>,
+    pub address: String,
+    pub amount_sat: u64,
+    pub is_silent_payment: bool,
 }
 
 pub(crate) struct BuildTxInner {
@@ -125,9 +150,22 @@ pub(crate) struct BuildTxInner {
     pub(crate) access_id: Option<AccessStructureId>,
     /// Selected devices to sign the transaction.
     pub(crate) signers: HashSet<DeviceId>,
+    /// Silent payment recipients, parsed when they were set, by the address the user gave.
+    pub(crate) silent_payment_recipients: HashMap<String, SilentPaymentRecipient>,
 }
 
 impl BuildTxInner {
+    /// The recipient to send `r` to, or `None` if it has no address yet.
+    fn send_recipient(&self, r: &Recipient) -> Option<SendRecipient> {
+        match &r.silent_payment_address {
+            Some(address) => Some(SendRecipient::SilentPayment {
+                recipient: *self.silent_payment_recipients.get(address)?,
+                address: address.clone(),
+            }),
+            None => Some(SendRecipient::Address(r.address.clone()?)),
+        }
+    }
+
     fn get_or_create_recipient(&mut self, recipient: u32) -> &mut Recipient {
         let i: usize = recipient.try_into().expect("recipient index too large");
         while self.recipients.len() <= i {
@@ -155,7 +193,13 @@ impl BuildTxInner {
                 self.recipients
                     .iter()
                     .skip(recipient.saturating_sub(1) as usize)
-                    .filter_map(|r| r.address.clone())
+                    .filter_map(|r| {
+                        if r.silent_payment_address.is_some() {
+                            None
+                        } else {
+                            r.address.clone()
+                        }
+                    })
                     .map(RustAutoOpaque::new)
                     .collect(),
                 self.feerate()?,
@@ -389,9 +433,9 @@ impl BuildTxState {
         sw.send_to(
             self.frost_key.master_appkey(),
             inner.recipients.iter().filter_map(|r| {
-                let addr = r.address.clone()?;
+                let recip = inner.send_recipient(r)?;
                 let amount = r.amount.map_or(Some(0), |a| a.value());
-                Some((addr, amount))
+                Some((recip, amount))
             }),
             inner.feerate()?,
         )
@@ -401,6 +445,25 @@ impl BuildTxState {
 
     #[frb(sync)]
     pub fn set_recipient_with_uri(&self, recipient: u32, uri: &str) -> Result<(), String> {
+        let trimmed = uri.trim();
+        let net = self.super_wallet.network;
+        if let Some(sp) = SilentPaymentRecipient::from_address(trimmed, net) {
+            let mut inner = self.inner.write().unwrap();
+            inner
+                .silent_payment_recipients
+                .insert(trimmed.to_string(), sp);
+            let r = inner.get_or_create_recipient(recipient);
+            let mut changed = false;
+            if r.silent_payment_address.as_ref() != Some(&trimmed.to_string()) {
+                r.silent_payment_address = Some(trimmed.to_string());
+                r.address = None;
+                changed = true;
+            }
+            if changed {
+                self._trigger_changed();
+            }
+            return Ok(());
+        }
         let info = self
             .super_wallet
             .network
@@ -412,6 +475,7 @@ impl BuildTxState {
         let mut changed = false;
         if r.address.as_ref() != Some(&info.address) {
             r.address = Some(info.address);
+            r.silent_payment_address = None;
             changed = true;
         }
         if r.amount != info.amount.map(AmountType::Value) {
@@ -446,6 +510,7 @@ impl BuildTxState {
         let r = inner.get_or_create_recipient(recipient);
         if r.address.as_ref() != Some(address) {
             r.address = Some(address.clone());
+            r.silent_payment_address = None;
             self._trigger_changed();
         }
     }
@@ -456,10 +521,11 @@ impl BuildTxState {
             .try_into()
             .expect("recipient index must fit in usize");
         let mut inner = self.inner.write().unwrap();
-        let addr_opt = inner.recipients.get_mut(i).map(|r| &mut r.address);
-        if let Some(addr) = addr_opt {
-            if addr.is_some() {
-                *addr = None;
+        if let Some(r) = inner.recipients.get_mut(i) {
+            let had = r.address.is_some() || r.silent_payment_address.is_some();
+            r.address = None;
+            r.silent_payment_address = None;
+            if had {
                 self._trigger_changed();
             }
         }
@@ -483,6 +549,28 @@ impl BuildTxState {
             r.amount = Some(AmountType::SendMax);
             self._trigger_changed();
         }
+    }
+
+    #[frb(sync)]
+    pub fn set_recipients(&self, lines: Vec<RecipientLine>) -> Result<(), String> {
+        {
+            let mut inner = self.inner.write().unwrap();
+            inner.recipients.clear();
+        }
+        for (i, line) in lines.into_iter().enumerate() {
+            let idx = i as u32;
+            self.set_recipient_with_uri(idx, &line.address)?;
+            self.set_amount(idx, line.amount_sat);
+        }
+        self._trigger_changed();
+        Ok(())
+    }
+
+    #[frb(sync)]
+    pub fn clear_recipients(&self) {
+        let mut inner = self.inner.write().unwrap();
+        inner.recipients.clear();
+        self._trigger_changed();
     }
 
     #[frb(sync)]
@@ -523,15 +611,17 @@ impl BuildTxState {
             }
         };
 
-        let addr = r
-            .and_then(|r| r.address.clone())
-            .ok_or(AmountError::UnspecifiedAddress)?;
-
-        let min_non_dust = addr.script_pubkey().minimal_non_dust().to_sat();
+        let min_non_dust = if r.as_ref().map_or(false, |rr| rr.is_silent_payment()) {
+            recipients_file::silent_payment_min_non_dust()
+        } else {
+            let addr = r
+                .and_then(|r| r.address.clone())
+                .ok_or(AmountError::UnspecifiedAddress)?;
+            addr.script_pubkey().minimal_non_dust().to_sat()
+        };
         if amount < min_non_dust {
             return Err(AmountError::AmountBelowDust { min_non_dust });
         }
-
         Ok(amount)
     }
 
@@ -576,8 +666,9 @@ impl BuildTxState {
         let recipients = inner
             .recipients
             .iter()
-            .filter_map(|r| Some((r.address.clone()?, r.amount?.value())))
+            .filter_map(|r| Some((inner.send_recipient(r)?, r.amount?.value())))
             .collect::<Vec<_>>();
+
         if recipients.len() != inner.recipients.len() {
             return Err(TryFinishTxError::IncompleteRecipientValues);
         }
@@ -607,4 +698,25 @@ pub enum TryFinishTxError {
     MissingFeerate,
     IncompleteRecipientValues,
     InsufficientBalance,
+}
+
+/// Parses and checks a recipients file of `address,amount_sat[,label]` lines.
+#[frb(sync)]
+pub fn parse_recipients_file(
+    contents: String,
+    network: BitcoinNetwork,
+) -> Result<Vec<RecipientLine>, String> {
+    let entries = recipients_file::parse_csv(&contents)?;
+    recipients_file::validate(&entries, network)?;
+    Ok(entries
+        .into_iter()
+        .map(|entry| RecipientLine {
+            line: entry.line as u32,
+            is_silent_payment: SilentPaymentRecipient::from_address(&entry.address, network)
+                .is_some(),
+            label: entry.label,
+            address: entry.address,
+            amount_sat: entry.amount_sat,
+        })
+        .collect())
 }

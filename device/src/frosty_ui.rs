@@ -8,7 +8,7 @@ use frostsnap_widgets::{
     backup::{BackupDisplay, CheckBackupScreen, EnterShareScreen},
     debug::OverlayDebug,
     keygen_check::KeygenCheck,
-    sign_prompt::SignTxPrompt,
+    sign_prompt::{SignPromptKind, SignTxPrompt},
     DeviceNameScreen, DynWidget, FirmwareUpgradeConfirm, FirmwareUpgradeProgress, Standby, Widget,
     HOLD_TO_CONFIRM_TIME_MS,
 };
@@ -19,6 +19,10 @@ use crate::{
     root_widget::RootWidget, ui::*, widget_tree::WidgetTree, DownstreamConnectionState, Instant,
     UpstreamConnectionState,
 };
+
+/// Recipients above which signing review uses a summary and list instead of one page per
+/// recipient. 0 always uses the list.
+const REVIEW_LIST_THRESHOLD: usize = frostsnap_widgets::DEFAULT_LIST_REVIEW_THRESHOLD;
 
 // Type alias for the display to match factory
 type DeviceDisplay<'a> = mipidsi::Display<
@@ -228,8 +232,12 @@ impl<'a> UserInteraction for FrostyUi<'a> {
                                 let prompt = tx_template.user_prompt(*network);
 
                                 // Create the SignTxPrompt widget with random seed
-                                let widget =
-                                    Box::new(SignTxPrompt::new_with_seed(prompt, rand_seed));
+                                let widget = Box::new(SignTxPrompt::new_with_seed_and_kind(
+                                    prompt,
+                                    rand_seed,
+                                    SignPromptKind::Sign,
+                                    REVIEW_LIST_THRESHOLD,
+                                ));
 
                                 // Store both widget and phase in the WidgetTree
                                 WidgetTree::SignTxPrompt {
@@ -249,6 +257,33 @@ impl<'a> UserInteraction for FrostyUi<'a> {
                             }
                             frostsnap_core::SignTask::Nostr { .. } => {
                                 // Nostr signing not implemented yet
+                                let mut standby = Standby::new();
+                                standby.set_welcome();
+                                WidgetTree::Standby(Box::new(standby))
+                            }
+                        }
+                    }
+                    Prompt::SpEcdh { phase, rand_seed } => {
+                        let sign_task = phase.sign_task();
+                        match &sign_task.inner {
+                            frostsnap_core::SignTask::BitcoinTransaction {
+                                tx_template,
+                                network,
+                            } => {
+                                let prompt = tx_template.user_prompt(*network);
+                                let widget = Box::new(SignTxPrompt::new_with_seed_and_kind(
+                                    prompt,
+                                    rand_seed,
+                                    SignPromptKind::SpEcdh,
+                                    REVIEW_LIST_THRESHOLD,
+                                ));
+                                WidgetTree::SpEcdhPrompt {
+                                    widget,
+                                    phase: Some(phase),
+                                }
+                            }
+                            // recv_sp_ecdh_request rejects other sign tasks, so this is not expected.
+                            _ => {
                                 let mut standby = Standby::new();
                                 standby.set_welcome();
                                 WidgetTree::Standby(Box::new(standby))
@@ -441,6 +476,19 @@ impl<'a> UserInteraction for FrostyUi<'a> {
                 if sign_prompt.is_confirmed() {
                     if let Some(phase_data) = phase.take() {
                         return Some(UiEvent::SigningConfirm { phase: phase_data });
+                    }
+                }
+                if phase.is_none() && sign_prompt.is_finished() {
+                    self.go_to_default();
+                }
+            }
+            WidgetTree::SpEcdhPrompt {
+                widget: sign_prompt,
+                phase,
+            } => {
+                if sign_prompt.is_confirmed() {
+                    if let Some(phase_data) = phase.take() {
+                        return Some(UiEvent::SpEcdhConfirm { phase: phase_data });
                     }
                 }
                 if phase.is_none() && sign_prompt.is_finished() {

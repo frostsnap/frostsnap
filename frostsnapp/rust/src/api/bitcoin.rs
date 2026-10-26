@@ -9,6 +9,8 @@ use frostsnap_coordinator::bitcoin::chain_sync::{
 };
 pub use frostsnap_coordinator::bitcoin::wallet::ConfirmationTime;
 pub use frostsnap_coordinator::frostsnap_core::{self, MasterAppkey};
+use frostsnap_core::silent_payments::SilentPaymentRecipient;
+
 use frostsnap_core::bitcoin_transaction::TransactionTemplate;
 use frostsnap_core::message::EncodedSignature;
 use tracing::{event, Level};
@@ -149,10 +151,12 @@ impl BitcoinNetworkExt for BitcoinNetwork {
     fn supported_networks() -> Vec<BitcoinNetwork> {
         SUPPORTED_NETWORKS.into_iter().collect()
     }
-
     // FIXME: doesn't need to be on the network. Can get the script pubkey without the network.
     #[frb(sync)]
     fn validate_amount(&self, address: &str, value: u64) -> Option<String> {
+        if SilentPaymentRecipient::from_address(address, *self).is_some() {
+            return None;
+        }
         match bitcoin::Address::from_str(address) {
             Ok(address) => match address.require_network(*self) {
                 Ok(address) => {

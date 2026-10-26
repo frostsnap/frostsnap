@@ -382,6 +382,10 @@ backup +ARGS="":
 simulate +ARGS="":
     (cd tools/widget_simulator && cargo run -- {{ARGS}}; )
 
+
+# Run desktop device simulator
+sim-device STATE +ARGS="":
+    cargo run -p device_simulator -- --state {{STATE}} --firmware target/riscv32imc-unknown-none-elf/release/{{env}}-frontier.bin {{ARGS}}
 stack-check +ARGS="stacks --max-pct 25":
     @rustup toolchain list | grep -q '^nightly' || { echo "error: nightly toolchain not installed. Run: rustup toolchain install nightly" >&2; exit 1; }
     @rustup component list --installed --toolchain nightly | grep -q '^rust-src' || { echo "error: rust-src component missing on nightly (needed for -Z build-std). Run: rustup component add rust-src --toolchain nightly" >&2; exit 1; }

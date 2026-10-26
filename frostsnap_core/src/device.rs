@@ -5,13 +5,20 @@ use crate::tweak::{self, Xpub};
 use crate::{
     bitcoin_transaction, message::*, AccessStructureId, AccessStructureKind, AccessStructureRef,
     ActionError, CheckedSignTask, CoordShareDecryptionContrib, Error, KeyId, KeygenId, Kind,
-    MessageResult, RestorationId, SessionHash, ShareImage,
+    MasterAppkey, MessageResult, RestorationId, SessionHash, ShareImage, SignTask,
+};
+use crate::{
+    bitcoin_transaction::TransactionTemplate,
+    message::signing::{SpEcdhSessionId, SpProofBundle},
+    sign_task::SpScripts,
+    silent_payments::{self, verify_ecdh_share, EcdhShare},
+    tweak::BitcoinAccount,
 };
 use crate::{DeviceId, SignSessionId};
 use alloc::boxed::Box;
 use alloc::string::ToString as _;
 use alloc::{
-    collections::{BTreeMap, VecDeque},
+    collections::{BTreeMap, BTreeSet, VecDeque},
     string::String,
     vec::Vec,
 };
@@ -25,6 +32,23 @@ use sha2::Sha256;
 mod device_to_user;
 pub mod restoration;
 pub use device_to_user::*;
+
+/// A silent payment ECDH request awaiting the user's confirmation of its recipients and amounts.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SpEcdhPhase {
+    session_id: SpEcdhSessionId,
+    rootkey: Point,
+    access_structure_ref: AccessStructureRef,
+    coord_share_decryption_contrib: CoordShareDecryptionContrib,
+    encrypted_secret_share: EncryptedSecretShare,
+    sign_task: CheckedSignTask,
+}
+
+impl SpEcdhPhase {
+    pub fn sign_task(&self) -> &CheckedSignTask {
+        &self.sign_task
+    }
+}
 
 /// The number of nonces the device will give out at a time.
 pub const NONCE_BATCH_SIZE: u32 = 30;
@@ -209,6 +233,96 @@ impl SignPhase1 {
     }
 }
 
+/// Checks the silent payment outputs of a sign request against the proofs sent with it. A request
+/// with silent payment outputs needs proofs, and proofs are only accepted with such outputs.
+fn check_sp_proofs_present(
+    sign_task: &CheckedSignTask,
+    access_structure_id: AccessStructureId,
+    sp_proofs: Option<&SpProofBundle>,
+) -> Result<(), String> {
+    let SignTask::BitcoinTransaction { tx_template, .. } = &sign_task.inner else {
+        return match sp_proofs {
+            None => Ok(()),
+            Some(_) => {
+                Err("silent payment proofs for a task that is not a bitcoin transaction".into())
+            }
+        };
+    };
+
+    match (tx_template.has_silent_payment_outputs(), sp_proofs) {
+        (false, None) => Ok(()),
+        (false, Some(_)) => {
+            Err("silent payment proofs for a transaction with no silent payment outputs".into())
+        }
+        (true, None) => Err("silent payment outputs without their proofs".into()),
+        (true, Some(bundle)) => verify_sp_proof_bundle(
+            sign_task.master_appkey,
+            tx_template,
+            access_structure_id,
+            bundle,
+        ),
+    }
+}
+
+fn verify_sp_proof_bundle(
+    master_appkey: MasterAppkey,
+    tx_template: &TransactionTemplate,
+    access_structure_id: AccessStructureId,
+    bundle: &SpProofBundle,
+) -> Result<(), String> {
+    if AccessStructureId::from_app_poly(&bundle.app_poly) != access_structure_id {
+        return Err("app polynomial does not match the access structure".into());
+    }
+    let app_shared_key = SharedKey::from_poly(bundle.app_poly.clone())
+        .non_zero()
+        .ok_or("app polynomial is zero")?;
+    let master_xpub = master_appkey.to_xpub();
+    if app_shared_key.public_key() != master_xpub.key {
+        return Err("app polynomial does not commit to the root key".into());
+    }
+
+    let threshold = app_shared_key.threshold();
+
+    // Every party's account share image, derived from the polynomial rather than trusted.
+    let account = BitcoinAccount::default()
+        .derive_account_key(&Xpub::new(app_shared_key, master_xpub.chaincode));
+    let (input_hash, _) = tx_template
+        .sp_ecdh_inputs(master_appkey)
+        .ok_or("silent payment inputs are not this key's coins")?;
+
+    for share in &bundle.shares {
+        let image = account.key().share_image(share.share_index).image;
+        if !verify_ecdh_share(image, input_hash, share) {
+            return Err("silent payment ECDH share has a bad proof".into());
+        }
+    }
+
+    // A combination of fewer shares is still a valid point, and scripts derived from it would
+    // match, but it is not the wallet's ECDH and the recipient could not find the output.
+    for scan_key in tx_template.silent_payment_scan_keys() {
+        let share_indices = bundle
+            .shares
+            .iter()
+            .filter(|share| share.scan_key == scan_key)
+            .map(|share| share.share_index)
+            .collect::<BTreeSet<_>>();
+        if share_indices.len() < threshold {
+            return Err("fewer silent payment ECDH shares than the threshold".into());
+        }
+    }
+
+    let shared_secrets = tx_template
+        .sp_shared_secrets(master_appkey, &bundle.shares)
+        .ok_or("silent payment ECDH shares do not combine")?;
+    let derived = tx_template
+        .with_sp_scripts(&shared_secrets)
+        .ok_or("silent payment outputs cannot be derived")?;
+    if derived != *tx_template {
+        return Err("silent payment output scripts do not match the ECDH shares".into());
+    }
+    Ok(())
+}
+
 impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
     pub fn new(keypair: KeyPair, nonce_slots: AbSlots<S>) -> Self {
         Self {
@@ -321,6 +435,177 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
 
     pub fn device_id(&self) -> DeviceId {
         DeviceId::new(self.keypair().public_key())
+    }
+
+    fn recv_sp_ecdh_request(
+        &self,
+        message: &CoordinatorToDeviceMessage,
+        request: signing::RequestSpEcdh,
+    ) -> MessageResult<Vec<DeviceSend>> {
+        let signing::RequestSpEcdh {
+            session_id,
+            rootkey,
+            access_structure_id,
+            coord_share_decryption_contrib,
+            scan_keys,
+            input_hash,
+            sign_task,
+        } = request;
+        let key_id = KeyId::from_rootkey(rootkey);
+        let key_data = self.keys.get(&key_id).ok_or_else(|| {
+            Error::signer_invalid_message(message, format!("device doesn't have key for {key_id}"))
+        })?;
+        let master_appkey = MasterAppkey::derive_from_rootkey(rootkey);
+        let sign_task = sign_task
+            .check_with(master_appkey, key_data.purpose, SpScripts::Pending)
+            .map_err(|e| Error::signer_invalid_message(message, e))?;
+
+        let SignTask::BitcoinTransaction { tx_template, .. } = &sign_task.inner else {
+            return Err(Error::signer_invalid_message(
+                message,
+                "silent payment ECDH for a task that is not a bitcoin transaction",
+            ));
+        };
+        let computed_input_hash = tx_template
+            .sp_ecdh_inputs(master_appkey)
+            .filter(|_| tx_template.has_silent_payment_outputs())
+            .map(|(input_hash, _)| input_hash);
+        if computed_input_hash != Some(input_hash)
+            || scan_keys != tx_template.silent_payment_scan_keys()
+        {
+            return Err(Error::signer_invalid_message(
+                message,
+                "silent payment ECDH request does not match its transaction",
+            ));
+        }
+
+        let access_structure_data = key_data
+            .access_structures
+            .get(&access_structure_id)
+            .ok_or_else(|| {
+                Error::signer_invalid_message(
+                    message,
+                    format!(
+                        "this device is not part of that access structure: {access_structure_id}"
+                    ),
+                )
+            })?;
+        let encrypted_secret_share =
+            *access_structure_data
+                .shares
+                .values()
+                .next()
+                .ok_or_else(|| {
+                    Error::signer_invalid_message(
+                        message,
+                        "device doesn't have any of the shares requested",
+                    )
+                })?;
+
+        let phase = SpEcdhPhase {
+            session_id,
+            rootkey,
+            access_structure_ref: AccessStructureRef {
+                key_id,
+                access_structure_id,
+            },
+            coord_share_decryption_contrib,
+            encrypted_secret_share,
+            sign_task,
+        };
+        Ok(vec![DeviceSend::ToUser(Box::new(
+            DeviceToUserMessage::SpEcdhRequest {
+                phase: Box::new(phase),
+            },
+        ))])
+    }
+
+    fn recv_sign_request(
+        &mut self,
+        message: &CoordinatorToDeviceMessage,
+        group_sign_req: GroupSignReq,
+        device_sign_req: DeviceSignReq,
+        sp_proofs: Option<SpProofBundle>,
+    ) -> MessageResult<Vec<DeviceSend>> {
+        let session_id = group_sign_req.session_id();
+        let key_id = KeyId::from_rootkey(device_sign_req.rootkey);
+        let key_data = self
+            .keys
+            .get(&key_id)
+            .ok_or_else(|| {
+                Error::signer_invalid_message(
+                    message,
+                    format!("device doesn't have key for {key_id}"),
+                )
+            })?
+            .clone();
+
+        let group_sign_req = group_sign_req
+            .check(device_sign_req.rootkey, key_data.purpose)
+            .map_err(|e| Error::signer_invalid_message(message, e))?;
+
+        let GroupSignReq {
+            parties,
+            access_structure_id,
+            ..
+        } = &group_sign_req;
+        let coord_req_nonces = device_sign_req.nonces;
+
+        let access_structure_data = key_data
+            .access_structures
+            .get(access_structure_id)
+            .ok_or_else(|| {
+                Error::signer_invalid_message(
+                    message,
+                    format!(
+                        "this device is not part of that access structure: {access_structure_id}"
+                    ),
+                )
+            })?
+            .clone();
+        let (_, encrypted_secret_share) = parties
+            .iter()
+            .find_map(|party| Some((*party, *access_structure_data.shares.get(party)?)))
+            .ok_or_else(|| {
+                Error::signer_invalid_message(
+                    message,
+                    "device doesn't have any of the shares requested",
+                )
+            })?;
+
+        // Just verify the nonce stream exists but don't check availability
+        // The signing logic will handle cached signatures naturally
+        let _nonce_slot = self
+            .nonce_slots
+            .get(coord_req_nonces.stream_id)
+            .and_then(|slot| slot.read_slot())
+            .ok_or(Error::signer_invalid_message(
+                message,
+                format!(
+                    "device did not have that nonce stream id {}",
+                    coord_req_nonces.stream_id
+                ),
+            ))?;
+
+        check_sp_proofs_present(
+            &group_sign_req.sign_task,
+            *access_structure_id,
+            sp_proofs.as_ref(),
+        )
+        .map_err(|reason| Error::signer_invalid_message(message, reason))?;
+
+        // Removed are_nonces_available check - let the signing system handle it
+        let phase = SignPhase1 {
+            group_sign_req,
+            device_sign_req,
+            encrypted_secret_share,
+            session_id,
+        };
+        Ok(vec![DeviceSend::ToUser(Box::new(
+            DeviceToUserMessage::SignatureRequest {
+                phase: Box::new(phase),
+            },
+        ))])
     }
 
     pub fn recv_coordinator_message(
@@ -539,75 +824,26 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
                     ))])
                 }
             },
+            Signing(signing::CoordinatorSigning::RequestSpEcdh(request)) => {
+                self.recv_sp_ecdh_request(&message, *request)
+            }
+            Signing(signing::CoordinatorSigning::RequestSpSign(request)) => {
+                let signing::RequestSpSign {
+                    request_sign:
+                        self::RequestSign {
+                            group_sign_req,
+                            device_sign_req,
+                        },
+                    sp_proofs,
+                } = *request;
+                self.recv_sign_request(&message, group_sign_req, device_sign_req, Some(sp_proofs))
+            }
             Signing(signing::CoordinatorSigning::RequestSign(request_sign)) => {
                 let self::RequestSign {
                     group_sign_req,
                     device_sign_req,
                 } = *request_sign;
-                let session_id = group_sign_req.session_id();
-                let key_id = KeyId::from_rootkey(device_sign_req.rootkey);
-                let key_data = self
-                    .keys
-                    .get(&key_id)
-                    .ok_or_else(|| {
-                        Error::signer_invalid_message(
-                            &message,
-                            format!("device doesn't have key for {key_id}"),
-                        )
-                    })?
-                    .clone();
-
-                let group_sign_req = group_sign_req
-                    .check(device_sign_req.rootkey, key_data.purpose)
-                    .map_err(|e| Error::signer_invalid_message(&message, e))?;
-
-                let GroupSignReq {
-                    parties,
-                    access_structure_id,
-                    ..
-                } = &group_sign_req;
-                let coord_req_nonces = device_sign_req.nonces;
-
-                let access_structure_data = key_data.access_structures.get(access_structure_id)
-                    .ok_or_else(|| {
-                        Error::signer_invalid_message(&message, format!("this device is not part of that access structure: {access_structure_id}"))
-                    })?.clone();
-                let (_, encrypted_secret_share) = parties
-                    .iter()
-                    .find_map(|party| Some((*party, *access_structure_data.shares.get(party)?)))
-                    .ok_or_else(|| {
-                        Error::signer_invalid_message(
-                            &message,
-                            "device doesn't have any of the shares requested",
-                        )
-                    })?;
-
-                // Just verify the nonce stream exists but don't check availability
-                // The signing logic will handle cached signatures naturally
-                let _nonce_slot = self
-                    .nonce_slots
-                    .get(coord_req_nonces.stream_id)
-                    .and_then(|slot| slot.read_slot())
-                    .ok_or(Error::signer_invalid_message(
-                        &message,
-                        format!(
-                            "device did not have that nonce stream id {}",
-                            coord_req_nonces.stream_id
-                        ),
-                    ))?;
-
-                // Removed are_nonces_available check - let the signing system handle it
-                let phase = SignPhase1 {
-                    group_sign_req,
-                    device_sign_req,
-                    encrypted_secret_share,
-                    session_id,
-                };
-                Ok(vec![DeviceSend::ToUser(Box::new(
-                    DeviceToUserMessage::SignatureRequest {
-                        phase: Box::new(phase),
-                    },
-                ))])
+                self.recv_sign_request(&message, group_sign_req, device_sign_req, None)
             }
             ScreenVerify(screen_verify::ScreenVerify::VerifyAddress {
                 master_appkey,
@@ -716,6 +952,84 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
             ack_session_hash: phase.session_hash,
             keygen_id: phase.keygen_id,
         })
+    }
+
+    /// Confirms a silent payment ECDH request. Answers with this device's account key share's
+    /// ECDH share for every scan key of the transaction, each with a proof.
+    pub fn sp_ecdh_ack(
+        &self,
+        phase: SpEcdhPhase,
+        symm_keygen: &mut impl DeviceSecretDerivation,
+        rng: &mut impl rand_core::RngCore,
+    ) -> Result<Vec<DeviceSend>, ActionError> {
+        let SpEcdhPhase {
+            session_id,
+            rootkey,
+            access_structure_ref,
+            coord_share_decryption_contrib,
+            encrypted_secret_share,
+            sign_task,
+        } = phase;
+        let SignTask::BitcoinTransaction { tx_template, .. } = &sign_task.inner else {
+            return Err(ActionError::StateInconsistent(
+                "silent payment ECDH for a task that is not a bitcoin transaction".into(),
+            ));
+        };
+        let master_appkey = sign_task.master_appkey;
+        let (input_hash, _) = tx_template.sp_ecdh_inputs(master_appkey).ok_or_else(|| {
+            ActionError::StateInconsistent("silent payment inputs changed".into())
+        })?;
+
+        let my_index = encrypted_secret_share.share_image.index;
+        let symmetric_key = symm_keygen.get_share_encryption_key(
+            access_structure_ref,
+            my_index,
+            coord_share_decryption_contrib,
+        );
+        let secret_share = encrypted_secret_share
+            .ciphertext
+            .decrypt(symmetric_key)
+            .ok_or_else(|| {
+                ActionError::StateInconsistent("couldn't decrypt secret share".into())
+            })?;
+        let root_paired_secret_share = Xpub::from_rootkey(PairedSecretShare::new_unchecked(
+            SecretShare {
+                index: my_index,
+                share: secret_share,
+            },
+            rootkey,
+        ));
+        let app_paired_secret_share = root_paired_secret_share.rootkey_to_master_appkey();
+        let account_secret_share =
+            BitcoinAccount::default().derive_account_key(&app_paired_secret_share);
+        let account_share = account_secret_share
+            .key()
+            .secret_share()
+            .share
+            .non_zero()
+            .ok_or_else(|| ActionError::StateInconsistent("account share is zero".into()))?;
+
+        let mut shares: Vec<EcdhShare> = Vec::new();
+        for scan_key in tx_template.silent_payment_scan_keys() {
+            let share = silent_payments::prove_ecdh_share(
+                my_index,
+                account_share,
+                scan_key,
+                input_hash,
+                rng,
+            )
+            .ok_or_else(|| {
+                ActionError::StateInconsistent("couldn't prove silent payment ECDH share".into())
+            })?;
+            shares.push(share);
+        }
+
+        Ok(vec![DeviceSend::ToCoordinator(Box::new(
+            DeviceToCoordinatorMessage::Signing(signing::DeviceSigning::SpEcdhShares {
+                session_id,
+                shares,
+            }),
+        ))])
     }
 
     pub fn sign_ack(

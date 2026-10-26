@@ -2,6 +2,7 @@ pub mod keygen_run;
 pub mod remote_keygen;
 pub mod remote_recovery;
 
+use crate::api::bitcoin::BitcoinNetwork;
 use crate::api::broadcast::{BehaviorBroadcast, Broadcast};
 use crate::frb_generated::{RustAutoOpaque, StreamSink};
 use crate::nostr_settings_state::NostrSettingsState;
@@ -14,7 +15,9 @@ use frostsnap_core::{
     message::EncodedSignature,
     AccessStructureId, AccessStructureRef, KeyId, SignSessionId, SymmetricKey, WireSignTask,
 };
+
 use frostsnap_macros::broadcast_handle;
+
 pub use frostsnap_nostr::NostrProfile;
 use frostsnap_nostr::{
     channel::{parse_frostsnap_link, parse_keygen_link},
@@ -43,6 +46,8 @@ fn now_secs() -> u64 {
 /// valid nsec on a flaky network.
 const IMPORT_PROFILE_FETCH_TIMEOUT: Duration = Duration::from_secs(30);
 
+pub use frostsnap_core::coordinator::remote_signing::SpSubset;
+pub use frostsnap_core::silent_payments::EcdhShare;
 pub use frostsnap_nostr::{
     ChannelEvent, ChannelParticipant, ChannelSecret, ConfirmedSubsetEntry, ConnectionState,
     EventId, GroupMember, ObservationKind, ParticipantShares, PublicKey, SigningEvent,
@@ -474,7 +479,7 @@ impl ChannelHandle {
     /// Propose a transaction for signing.
     pub async fn send_sign_request(
         &self,
-        unsigned_tx: super::signing::UnsignedTx,
+        unsigned_tx: &super::signing::UnsignedTx,
         message: String,
     ) -> Result<EventId> {
         let inner = self.require_inner()?;
@@ -506,6 +511,20 @@ impl ChannelHandle {
         let keys = inner.runner_handle.signing_keys().clone();
         inner.send_sign_offer(&keys, request_id, binonces).await
     }
+    pub async fn send_sp_sign_offer(
+        &self,
+        request_id: EventId,
+        offers: Vec<super::signing::SpSignOffer>,
+    ) -> Result<EventId> {
+        let inner = self.require_inner()?;
+        let keys = inner.runner_handle.signing_keys().clone();
+        let binonces: Vec<ParticipantBinonces> =
+            offers.iter().map(|o| o.binonces.clone()).collect();
+        let sp_ecdh: Vec<_> = offers.into_iter().flat_map(|o| o.sp_ecdh).collect();
+        inner
+            .send_sp_sign_offer(&keys, request_id, binonces, sp_ecdh)
+            .await
+    }
 
     pub async fn send_sign_partial(
         &self,
@@ -528,7 +547,7 @@ impl ChannelHandle {
 
     /// Pump a wallet-stream tx into the channel runner so it can fold
     /// chat→tx correlations.
-    pub async fn notify_tx_observed(&self, tx: crate::api::bitcoin::Transaction) -> Result<()> {
+    pub async fn notify_tx_observed(&self, tx: &crate::api::bitcoin::Transaction) -> Result<()> {
         let wallet_tx = frostsnap_coordinator::bitcoin::wallet::Transaction {
             inner: std::sync::Arc::new(tx.inner.clone()),
             txid: tx.inner.compute_txid(),
@@ -548,14 +567,16 @@ impl ChannelHandle {
     pub fn seal_round_confirmed(
         &self,
         request_id: EventId,
-        sign_task: WireSignTask,
-        binonces: Vec<ParticipantBinonces>,
+        sign_task: &WireSignTask,
+        binonces: Vec<RustAutoOpaque<ParticipantBinonces>>,
+        sp: Option<RustAutoOpaque<SpSubset>>,
     ) -> Result<SealedSigningData> {
         Ok(SealedSigningData {
             request_id: request_id.into(),
-            sign_task,
-            binonces,
+            sign_task: sign_task.clone(),
+            binonces: binonces.iter().map(|b| b.blocking_read().clone()).collect(),
             key_context: self.key_context.clone(),
+            sp: sp.map(|sp| sp.blocking_read().clone()),
         })
     }
 
@@ -1096,6 +1117,7 @@ pub struct _ConfirmedSubsetEntry {
     pub author: PublicKey,
     pub timestamp: u64,
     pub binonces: Vec<ParticipantBinonces>,
+    pub sp_ecdh: Vec<EcdhShare>,
 }
 
 /// Mirrors `frostsnap_nostr::SigningEvent`. Variants stay 1:1 with the
@@ -1118,13 +1140,24 @@ pub enum _SigningEvent {
         author: PublicKey,
         request_id: EventId,
         binonces: Vec<ParticipantBinonces>,
+        /// The offer's silent payment ECDH shares. Empty unless the request is a silent payment
+        /// send. Offers whose shares fail verification never become events, see `Rejected`.
+        sp_ecdh: Vec<EcdhShare>,
         timestamp: u64,
     },
+    /// Emitted when the settling timer expires with at least `threshold`
+    /// offers observed. The subset is locked in; included participants
+    /// should sign.
+    ///
+    /// For a silent payment send, `sign_task` is still the requested template and `sp` is the
+    /// subset's shares with the task completed from them. `session_id` is the session of the
+    /// completed task. Pass `sp` to `sign_with_nonce_reservation`.
     RoundConfirmed {
         request_id: EventId,
         subset: Vec<ConfirmedSubsetEntry>,
         session_id: SignSessionId,
         sign_task: WireSignTask,
+        sp: Option<SpSubset>,
         timestamp: u64,
     },
     RoundPending {
@@ -1232,11 +1265,73 @@ pub fn signing_details(sign_task: &WireSignTask) -> super::signing::SigningDetai
 /// of `SigningEvent::Offer.binonces`. Dart calls this on demand; the
 /// field used to ride embedded on the variant.
 #[frb(sync)]
-pub fn offer_share_indices(binonces: &[ParticipantBinonces]) -> Vec<u32> {
+pub fn offer_share_indices(binonces: Vec<RustAutoOpaque<ParticipantBinonces>>) -> Vec<u32> {
     binonces
         .iter()
-        .map(|b| u32::try_from(b.share_index).expect("share index fits in u32"))
+        .map(|b| u32::try_from(b.blocking_read().share_index).expect("share index fits in u32"))
         .collect()
+}
+#[frb(sync)]
+pub fn sign_task_is_silent_payment(sign_task: &WireSignTask) -> bool {
+    if let WireSignTask::BitcoinTransaction(template) = sign_task {
+        template.has_silent_payment_outputs()
+    } else {
+        false
+    }
+}
+#[derive(Clone, Debug)]
+pub struct SendRecipientView {
+    pub address: String,
+    pub amount_sat: u64,
+    pub is_silent_payment: bool,
+}
+
+/// Every recipient of a send except change, in output order.
+#[frb(sync)]
+pub fn send_recipients(
+    sign_task: &WireSignTask,
+    network: BitcoinNetwork,
+) -> Vec<SendRecipientView> {
+    let WireSignTask::BitcoinTransaction(template) = sign_task else {
+        return vec![];
+    };
+    template
+        .outputs()
+        .iter()
+        .filter_map(|output| match output.owner() {
+            frostsnap_core::bitcoin_transaction::SpkOwner::SilentPayment(sp) => {
+                Some(SendRecipientView {
+                    address: sp.address.clone(),
+                    amount_sat: output.value,
+                    is_silent_payment: true,
+                })
+            }
+            frostsnap_core::bitcoin_transaction::SpkOwner::Local(_) => None,
+            frostsnap_core::bitcoin_transaction::SpkOwner::Foreign(spk) => {
+                let address = match bitcoin::Address::from_script(spk, network) {
+                    Ok(address) => address.to_string(),
+                    Err(_) => format!("{spk:x}"),
+                };
+                Some(SendRecipientView {
+                    address,
+                    amount_sat: output.value,
+                    is_silent_payment: false,
+                })
+            }
+        })
+        .collect()
+}
+
+/// The outputs check code of a bitcoin transaction sign task, for the user to compare with the
+/// code the device shows. `None` for other kinds of sign task.
+#[frb(sync)]
+pub fn outputs_check_code(sign_task: &WireSignTask, network: BitcoinNetwork) -> Option<String> {
+    let WireSignTask::BitcoinTransaction(template) = sign_task else {
+        return None;
+    };
+    Some(frostsnap_core::bitcoin_transaction::fingerprint_code(
+        &template.outputs_fingerprint(network),
+    ))
 }
 
 /// Opaque bundle of round data needed to combine signatures standalone.
@@ -1250,12 +1345,18 @@ pub struct SealedSigningData {
     pub(crate) sign_task: WireSignTask,
     pub(crate) binonces: Vec<ParticipantBinonces>,
     pub(crate) key_context: KeyContext,
+    pub(crate) sp: Option<SpSubset>,
 }
 
 impl SealedSigningData {
+    /// The task devices sign: for a silent payment send, the template completed with the
+    /// confirmed subset's ECDH shares.
     #[frb(sync)]
     pub fn sign_task(&self) -> WireSignTask {
-        self.sign_task.clone()
+        match &self.sp {
+            Some(sp) => sp.completed_task.clone(),
+            None => self.sign_task.clone(),
+        }
     }
 
     #[frb(sync)]
@@ -1269,10 +1370,15 @@ impl SealedSigningData {
     }
 
     #[frb(sync)]
+    pub fn sp(&self) -> Option<SpSubset> {
+        self.sp.clone()
+    }
+
+    #[frb(sync)]
     pub fn sign_session_id(&self) -> SignSessionId {
         use frostsnap_core::message::GroupSignReq;
         GroupSignReq::from_binonces(
-            self.sign_task.clone(),
+            self.sign_task(),
             self.key_context.access_structure_id(),
             &self.binonces,
         )
@@ -1290,7 +1396,7 @@ impl SealedSigningData {
             .collect();
         let share_refs: Vec<&ParticipantSignatureShares> = guards.iter().map(|g| &**g).collect();
         Ok(frostsnap_core::coordinator::signing::combine_signatures(
-            self.sign_task.clone(),
+            self.sign_task(),
             &self.key_context,
             &self.binonces,
             &share_refs,
@@ -1326,4 +1432,84 @@ pub fn default_relay_urls() -> Vec<String> {
         "wss://nos.lol".to_string(),
         "wss://relay.primal.net".to_string(),
     ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bitcoin::{Address, Amount, Network, TxOut};
+    use core::str::FromStr;
+    use frostsnap_core::bitcoin_transaction::TransactionTemplate;
+    use frostsnap_core::silent_payments::SilentPaymentRecipient;
+
+    fn test_sp_address() -> String {
+        let scan = [
+            0x02, 0x20, 0xbc, 0xfa, 0xc5, 0xb9, 0x9e, 0x04, 0xad, 0x1a, 0x06, 0xdd, 0xfb, 0x01,
+            0x6e, 0xe1, 0x35, 0x82, 0x60, 0x9d, 0x60, 0xb6, 0x29, 0x1e, 0x98, 0xd0, 0x1a, 0x9b,
+            0xc9, 0xa1, 0x6c, 0x96, 0xd4,
+        ];
+        let spend = [
+            0x02, 0x5c, 0xc9, 0x85, 0x6d, 0x6f, 0x83, 0x75, 0x35, 0x0e, 0x12, 0x39, 0x78, 0xda,
+            0xac, 0x20, 0x0c, 0x26, 0x0c, 0xb5, 0xb5, 0xae, 0x83, 0x10, 0x6c, 0xab, 0x90, 0x48,
+            0x4d, 0xcd, 0x8f, 0xcf, 0x36,
+        ];
+        let recipient = SilentPaymentRecipient {
+            scan_key: frostsnap_core::schnorr_fun::fun::Point::from_slice(&scan).unwrap(),
+            spend_key: frostsnap_core::schnorr_fun::fun::Point::from_slice(&spend).unwrap(),
+        };
+        recipient.address(bitcoin::Network::Testnet).unwrap()
+    }
+
+    #[test]
+    fn test_send_recipients_mixed() {
+        let mut template = TransactionTemplate::new();
+        let sp_addr = test_sp_address();
+        let scan = [
+            0x02u8, 0x20, 0xbc, 0xfa, 0xc5, 0xb9, 0x9e, 0x04, 0xad, 0x1a, 0x06, 0xdd, 0xfb, 0x01,
+            0x6e, 0xe1, 0x35, 0x82, 0x60, 0x9d, 0x60, 0xb6, 0x29, 0x1e, 0x98, 0xd0, 0x1a, 0x9b,
+            0xc9, 0xa1, 0x6c, 0x96, 0xd4,
+        ];
+        let spend = [
+            0x02u8, 0x5c, 0xc9, 0x85, 0x6d, 0x6f, 0x83, 0x75, 0x35, 0x0e, 0x12, 0x39, 0x78, 0xda,
+            0xac, 0x20, 0x0c, 0x26, 0x0c, 0xb5, 0xb5, 0xae, 0x83, 0x10, 0x6c, 0xab, 0x90, 0x48,
+            0x4d, 0xcd, 0x8f, 0xcf, 0x36,
+        ];
+        let sp_recip = SilentPaymentRecipient {
+            scan_key: frostsnap_core::schnorr_fun::fun::Point::from_slice(&scan).unwrap(),
+            spend_key: frostsnap_core::schnorr_fun::fun::Point::from_slice(&spend).unwrap(),
+        };
+        template.push_silent_payment_output(Amount::from_sat(50000), sp_recip, sp_addr.clone());
+        let a1 = Address::from_str("tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx")
+            .unwrap()
+            .require_network(Network::Testnet)
+            .unwrap();
+        template.push_foreign_output(TxOut {
+            value: Amount::from_sat(10000),
+            script_pubkey: a1.script_pubkey(),
+        });
+        let a2 = Address::from_str("tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx")
+            .unwrap()
+            .require_network(Network::Testnet)
+            .unwrap();
+        template.push_foreign_output(TxOut {
+            value: Amount::from_sat(20000),
+            script_pubkey: a2.script_pubkey(),
+        });
+        let recips = send_recipients(
+            &WireSignTask::BitcoinTransaction(template),
+            BitcoinNetwork::Testnet,
+        );
+        assert_eq!(
+            recips.len(),
+            3,
+            "should return sp + 2 foreign, excluding any change"
+        );
+        assert!(recips[0].is_silent_payment);
+        assert_eq!(recips[0].amount_sat, 50000);
+        assert_eq!(recips[0].address, sp_addr);
+        assert!(!recips[1].is_silent_payment);
+        assert_eq!(recips[1].amount_sat, 10000);
+        assert!(!recips[2].is_silent_payment);
+        assert_eq!(recips[2].amount_sat, 20000);
+    }
 }

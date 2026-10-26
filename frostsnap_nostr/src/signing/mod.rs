@@ -19,7 +19,10 @@ use crate::{
 use anyhow::{anyhow, Result};
 use frostsnap_coordinator::Sink;
 use frostsnap_core::{
-    coordinator::{KeyContext, ParticipantBinonces, ParticipantSignatureShares},
+    coordinator::{
+        remote_signing::SpSubset, KeyContext, ParticipantBinonces, ParticipantSignatureShares,
+    },
+    silent_payments::EcdhShare,
     WireSignTask,
 };
 use nostr_sdk::{Client, Event, Keys, Kind};
@@ -394,6 +397,9 @@ impl ChannelHandle {
         Ok(message_id)
     }
 
+    /// Post a sign request. For a silent payment send, `sign_task` is the template with its
+    /// silent payment output scripts still empty. Offers then carry ECDH shares, see
+    /// [`Self::send_sp_sign_offer`], and the confirmed round completes the template.
     pub async fn send_sign_request(
         &self,
         keys: &Keys,
@@ -428,6 +434,26 @@ impl ChannelHandle {
         binonces: Vec<ParticipantBinonces>,
     ) -> Result<EventId> {
         let message = SigningMessage::Offer { binonces };
+        self.send_signing_event(keys, &message, Some(request_id))
+            .await
+    }
+
+    /// Publish an offer to sign a silent payment send.
+    ///
+    /// The caller gets `binonces` and `sp_ecdh` from `FrostCoordinator::offer_to_sign_sp` after
+    /// `start_remote_sp_ecdh` and the device's reply: one share and proof per scan key, for every
+    /// device in `binonces`. Channels reject the offer if those shares do not verify, and reject a
+    /// plain [`Self::send_sign_offer`] for a silent payment request. After
+    /// [`SigningEvent::RoundConfirmed`], pass `sp` to `sign_with_nonce_reservation` and publish the
+    /// device's shares with [`Self::send_sign_partial`].
+    pub async fn send_sp_sign_offer(
+        &self,
+        keys: &Keys,
+        request_id: EventId,
+        binonces: Vec<ParticipantBinonces>,
+        sp_ecdh: Vec<EcdhShare>,
+    ) -> Result<EventId> {
+        let message = SigningMessage::SpOffer { binonces, sp_ecdh };
         self.send_signing_event(keys, &message, Some(request_id))
             .await
     }
@@ -551,6 +577,16 @@ fn process_signing_inner_event(
             WireEvent::Offer {
                 request_id,
                 binonces,
+                sp_ecdh: vec![],
+            }
+        }
+        SigningMessage::SpOffer { binonces, sp_ecdh } => {
+            let request_id = extract_e_tag(inner_event)
+                .ok_or_else(|| err("signing offer missing e-tag".into()))?;
+            WireEvent::Offer {
+                request_id,
+                binonces,
+                sp_ecdh,
             }
         }
         SigningMessage::Partial {
@@ -692,17 +728,30 @@ fn dispatch_signing_output(
     activity: &mut ActivityState,
 ) {
     for (i, event) in signing_events.into_iter().enumerate() {
-        if let SigningEvent::Request {
-            event_id,
-            sign_task: frostsnap_core::WireSignTask::BitcoinTransaction(template),
-            ..
-        } = &event
-        {
-            let txid = template.txid().to_string();
+        // A silent payment request is a template with holes, so its txid is only known once the
+        // round is confirmed and the template is completed.
+        let correlated = match &event {
+            SigningEvent::Request {
+                event_id,
+                sign_task: WireSignTask::BitcoinTransaction(template),
+                ..
+            } if !template.has_silent_payment_outputs() => Some((template.txid(), *event_id)),
+            SigningEvent::RoundConfirmed {
+                request_id,
+                sp:
+                    Some(SpSubset {
+                        completed_task: WireSignTask::BitcoinTransaction(template),
+                        ..
+                    }),
+                ..
+            } => Some((template.txid(), *request_id)),
+            _ => None,
+        };
+        if let Some((txid, event_id)) = correlated {
             activity
                 .signing_starts_by_txid
-                .entry(txid)
-                .or_insert(*event_id);
+                .entry(txid.to_string())
+                .or_insert(event_id);
         }
         sink.send(ChannelEvent::Signing {
             event,

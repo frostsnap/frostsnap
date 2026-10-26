@@ -5,9 +5,11 @@ import 'package:frostsnap/nostr_chat/chat_page.dart' show MessageStatus;
 import 'package:frostsnap/nostr_chat/nostr_profile.dart';
 import 'package:frostsnap/src/rust/api/nostr.dart';
 import 'package:frostsnap/src/rust/api/signing.dart';
+import 'package:frostsnap/src/rust/api/bitcoin.dart' show BitcoinNetwork;
 import 'package:frostsnap/theme.dart';
 import 'package:frostsnap/wallet.dart';
 import 'package:frostsnap/wallet_tx_details.dart';
+import 'package:frostsnap/src/rust/lib.dart' show WireSignTask;
 
 class SigningRequestState extends ChangeNotifier {
   final SigningEvent_Request request;
@@ -69,31 +71,93 @@ class SigningRequestState extends ChangeNotifier {
       DateTime.fromMillisecondsSinceEpoch(request.timestamp * 1000);
 }
 
-String signingDetailsText(SigningDetails details, {WalletContext? walletCtx}) =>
-    switch (details) {
-      SigningDetails_Message(:final message) => message,
-      SigningDetails_Nostr(:final content) => content,
-      SigningDetails_Transaction(:final transaction) => () {
-        if (walletCtx == null) return 'Bitcoin Transaction';
-        final recipients = transaction
-            .recipients()
-            .where((r) => !r.isMine)
-            .toList();
-        if (recipients.isEmpty) return 'Bitcoin Transaction';
-        final r = recipients.first;
-        final addr = r.address(network: walletCtx.network)?.toString() ?? '?';
-        return 'Send ${r.amount} sats to $addr';
-      }(),
-    };
+/// The recipients of a silent payment send as (address, sats) pairs, in output order.
+List<(String, int)> spRecipients({
+  required WireSignTask signTask,
+  WalletContext? walletCtx,
+}) {
+  final network = walletCtx?.network ?? BitcoinNetwork.bitcoin;
+  return [
+    for (final r in sendRecipients(signTask: signTask, network: network))
+      (r.address, r.amountSat),
+  ];
+}
+
+String signingDetailsText(
+  SigningDetails details, {
+  WalletContext? walletCtx,
+  WireSignTask? signTask,
+}) {
+  if (signTask != null && signTaskIsSilentPayment(signTask: signTask)) {
+    final net = walletCtx?.network ?? BitcoinNetwork.bitcoin;
+    final recips = sendRecipients(
+      signTask: signTask,
+      network: net,
+    ).map((r) => (r.address, r.amountSat)).toList();
+    if (recips.isNotEmpty) {
+      final addrs = recips.map((r) => r.$1).join(', ');
+      return 'Silent payment send to $addrs';
+    }
+    return 'Silent payment send';
+  }
+  return switch (details) {
+    SigningDetails_Message(:final message) => message,
+    SigningDetails_Nostr(:final content) => content,
+    SigningDetails_Transaction(:final transaction) => () {
+      if (walletCtx == null) return 'Bitcoin Transaction';
+      final recipients = transaction
+          .recipients()
+          .where((r) => !r.isMine)
+          .toList();
+      if (recipients.isEmpty) return 'Bitcoin Transaction';
+      final r = recipients.first;
+      final addr = r.address(network: walletCtx.network)?.toString() ?? '?';
+      return 'Send ${r.amount} sats to $addr';
+    }(),
+  };
+}
 
 Widget _buildSigningDetails(
   BuildContext context,
   ThemeData theme,
   SigningDetails details, {
   VoidCallback? onTap,
+  WireSignTask? signTask,
 }) {
+  final walletCtx = WalletContext.of(context);
+  final network = walletCtx?.network ?? BitcoinNetwork.bitcoin;
+  final checkCode = signTask != null
+      ? outputsCheckCode(signTask: signTask, network: network)
+      : null;
+
+  if (signTask != null && signTaskIsSilentPayment(signTask: signTask)) {
+    final recips = spRecipients(
+      signTask: signTask,
+      walletCtx: WalletContext.of(context),
+    );
+    return Container(
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          ListTile(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+            leading: const Icon(Icons.currency_bitcoin),
+            title: const Text('Silent payment send'),
+            onTap: onTap,
+          ),
+          CollapsibleChatRecipients(recipients: recips, checkCode: checkCode),
+        ],
+      ),
+    );
+  }
   if (details is SigningDetails_Transaction) {
-    final walletCtx = WalletContext.of(context);
     final tx = details.transaction;
     if (walletCtx != null) {
       final chainTipHeight = walletCtx.superWallet.height();
@@ -105,44 +169,101 @@ Widget _buildSigningDetails(
       final accentColor = txDetails.isSend
           ? Colors.redAccent.harmonizeWith(theme.colorScheme.primary)
           : Colors.green.harmonizeWith(theme.colorScheme.primary);
+      final recips = txDetails.isSend
+          ? tx
+                .recipients()
+                .where((r) => !r.isMine)
+                .map(
+                  (r) => (
+                    r.address(network: walletCtx.network)?.toString() ??
+                        '<unknown>',
+                    r.amount,
+                  ),
+                )
+                .toList()
+          : const <(String, int)>[];
+
       return Container(
         decoration: BoxDecoration(
           color: theme.colorScheme.surface.withValues(alpha: 0.5),
           borderRadius: BorderRadius.circular(8),
         ),
-        child: ListTile(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-          leading: Icon(
-            txDetails.isSend ? Icons.north_east : Icons.south_east,
-            color: accentColor,
-          ),
-          title: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(txDetails.isSend ? 'Send' : 'Receive'),
-              SatoshiText(
-                value: txDetails.netValue.abs(),
-                style: theme.textTheme.bodyLarge,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            ListTile(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
               ),
-            ],
-          ),
-          onTap:
-              onTap ??
-              () {
-                showBottomSheetOrDialog(
-                  context,
-                  title: const Text('Transaction Details'),
-                  builder: (_, scrollController) => walletCtx.wrap(
-                    Builder(
-                      builder: (ctx) => SingleChildScrollView(
-                        controller: scrollController,
-                        child: buildDetailsColumn(ctx, txDetails: txDetails),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+              leading: Icon(
+                txDetails.isSend ? Icons.north_east : Icons.south_east,
+                color: accentColor,
+              ),
+              title: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(txDetails.isSend ? 'Send' : 'Receive'),
+                  SatoshiText(
+                    value: txDetails.netValue.abs(),
+                    style: theme.textTheme.bodyLarge,
+                  ),
+                ],
+              ),
+              onTap:
+                  onTap ??
+                  () {
+                    showBottomSheetOrDialog(
+                      context,
+                      title: const Text('Transaction Details'),
+                      builder: (_, scrollController) => walletCtx.wrap(
+                        Builder(
+                          builder: (ctx) => SingleChildScrollView(
+                            controller: scrollController,
+                            child: buildDetailsColumn(
+                              ctx,
+                              txDetails: txDetails,
+                              checkCode: checkCode,
+                              signTask: signTask,
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+            ),
+            if (recips.isNotEmpty)
+              CollapsibleChatRecipients(
+                recipients: recips,
+                checkCode: checkCode,
+              )
+            else if (checkCode != null)
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 4,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Check code (compare with device)',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
                       ),
                     ),
-                  ),
-                );
-              },
+                    SelectableText(
+                      checkCode,
+                      style: monospaceTextStyle.copyWith(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 1.2,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          ],
         ),
       );
     }
@@ -172,6 +293,137 @@ Widget _buildSigningDetails(
       ],
     ),
   );
+}
+
+class CollapsibleChatRecipients extends StatefulWidget {
+  final List<(String, int)> recipients;
+  final String? checkCode;
+
+  const CollapsibleChatRecipients({
+    super.key,
+    required this.recipients,
+    this.checkCode,
+  });
+
+  @override
+  State<CollapsibleChatRecipients> createState() =>
+      _CollapsibleChatRecipientsState();
+}
+
+class _CollapsibleChatRecipientsState extends State<CollapsibleChatRecipients> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final count = widget.recipients.length;
+    final totalSats = widget.recipients.fold<int>(0, (sum, r) => sum + r.$2);
+
+    final checkCodeWidget = widget.checkCode != null
+        ? Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Check code (compare with device)',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                SelectableText(
+                  widget.checkCode!,
+                  style: monospaceTextStyle.copyWith(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 1.2,
+                  ),
+                ),
+              ],
+            ),
+          )
+        : null;
+
+    if (count <= 3) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (final (addr, sats) in widget.recipients)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('$sats sats', style: theme.textTheme.labelMedium),
+                  SelectableText(
+                    spacedHex(addr, groupSize: 4),
+                    style: monospaceTextStyle.copyWith(fontSize: 12),
+                  ),
+                ],
+              ),
+            ),
+          if (checkCodeWidget != null) checkCodeWidget,
+        ],
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        InkWell(
+          onTap: () => setState(() => _expanded = !_expanded),
+          borderRadius: BorderRadius.circular(8),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Row(
+                    children: [
+                      Text(
+                        '$count recipients, total ',
+                        style: theme.textTheme.labelMedium?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      SatoshiText(
+                        value: totalSats,
+                        style: theme.textTheme.labelMedium?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Icon(
+                  _expanded ? Icons.expand_less : Icons.expand_more,
+                  size: 20,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ],
+            ),
+          ),
+        ),
+        if (_expanded)
+          for (final (addr, sats) in widget.recipients)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('$sats sats', style: theme.textTheme.labelMedium),
+                  SelectableText(
+                    spacedHex(addr, groupSize: 4),
+                    style: monospaceTextStyle.copyWith(fontSize: 12),
+                  ),
+                ],
+              ),
+            ),
+        if (checkCodeWidget != null) checkCodeWidget,
+      ],
+    );
+  }
 }
 
 /// Common header row for all signing cards.
@@ -528,6 +780,7 @@ class SigningRequestCard extends StatelessWidget {
                   theme,
                   signingDetails(signTask: request.signTask),
                   onTap: onTap,
+                  signTask: request.signTask,
                 ),
                 if (request.message.isNotEmpty) ...[
                   const SizedBox(height: 6),

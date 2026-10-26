@@ -233,13 +233,15 @@ impl FfiCoordinator {
                                 if let Some(connected_device) = device_list.get_device(id) {
                                     // we only send some messages out if the device has up to date firmware
                                     if !connected_device.needs_firmware_upgrade() {
-                                        // coordinator_outbox.extend(
-                                        //     coordinator.maybe_request_nonce_replenishment(
-                                        //         &BTreeSet::from([id]),
-                                        //         N_NONCE_STREAMS,
-                                        //         &mut rand::thread_rng(),
-                                        //     ),
-                                        // );
+                                        // TODO: dev-only top-up so remote offers that never
+                                        // reach signing do not exhaust a device's nonces.
+                                        coordinator_outbox.extend(
+                                            coordinator.maybe_request_nonce_replenishment(
+                                                &BTreeSet::from([id]),
+                                                N_NONCE_STREAMS,
+                                                &mut rand::thread_rng(),
+                                            ),
+                                        );
                                     }
                                 }
                             }
@@ -1132,7 +1134,7 @@ impl FfiCoordinator {
         Ok(())
     }
 
-    fn block_for_to_user_message(
+    pub(crate) fn block_for_to_user_message(
         &self,
         devices: impl IntoIterator<Item = DeviceId>,
         f: impl FnMut(CoordinatorToUserMessage) -> bool + Send + 'static,

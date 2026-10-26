@@ -7,13 +7,15 @@ use frostsnap_core::coordinator::{
         RemoteSignSession, RemoteSignSessionId, RemoteSignStatus, RemoteSigningMutation,
     },
     restoration::{PendingConsolidation, RestorationMutation},
-    signing::{ParticipantSignatureShares, SigningMutation},
+    signing::{ParticipantSignatureShares, SigningMutation, SpEcdhSession},
     ActiveSignSession, CompleteKey, CoordAccessStructure, Mutation, SignSessionProgress, StartSign,
 };
 use frostsnap_core::device::KeyPurpose;
+use frostsnap_core::message::signing::SpEcdhSessionId;
 use frostsnap_core::message::HeldShare2;
 use frostsnap_core::message::{EncodedSignature, GroupSignReq};
 use frostsnap_core::nonce_stream::{CoordNonceStreamState, NonceStreamId, NonceStreamSegment};
+use frostsnap_core::silent_payments::EcdhShare;
 use frostsnap_core::tweak::AppTweak;
 use frostsnap_core::tweak::Xpub;
 use frostsnap_core::{
@@ -198,6 +200,14 @@ fn test_all_coordinator_mutations() {
     // Create SignatureShare - it's just a Scalar<Public, Zero>
     let signature_shares = vec![s!(15).public().mark_zero()];
 
+    let sp_point = g!(7 * G).normalize().non_zero().unwrap();
+    let ecdh_share = EcdhShare {
+        scan_key: sp_point,
+        share_index: s!(1).public(),
+        ecdh_share: g!(9 * G).normalize().non_zero().unwrap(),
+        proof: [16u8; 64],
+    };
+
     // Create EncodedSignature
     let encoded_sig = EncodedSignature([14u8; 64]);
 
@@ -344,6 +354,45 @@ fn test_all_coordinator_mutations() {
         Mutation::RemoteSigning(RemoteSigningMutation::CancelRemoteSignSession {
             id: RemoteSignSessionId::from_binonces(&[test_nonce]),
         }),
+        Mutation::RemoteSigning(RemoteSigningMutation::NewRemoteSpSignSession {
+            id: RemoteSignSessionId::from_binonces(&[test_nonce]),
+            device_id: DeviceId([6u8; 33]),
+            session: RemoteSignSession {
+                access_structure_ref: AccessStructureRef {
+                    key_id: KeyId([3u8; 32]),
+                    access_structure_id: AccessStructureId([4u8; 32]),
+                },
+                sign_task: WireSignTask::Test {
+                    message: "sp".to_string(),
+                },
+                binonces: vec![test_nonce],
+                nonce_state: CoordNonceStreamState {
+                    stream_id: NonceStreamId([7u8; 16]),
+                    index: 3,
+                    remaining: 10,
+                },
+                status: RemoteSignStatus::Open,
+            },
+            sp_ecdh: vec![ecdh_share],
+        }),
+        // Silent payment ECDH mutations
+        Mutation::Signing(SigningMutation::NewSpEcdhSession(SpEcdhSession {
+            session_id: SpEcdhSessionId([17u8; 32]),
+            access_structure_ref,
+            sign_task: WireSignTask::Test {
+                message: "sp".into(),
+            },
+            requested: BTreeSet::from([DeviceId([5u8; 33])]),
+            shares: BTreeMap::new(),
+        })),
+        Mutation::Signing(SigningMutation::GotSpEcdhShares {
+            session_id: SpEcdhSessionId([17u8; 32]),
+            device_id: DeviceId([5u8; 33]),
+            shares: vec![ecdh_share],
+        }),
+        Mutation::Signing(SigningMutation::CloseSpEcdhSession {
+            session_id: SpEcdhSessionId([17u8; 32]),
+        }),
     ];
 
     // Test each mutation
@@ -458,6 +507,30 @@ fn test_all_coordinator_mutations() {
                 assert_bincode_hex_eq!(
                     mutation,
                     "01050c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c"
+                );
+            }
+            Mutation::RemoteSigning(RemoteSigningMutation::NewRemoteSpSignSession { .. }) => {
+                assert_bincode_hex_eq!(
+                    mutation,
+                    "0304a15626c386bac025b773664e8a7584d47a746a997aeabd960806a8111865cce9060606060606060606060606060606060606060606060606060606060606060606030303030303030303030303030303030303030303030303030303030303030304040404040404040404040404040404040404040404040404040404040404040002737001036d2b085e9e382ed10b69fc311a03f8641ccfff21574de0927513a49d9a688a00026a245bf6dc698504c89a20cfded60853152b695336c28063b61c65cbd269e6b407070707070707070707070707070707030a0001025cbdf0646e5db4eaa398f365f2ea7a0e3d419b7e0330e39ce92bddedcac4f9bc000000000000000000000000000000000000000000000000000000000000000103acd484e2f0c7f65309ad178a9f559abde09796974c57e714c35f110dfc27ccbe10101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010"
+                );
+            }
+            Mutation::Signing(SigningMutation::NewSpEcdhSession(_)) => {
+                assert_bincode_hex_eq!(
+                    mutation,
+                    "0106111111111111111111111111111111111111111111111111111111111111111103030303030303030303030303030303030303030303030303030303030303030404040404040404040404040404040404040404040404040404040404040404000273700105050505050505050505050505050505050505050505050505050505050505050500"
+                );
+            }
+            Mutation::Signing(SigningMutation::GotSpEcdhShares { .. }) => {
+                assert_bincode_hex_eq!(
+                    mutation,
+                    "0107111111111111111111111111111111111111111111111111111111111111111105050505050505050505050505050505050505050505050505050505050505050501025cbdf0646e5db4eaa398f365f2ea7a0e3d419b7e0330e39ce92bddedcac4f9bc000000000000000000000000000000000000000000000000000000000000000103acd484e2f0c7f65309ad178a9f559abde09796974c57e714c35f110dfc27ccbe10101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010"
+                );
+            }
+            Mutation::Signing(SigningMutation::CloseSpEcdhSession { .. }) => {
+                assert_bincode_hex_eq!(
+                    mutation,
+                    "01081111111111111111111111111111111111111111111111111111111111111111"
                 );
             }
             Mutation::Restoration(RestorationMutation::NewRestoration2 { .. }) => {

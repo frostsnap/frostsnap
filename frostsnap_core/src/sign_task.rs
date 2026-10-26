@@ -38,11 +38,30 @@ pub struct CheckedSignTask {
     pub inner: SignTask,
 }
 
+/// Whether a silent payment send must already have every output script derived.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SpScripts {
+    Required,
+    Pending,
+}
+
 impl WireSignTask {
     pub fn check(
         self,
         master_appkey: MasterAppkey,
         purpose: KeyPurpose,
+    ) -> Result<CheckedSignTask, SignTaskError> {
+        self.check_with(master_appkey, purpose, SpScripts::Required)
+    }
+
+    /// Like [`Self::check`]. With `SpScripts::Pending`, silent payment outputs may still lack their
+    /// scripts. That is only for the ECDH step, which is what fills them in: the transaction is not
+    /// signed there.
+    pub fn check_with(
+        self,
+        master_appkey: MasterAppkey,
+        purpose: KeyPurpose,
+        sp_scripts: SpScripts,
     ) -> Result<CheckedSignTask, SignTaskError> {
         let variant = match self {
             WireSignTask::Test { message } => {
@@ -82,6 +101,28 @@ impl WireSignTask {
 
                 if tx_template.fee().is_none() {
                     return Err(SignTaskError::InvalidBitcoinTransaction);
+                }
+
+                if tx_template.has_silent_payment_outputs() {
+                    if tx_template.sp_ecdh_inputs(master_appkey).is_none() {
+                        return Err(SignTaskError::SilentPaymentInputs);
+                    }
+
+                    // The address is what the signer shows, so it must be the address of the keys
+                    // the output is paid to.
+                    for sp in tx_template.silent_payment_outputs() {
+                        if sp.recipient.address(network).as_deref() != Some(sp.address.as_str()) {
+                            return Err(SignTaskError::SilentPaymentAddressMismatch);
+                        }
+                    }
+
+                    if sp_scripts == SpScripts::Required
+                        && tx_template
+                            .silent_payment_outputs()
+                            .any(|sp| sp.script.is_none())
+                    {
+                        return Err(SignTaskError::SilentPaymentScriptMissing);
+                    }
                 }
 
                 SignTask::BitcoinTransaction {
@@ -175,6 +216,9 @@ pub enum SignTaskError {
     WrongPurpose,
     InvalidBitcoinTransaction,
     NothingToSign,
+    SilentPaymentInputs,
+    SilentPaymentAddressMismatch,
+    SilentPaymentScriptMissing,
 }
 
 impl core::fmt::Display for SignTaskError {
@@ -189,6 +233,17 @@ impl core::fmt::Display for SignTaskError {
             }
             SignTaskError::NothingToSign => {
                 write!(f, "Transaction has no inputs that belong to this wallet")
+            }
+            SignTaskError::SilentPaymentInputs => write!(
+                f,
+                "A silent payment send can only spend this wallet's own inputs in its default account"
+            ),
+            SignTaskError::SilentPaymentAddressMismatch => write!(
+                f,
+                "A silent payment address does not belong to the keys it is paid to"
+            ),
+            SignTaskError::SilentPaymentScriptMissing => {
+                write!(f, "A silent payment output has no script yet")
             }
             SignTaskError::WrongPurpose => {
                 write!(

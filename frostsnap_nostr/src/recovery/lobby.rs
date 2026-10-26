@@ -347,7 +347,7 @@ impl RecoveryLobbyClient {
                                 upsert_participant(
                                     &mut state,
                                     leader,
-                                    creation.created_at.as_u64(),
+                                    creation.created_at.as_secs(),
                                 );
 
                                 // Drain buffered events into the fold.
@@ -766,11 +766,11 @@ fn process_event(
 
     match msg {
         RecoveryLobbyMessage::Presence => {
-            upsert_participant(state, author, inner_event.created_at.as_u64());
+            upsert_participant(state, author, inner_event.created_at.as_secs());
             sink.send(snapshot(state, members));
         }
         RecoveryLobbyMessage::Share(post) => {
-            upsert_participant(state, author, inner_event.created_at.as_u64());
+            upsert_participant(state, author, inner_event.created_at.as_secs());
             let observed = ObservedShare {
                 event_id,
                 author,

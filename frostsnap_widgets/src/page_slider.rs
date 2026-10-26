@@ -193,7 +193,8 @@ where
         self.stack.handle_touch(point, current_time, is_release)
     }
 
-    fn handle_vertical_drag(&mut self, _prev_y: Option<u32>, new_y: u32, is_release: bool) {
+    fn handle_vertical_drag(&mut self, prev_y: Option<u32>, new_y: u32, is_release: bool) {
+        self.stack.handle_vertical_drag(prev_y, new_y, is_release);
         if is_release {
             if let Some(drag_start) = self.drag_start.take() {
                 // Determine swipe direction based on drag distance
@@ -208,7 +209,7 @@ where
         } else {
             // Start tracking drag
             if self.drag_start.is_none() {
-                self.drag_start = Some(new_y);
+                self.drag_start = Some(prev_y.unwrap_or(new_y));
             }
         }
     }
@@ -243,13 +244,19 @@ where
                 let current_widget = self.stack.children.0.current_widget_mut();
                 callback(current_widget);
             }
+        }
 
-            // Fade in the swipe chevron if present
+        // Runs every frame once the page has settled, so the swipe chevron follows `can_go_next`
+        // as it changes, such as when a recipient list reaches its end.
+        if self.page_ready_triggered {
             if let Some(ref mut chevron) = &mut self.stack.children.1 {
                 let current_widget = self.stack.children.0.current_widget_mut();
+                let can_go_next = self.list.can_go_next(self.current_index, current_widget);
 
-                if self.list.can_go_next(self.current_index, current_widget) {
+                if can_go_next && chevron.is_faded_out() {
                     chevron.start_fade_in(400);
+                } else if !can_go_next && chevron.is_visible() {
+                    chevron.start_fade(400);
                 }
             }
         }

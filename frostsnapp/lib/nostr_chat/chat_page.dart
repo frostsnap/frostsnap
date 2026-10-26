@@ -21,15 +21,18 @@ import 'package:frostsnap/src/rust/api/signing.dart'
         UnsignedTx,
         SigningDetails_Message,
         SigningDetails_Transaction,
+        SpSignOffer,
         wireSignTaskBitcoinTransaction,
         wireSignTaskTest;
-import 'package:frostsnap/src/rust/lib.dart' show WireSignTask;
+import 'package:frostsnap/src/rust/lib.dart'
+    show ParticipantBinonces, WireSignTask;
 import 'package:frostsnap/wallet_send.dart';
 import 'package:frostsnap/src/rust/api/super_wallet.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/global.dart';
 import 'package:frostsnap/theme.dart';
 import 'package:frostsnap/wallet.dart';
+import 'package:frostsnap/secure_key_provider.dart';
 import 'package:frostsnap/wallet_receive.dart';
 import 'package:frostsnap/wallet_tx_details.dart';
 import 'package:dynamic_color/dynamic_color.dart';
@@ -714,6 +717,7 @@ class _ChatPageBodyState extends State<ChatPageBody> {
               requestId: event.requestId,
               signTask: event.signTask,
               binonces: binonces,
+              sp: event.sp,
             );
             final subsetEventIds = event.subset.map((e) => e.eventId).toList();
             state.setRoundConfirmed(sealed, subsetEventIds);
@@ -762,7 +766,11 @@ class _ChatPageBodyState extends State<ChatPageBody> {
               timestamp,
               message.isNotEmpty
                   ? message
-                  : signingDetailsText(signingDetails(signTask: signTask)),
+                  : signingDetailsText(
+                      signingDetails(signTask: signTask),
+                      walletCtx: WalletContext.of(context),
+                      signTask: signTask,
+                    ),
             ),
           SigningEvent_Offer(:final author, :final timestamp) => (
             author,
@@ -1045,6 +1053,7 @@ class _ChatPageBodyState extends State<ChatPageBody> {
             details: signingDetailsText(
               signingDetails(signTask: requestState.request.signTask),
               walletCtx: WalletContext.of(context),
+              signTask: requestState.request.signTask,
             ),
             onShowSignature: () => _completeAndShowSignature(requestState),
           ),
@@ -1270,7 +1279,11 @@ class _ChatPageBodyState extends State<ChatPageBody> {
         );
       }
     }
-    final text = signingDetailsText(details);
+    final text = signingDetailsText(
+      details,
+      walletCtx: WalletContext.of(context),
+      signTask: state.request.signTask,
+    );
     final preview = text.length > 30 ? '${text.substring(0, 30)}...' : text;
     return Text(
       preview,
@@ -1405,7 +1418,11 @@ class _ChatPageBodyState extends State<ChatPageBody> {
   void _openSigningPage(SigningRequestState state) async {
     final walletCtx = WalletContext.of(context);
     if (walletCtx == null) return;
-    final details = signingDetails(signTask: state.request.signTask);
+    WireSignTask task = state.request.signTask;
+    if (state.sealedData != null) {
+      task = state.sealedData!.signTask();
+    }
+    final details = signingDetails(signTask: task);
     if (details is! SigningDetails_Transaction) return;
     final tx = details.transaction;
     final txDetails = TxDetailsModel(
@@ -1481,16 +1498,15 @@ class _ChatPageBodyState extends State<ChatPageBody> {
     if (sealed == null) return;
     final walletCtx = WalletContext.of(context);
     if (walletCtx == null) return;
-    final details = signingDetails(signTask: state.request.signTask);
+    final details = signingDetails(signTask: sealed.signTask());
     if (details is! SigningDetails_Transaction) return;
 
     try {
       final signatures = sealed.combineSignatures(
         allShares: state.partials.values.map((p) => p.signatureShares).toList(),
       );
-      final signedTx = await details.transaction.withSignatures(
-        signatures: signatures,
-      );
+      final tx = details.transaction;
+      final signedTx = await tx.withSignatures(signatures: signatures);
       if (!mounted) return;
       await walletCtx.superWallet.broadcastTx(
         masterAppkey: walletCtx.masterAppkey,
@@ -1789,7 +1805,8 @@ class _ChatPageBodyState extends State<ChatPageBody> {
         await _handle!.sendMessage(content: content, replyTo: replyToId);
       }
     } catch (e) {
-      if (mounted) {
+      final es = e.toString();
+      if (mounted && !es.contains('cancelled by user')) {
         showErrorSnackbar(context, 'Failed to send: $e');
       }
     }
@@ -1803,17 +1820,82 @@ class _ChatPageBodyState extends State<ChatPageBody> {
     WireSignTask signTask,
   ) async {
     final reservationId = RemoteSignSessionId(field0: requestId.field0);
-    final allBinonces = <ParticipantBinonces>[];
-    for (final device in devices) {
-      final binonces = await coord.reserveNonces(
-        id: reservationId,
-        accessStructureRef: asRef,
-        signTask: signTask,
-        deviceId: device,
-      );
-      allBinonces.add(binonces);
+    if (signTaskIsSilentPayment(signTask: signTask)) {
+      final spOffers = <SpSignOffer>[];
+      for (final device in devices) {
+        final name = coord.getDeviceName(id: device) ?? 'device';
+        final offer = await _reserveSpWithDialog(
+          deviceName: name,
+          action: () async {
+            final ek = await SecureKeyProvider.getEncryptionKey();
+            return coord.prepareSpOffer(
+              id: reservationId,
+              accessStructureRef: asRef,
+              signTask: signTask,
+              deviceId: device,
+              encryptionKey: ek,
+            );
+          },
+        );
+        spOffers.add(offer);
+      }
+      await _handle!.sendSpSignOffer(requestId: requestId, offers: spOffers);
+    } else {
+      final allBinonces = <ParticipantBinonces>[];
+      for (final device in devices) {
+        final binonces = await coord.reserveNonces(
+          id: reservationId,
+          accessStructureRef: asRef,
+          signTask: signTask,
+          deviceId: device,
+        );
+        allBinonces.add(binonces);
+      }
+      await _handle!.sendSignOffer(requestId: requestId, binonces: allBinonces);
     }
-    await _handle!.sendSignOffer(requestId: requestId, binonces: allBinonces);
+  }
+
+  Future<T> _reserveSpWithDialog<T>({
+    required String deviceName,
+    required Future<T> Function() action,
+  }) async {
+    final ctx = context;
+    bool didCancel = false;
+    showDialog<void>(
+      context: ctx,
+      barrierDismissible: false,
+      builder: (dctx) => AlertDialog(
+        title: Text('Approve on $deviceName'),
+        content: const Text(
+          'Check each silent payment address and hold to contribute shares. This is not signing yet.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              didCancel = true;
+              coord.cancelProtocol();
+              if (Navigator.canPop(dctx)) Navigator.pop(dctx);
+            },
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+    try {
+      final result = await action();
+      if (!didCancel && mounted && Navigator.canPop(ctx)) {
+        Navigator.pop(ctx);
+      }
+      return result;
+    } catch (e) {
+      if (!didCancel && mounted && Navigator.canPop(ctx)) {
+        Navigator.pop(ctx);
+      }
+      if (didCancel) {
+        throw 'cancelled by user';
+      }
+      rethrow;
+    }
   }
 
   Future<void> _retryMessage(ChatMessage message) async {
@@ -1846,7 +1928,11 @@ class _ChatPageBodyState extends State<ChatPageBody> {
   void _copySigningText(SigningEvent event) {
     final text = switch (event) {
       SigningEvent_Request(:final signTask, :final message) =>
-        '${signingDetailsText(signingDetails(signTask: signTask))}${message.isNotEmpty ? '\n$message' : ''}',
+        '${signingDetailsText(
+          signingDetails(signTask: signTask),
+          walletCtx: WalletContext.of(context),
+          signTask: signTask,
+        )}${message.isNotEmpty ? '\n$message' : ''}',
       SigningEvent_Offer(:final binonces, :final author) =>
         '${_displayName(author)} offered to sign with ${offerShareIndices(binonces: binonces).map((i) => 'key #$i').join(', ')}',
       SigningEvent_Partial(:final author) => '${_displayName(author)} signed',
@@ -1875,7 +1961,11 @@ class _ChatPageBodyState extends State<ChatPageBody> {
     };
     final preview = switch (event) {
       SigningEvent_Request(:final signTask) =>
-        'Signing request: ${signingDetailsText(signingDetails(signTask: signTask))}',
+        'Signing request: ${signingDetailsText(
+          signingDetails(signTask: signTask),
+          walletCtx: WalletContext.of(context),
+          signTask: signTask,
+        )}',
       SigningEvent_Offer(:final binonces) =>
         'Sign offer — ${offerShareIndices(binonces: binonces).map((i) => 'key #$i').join(', ')}',
       SigningEvent_Partial() => 'Signed',
@@ -2792,7 +2882,7 @@ class _DateDivider extends StatelessWidget {
   }
 }
 
-enum _OfferSignPhase { offer, waiting, signing }
+enum _OfferSignPhase { offer, approvingOnDevice, waiting, signing }
 
 enum _NoDevicesReason {
   /// None of the user's devices are in this wallet's signing group at all.
@@ -2840,6 +2930,7 @@ class _OfferSignSheetState extends State<_OfferSignSheet> {
   _OfferSignPhase _phase = _OfferSignPhase.offer;
   late Set<DeviceId> _selectedDevices;
   String? _error;
+  final Map<DeviceId, String> _approvalStatus = {};
 
   /// All devices in this access structure, regardless of state. Used by
   /// both the eligible list and the empty-state reasoner.
@@ -2896,13 +2987,96 @@ class _OfferSignSheetState extends State<_OfferSignSheet> {
     final willMeetThreshold =
         nSelectedByOthers + _selectedDevices.length >= widget.threshold;
 
+    final signTask = widget.state.request.signTask;
+    final isSp = signTaskIsSilentPayment(signTask: signTask);
+    final reservationId = RemoteSignSessionId(
+      field0: widget.state.request.eventId.field0,
+    );
+
+    if (isSp) {
+      setState(() {
+        _phase = _OfferSignPhase.approvingOnDevice;
+        _approvalStatus.clear();
+        for (final d in _selectedDevices) {
+          _approvalStatus[d] = 'Waiting for approval';
+        }
+        _error = null;
+      });
+
+      final spOffers = <SpSignOffer>[];
+      Object? lastError;
+      final toTry = List.of(_selectedDevices);
+      for (final device in toTry) {
+        try {
+          final ek = await SecureKeyProvider.getEncryptionKey();
+          final offer = await coord.prepareSpOffer(
+            id: reservationId,
+            accessStructureRef: widget.accessStructureRef,
+            signTask: signTask,
+            deviceId: device,
+            encryptionKey: ek,
+          );
+          if (mounted) {
+            setState(() => _approvalStatus[device] = 'Approved');
+          }
+          spOffers.add(offer);
+        } catch (e) {
+          lastError = e;
+          if (mounted) {
+            setState(() => _approvalStatus[device] = 'Not approved');
+          }
+          _selectedDevices.remove(device);
+        }
+      }
+
+      if (spOffers.isEmpty) {
+        if (mounted) {
+          setState(() {
+            _error = 'No device provided its silent payment shares: $lastError';
+            _phase = _OfferSignPhase.offer;
+          });
+        }
+        return;
+      }
+
+      setState(() => _phase = _OfferSignPhase.waiting);
+
+      try {
+        await widget.handle.sendSpSignOffer(
+          requestId: widget.state.request.eventId,
+          offers: spOffers,
+        );
+
+        if (!willMeetThreshold) {
+          if (mounted) Navigator.pop(context);
+          return;
+        }
+
+        for (var i = 0; i < 50; i++) {
+          await Future.delayed(const Duration(milliseconds: 100));
+          if (widget.state.sealedData != null) break;
+        }
+
+        if (widget.state.sealedData == null) {
+          if (mounted) Navigator.pop(context);
+          return;
+        }
+
+        await _startSigning();
+      } catch (e) {
+        if (mounted) {
+          setState(() {
+            _error = '$e';
+            _phase = _OfferSignPhase.offer;
+          });
+        }
+      }
+      return;
+    }
+
     setState(() => _phase = _OfferSignPhase.waiting);
 
     try {
-      final reservationId = RemoteSignSessionId(
-        field0: widget.state.request.eventId.field0,
-      );
-      final signTask = widget.state.request.signTask;
       final allBinonces = <ParticipantBinonces>[];
       for (final device in _selectedDevices) {
         final binonces = await coord.reserveNonces(
@@ -2950,7 +3124,11 @@ class _OfferSignSheetState extends State<_OfferSignSheet> {
     if (walletCtx == null || fsCtx == null) return;
 
     try {
-      final details = signingDetails(signTask: widget.state.request.signTask);
+      WireSignTask task = widget.state.request.signTask;
+      if (widget.state.sealedData != null) {
+        task = widget.state.sealedData!.signTask();
+      }
+      final details = signingDetails(signTask: task);
       if (details is! SigningDetails_Transaction) return;
       final tx = details.transaction;
       final txDetails = TxDetailsModel(
@@ -3013,16 +3191,74 @@ class _OfferSignSheetState extends State<_OfferSignSheet> {
       );
     }
 
-    final details = signingDetails(signTask: widget.state.request.signTask);
-    final walletCtx = WalletContext.of(context);
+    if (_phase == _OfferSignPhase.approvingOnDevice) {
+      return Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text('Each device:', style: theme.textTheme.labelMedium),
+            const SizedBox(height: 8),
+            for (final device in _selectedDevices)
+              ListTile(
+                dense: true,
+                title: Text(
+                  coord.getDeviceName(id: device) ?? 'device',
+                  style: monospaceTextStyle,
+                ),
+                trailing: Text(
+                  _approvalStatus[device] ?? 'Waiting for approval',
+                  style: theme.textTheme.bodyMedium,
+                ),
+              ),
+            if (_error != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  _error!,
+                  style: TextStyle(color: theme.colorScheme.error),
+                ),
+              ),
+          ],
+        ),
+      );
+    }
 
+    final signTask = widget.state.request.signTask;
+    final details = signingDetails(signTask: signTask);
+    final walletCtx = WalletContext.of(context);
+    final isSp = signTaskIsSilentPayment(signTask: signTask);
+    final spRecips = isSp
+        ? spRecipients(signTask: signTask, walletCtx: walletCtx)
+        : const <(String, int)>[];
+    final checkCode = walletCtx != null
+        ? outputsCheckCode(signTask: signTask, network: walletCtx.network)
+        : null;
     return SingleChildScrollView(
       controller: widget.scrollController,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          if (details is SigningDetails_Transaction && walletCtx != null) ...[
+          if (isSp && spRecips.isNotEmpty) ...[
+            CollapsibleChatRecipients(
+              recipients: spRecips,
+              checkCode: checkCode,
+            ),
+            if (details is SigningDetails_Transaction &&
+                details.transaction.fee() != null)
+              ListTile(title: Text('Fee ${details.transaction.fee()} sats')),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Text(
+                'Each device will ask you to approve sharing a silent payment key before signing.',
+                style: theme.textTheme.bodySmall,
+              ),
+            ),
+            const Divider(),
+          ] else if (details is SigningDetails_Transaction &&
+              walletCtx != null) ...[
             buildDetailsColumn(
               context,
               txDetails: TxDetailsModel(
@@ -3031,6 +3267,8 @@ class _OfferSignSheetState extends State<_OfferSignSheet> {
                 now: DateTime.now(),
               ),
               showConfirmations: false,
+              checkCode: checkCode,
+              signTask: signTask,
             ),
             const Divider(),
           ] else if (details is SigningDetails_Message) ...[

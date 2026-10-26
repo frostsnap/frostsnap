@@ -1,0 +1,25 @@
+[package]
+name = "device_simulator"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+frostsnap_core = { workspace = true, features = ["std"] }
+frostsnap_comms = { workspace = true }
+frostsnap_coordinator = { workspace = true }
+frostsnap_widgets = { workspace = true, features = ["std"] }
+frost_backup = { workspace = true }
+embedded-graphics = { workspace = true }
+embedded-graphics-simulator = "0.8.0"
+bincode = { workspace = true }
+bitcoin = { workspace = true }
+schnorr_fun = { workspace = true }
+rand = { workspace = true }
+libc = "0.2"
+parking_lot = "0.12"
+clap = { version = "4.5", features = ["derive"] }
+
+[dev-dependencies]
+frostsnap_coordinator = { workspace = true }
+serialport = "4"
+tempfile = "3"
