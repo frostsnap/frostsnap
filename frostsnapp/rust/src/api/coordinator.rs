@@ -25,6 +25,7 @@ pub enum WalletKeyStatus {
     Ok,
 }
 
+use super::device_list::CaseColor;
 use crate::{coordinator::FfiCoordinator, frb_generated::StreamSink};
 
 pub use super::backup_run::{BackupDevice, BackupRun};
@@ -291,5 +292,21 @@ impl Coordinator {
     #[frb(sync)]
     pub fn get_device_name(&self, id: DeviceId) -> Option<String> {
         self.0.get_device_name(id)
+    }
+
+    /// The case colour on file for a device. Show it only while that device is disconnected: the
+    /// hardware announcing a connected id hasn't proven anything until its
+    /// [`ConnectedDevice`](super::device_list::ConnectedDevice)'s `genuine` status says so.
+    #[frb(sync)]
+    pub fn get_device_case_color(&self, id: DeviceId) -> Option<CaseColor> {
+        self.0.get_device_case_color(id)
+    }
+
+    /// Whether this build can run the genuine check at all — false when no genuine
+    /// certificate key was compiled in, in which case every device stays `Unverified`
+    /// and the UI shouldn't imply a verdict it never attempted.
+    #[frb(sync)]
+    pub fn genuine_check_enabled(&self) -> bool {
+        self.0.genuine_check_enabled()
     }
 }

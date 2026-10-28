@@ -38,10 +38,15 @@ pub const DISPLAY_REFRESH_MS: u64 = 25;
 /// Log macro for debug logging
 #[macro_export]
 macro_rules! log {
-    ($($arg:tt)*) => {
+    ($($arg:tt)*) => {{
         #[cfg(feature = "debug_log")]
-        frostsnap_widgets::debug::log(alloc::format!($($arg)*))
-    };
+        frostsnap_widgets::debug::log(alloc::format!($($arg)*));
+        // Type-checks the arguments without `debug_log`, so they count as used either way.
+        #[cfg(not(feature = "debug_log"))]
+        if false {
+            let _ = alloc::format!($($arg)*);
+        }
+    }};
 }
 
 /// Log and immediately redraw UI so log is visible
@@ -54,8 +59,8 @@ macro_rules! log_and_redraw {
     }};
 }
 
+pub mod crypto;
 pub mod device_config;
-pub mod ds;
 pub mod efuse;
 pub mod erase;
 pub mod esp32_run;
