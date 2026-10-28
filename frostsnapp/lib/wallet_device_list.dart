@@ -44,12 +44,16 @@ class _SliverDeviceListState extends State<SliverDeviceList> {
   }
 
   void _deviceListOnData(DeviceListUpdate update) {
+    // The subject replays its last update, and the seed snapshot may already hold some or all of
+    // an update's changes.
+    if (update.state.stateId <= _state.stateId) return;
+    final held = _state.stateId;
     final onDeviceListChange = widget.onDeviceListChange;
     if (onDeviceListChange != null) onDeviceListChange(update.state);
 
     final listState = _listKey.currentState;
     if (listState != null) {
-      for (final change in update.changes) {
+      for (final change in update.changes.where((c) => c.stateId > held)) {
         switch (change.kind) {
           case DeviceListChangeKind.added:
             listState.insertItem(change.index);
