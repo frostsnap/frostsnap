@@ -19,6 +19,8 @@ pub struct DeviceListChange {
     pub kind: DeviceListChangeKind,
     pub index: u32,
     pub device: ConnectedDevice,
+    /// The `state_id` of the state this change produces.
+    pub state_id: u32,
 }
 
 #[derive(Clone, Debug)]
@@ -30,6 +32,8 @@ pub struct DeviceListUpdate {
 #[derive(Clone, Debug)]
 pub struct DeviceListState {
     pub devices: Vec<ConnectedDevice>,
+    /// Advances with every change. A holder of a state with this id already has every change whose
+    /// `state_id` is not greater than it.
     pub state_id: u32,
 }
 

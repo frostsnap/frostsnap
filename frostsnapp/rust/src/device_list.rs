@@ -55,19 +55,10 @@ impl DeviceList {
 
     pub fn take_update(&mut self) -> api::DeviceListUpdate {
         let changes = core::mem::take(&mut self.outbox);
-        let update = api::DeviceListUpdate {
+        api::DeviceListUpdate {
             changes,
-            state: api::DeviceListState {
-                devices: self.devices(),
-                state_id: self.state_counter,
-            },
-        };
-
-        if !update.changes.is_empty() {
-            self.state_counter += 1;
+            state: self.state(),
         }
-
-        update
     }
 
     /// Read-only snapshot of the current state. Unlike `take_update`, this
@@ -104,11 +95,8 @@ impl DeviceList {
                 if let Some(index) = self.index_of(id) {
                     let connected = self.connected.get_mut(&id).expect("invariant");
                     connected.name = Some(name);
-                    self.outbox.push(api::DeviceListChange {
-                        kind: api::DeviceListChangeKind::Named,
-                        index: index as u32,
-                        device: connected.clone(),
-                    });
+                    let device = connected.clone();
+                    self.record(api::DeviceListChangeKind::Named, index, device);
                 }
             }
             DeviceChange::NeedsName { id } => {
@@ -131,11 +119,8 @@ impl DeviceList {
                         } else {
                             // The device had no name and now it's been named
                             connected.name = Some(name);
-                            self.outbox.push(api::DeviceListChange {
-                                kind: api::DeviceListChangeKind::Named,
-                                index: index as u32,
-                                device: connected.clone(),
-                            });
+                            let device = connected.clone();
+                            self.record(api::DeviceListChangeKind::Named, index, device);
                         }
                     }
                     None => {
@@ -148,11 +133,11 @@ impl DeviceList {
                 let device = self.connected.remove(&id);
                 if let Some(index) = self.index_of(id) {
                     self.devices.remove(index);
-                    self.outbox.push(api::DeviceListChange {
-                        kind: api::DeviceListChangeKind::Removed,
-                        index: index as u32,
-                        device: device.expect("invariant"),
-                    })
+                    self.record(
+                        api::DeviceListChangeKind::Removed,
+                        index,
+                        device.expect("invariant"),
+                    )
                 }
             }
             DeviceChange::AppMessage(_) => { /* not relevant */ }
@@ -171,14 +156,30 @@ impl DeviceList {
             .map(|(i, _)| i)
     }
 
+    fn record(
+        &mut self,
+        kind: api::DeviceListChangeKind,
+        index: usize,
+        device: api::ConnectedDevice,
+    ) {
+        self.state_counter += 1;
+        self.outbox.push(api::DeviceListChange {
+            kind,
+            index: index as u32,
+            device,
+            state_id: self.state_counter,
+        });
+    }
+
     fn append(&mut self, id: DeviceId) {
         if self.index_of(id).is_none() {
             self.devices.push(id);
-            self.outbox.push(api::DeviceListChange {
-                kind: api::DeviceListChangeKind::Added,
-                index: (self.devices.len() - 1) as u32,
-                device: self.get_device(id).expect("invariant"),
-            });
+            let device = self.get_device(id).expect("invariant");
+            self.record(
+                api::DeviceListChangeKind::Added,
+                self.devices.len() - 1,
+                device,
+            );
         }
     }
 
@@ -189,12 +190,73 @@ impl DeviceList {
             if connected_device.recovery_mode != recovery_mode {
                 connected_device.recovery_mode = recovery_mode;
                 let connected_device = connected_device.clone();
-                self.outbox.push(api::DeviceListChange {
-                    kind: api::DeviceListChangeKind::RecoveryMode,
-                    index: self.index_of(id).expect("invariant") as u32,
-                    device: connected_device,
-                })
+                let index = self.index_of(id).expect("invariant");
+                self.record(
+                    api::DeviceListChangeKind::RecoveryMode,
+                    index,
+                    connected_device,
+                )
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use frostsnap_coordinator::frostsnap_comms::Sha256Digest;
+
+    fn device(seed: u8) -> DeviceId {
+        let mut bytes = [0u8; 33];
+        bytes[0] = seed;
+        DeviceId(bytes)
+    }
+
+    fn plug_in(list: &mut DeviceList, id: DeviceId) {
+        list.consume_manager_event(DeviceChange::Connected {
+            id,
+            firmware_digest: Sha256Digest([0; 32]),
+            latest_firmware_digest: None,
+        });
+        list.consume_manager_event(DeviceChange::NeedsName { id });
+    }
+
+    #[test]
+    fn update_and_snapshot_of_the_same_devices_share_a_state_id() {
+        let mut list = DeviceList::default();
+        plug_in(&mut list, device(1));
+        plug_in(&mut list, device(2));
+        let added = list.take_update();
+        assert_eq!(added.state.state_id, list.state().state_id);
+
+        list.consume_manager_event(DeviceChange::Disconnected { id: device(2) });
+        let removed = list.take_update();
+        assert_eq!(removed.state.state_id, list.state().state_id);
+        assert!(removed.state.state_id > added.state.state_id);
+
+        let empty = list.take_update();
+        assert!(empty.changes.is_empty());
+        assert_eq!(empty.state.state_id, removed.state.state_id);
+    }
+
+    #[test]
+    fn a_snapshot_inside_an_update_holds_exactly_the_changes_up_to_its_id() {
+        let mut list = DeviceList::default();
+        plug_in(&mut list, device(1));
+        let snapshot = list.state();
+        plug_in(&mut list, device(2));
+        let update = list.take_update();
+
+        let held: Vec<_> = update
+            .changes
+            .iter()
+            .filter(|change| change.state_id <= snapshot.state_id)
+            .map(|change| change.device.id)
+            .collect();
+        assert_eq!(held, vec![device(1)]);
+        assert_eq!(
+            update.changes.last().map(|change| change.state_id),
+            Some(update.state.state_id)
+        );
     }
 }
