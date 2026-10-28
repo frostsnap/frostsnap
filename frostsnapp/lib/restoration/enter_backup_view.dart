@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:frostsnap/device_action_fullscreen_dialog.dart';
+import 'package:frostsnap/device_identity_art.dart';
 import 'package:frostsnap/restoration/recovery_flow.dart';
 import 'package:frostsnap/restoration/target_device.dart';
 import 'package:frostsnap/src/rust/api/recovery.dart';
@@ -53,9 +54,12 @@ class _EnterBackupViewState extends State<EnterBackupView> {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(
-                  'On your device${widget.deviceName != null ? " ${widget.deviceName}" : ""}',
-                  style: theme.textTheme.titleMedium,
+                DeviceNameWithArt.forId(
+                  widget.targetDevice.id,
+                  name: Text(
+                    'On your device${widget.deviceName != null ? " ${widget.deviceName}" : ""}',
+                    style: theme.textTheme.titleMedium,
+                  ),
                 ),
                 SizedBox(height: 12),
                 Text.rich(

@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:dotted_border/dotted_border.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -159,8 +160,8 @@ void main() {
 
   group('CaseAccent', () {
     testWidgets(
-      'a connected device, listed or not, shows a colour only once it '
-      'proves itself, and the colour on file only once it leaves',
+      'a device pictured beside its name, connected and listed or not, shows a colour only '
+      'once it proves itself, and the colour on file only once it leaves',
       (tester) async {
         final unverified = _device(genuine: _unverified);
         final genuine = _device(genuine: _genuine(const CaseColor.blue()));
@@ -181,15 +182,12 @@ void main() {
             stateId: 0,
           ),
         );
-        Color? shown() => tester.widget<Icon>(find.byIcon(Icons.key)).color;
+        CaseColor? shown() => tester
+            .widget<DeviceNameWithArt>(find.byType(DeviceNameWithArt))
+            .caseColor;
 
         await tester.pumpWidget(
-          _app(
-            CaseAccent(
-              id: unverified.id,
-              builder: (context, accent) => Icon(Icons.key, color: accent),
-            ),
-          ),
+          _app(DeviceNameWithArt.forId(unverified.id, name: Text('Office'))),
         );
         expect(shown(), isNull);
 
@@ -200,16 +198,73 @@ void main() {
         devices.add(connected(listed: [unverified]));
         await tester.pump();
         expect(shown(), isNull);
+        expect(find.byType(DottedBorder), findsOneWidget);
 
         devices.add(connected(listed: [genuine]));
         await tester.pump();
-        expect(shown(), const CaseColor.blue().swatch?.color);
+        expect(shown(), const CaseColor.blue());
 
         devices.add(connected());
         await tester.pump();
-        expect(shown(), const CaseColor.red().swatch?.color);
+        expect(shown(), const CaseColor.red());
       },
     );
+  });
+
+  group('DeviceNameWithArt', () {
+    testWidgets('reads as the name alone and carries no genuine badge', (
+      tester,
+    ) async {
+      final semantics = tester.ensureSemantics();
+      await tester.pumpWidget(
+        _app(
+          const DeviceNameWithArt(
+            caseColor: CaseColor.orange(),
+            name: Text('Kitchen'),
+          ),
+        ),
+      );
+      expect(find.byType(Icon), findsNothing);
+      expect(find.byType(InkWell), findsNothing);
+      expect(find.byType(DottedBorder), findsNothing);
+      expect(find.bySemanticsLabel(RegExp('case')), findsNothing);
+      expect(find.bySemanticsLabel('Kitchen'), findsOneWidget);
+      semantics.dispose();
+    });
+
+    for (final (what, caseColor) in [
+      ('no colour on file', null),
+      ('a colour this build has no name for', const CaseColor.other(9)),
+    ]) {
+      testWidgets('$what draws the dashed outline', (tester) async {
+        await tester.pumpWidget(
+          _app(DeviceNameWithArt(caseColor: caseColor, name: Text('Office'))),
+        );
+        expect(find.byType(DottedBorder), findsOneWidget);
+      });
+    }
+
+    testWidgets('a long name ellipsizes beside the art at phone width', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _app(
+          const DeviceNameWithArt(
+            caseColor: CaseColor.blue(),
+            name: Text(
+              'WWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW',
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          width: 200,
+        ),
+      );
+      expect(tester.takeException(), isNull);
+      final row = tester.getRect(find.byType(DeviceNameWithArt));
+      final name = tester.getRect(find.byType(Text));
+      expect(name.right, lessThanOrEqualTo(row.right));
+      expect(name.left, greaterThan(row.left + DeviceNameWithArt.artSize));
+    });
   });
 
   group('AddDeviceRow', () {

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:frostsnap/device_identity_art.dart';
 import 'package:frostsnap/device_setup.dart';
 import 'package:frostsnap/restoration/recovery_flow.dart';
 import 'package:frostsnap/dialog_content_with_actions.dart';
@@ -57,19 +58,22 @@ class _EnterDeviceNameViewState extends State<EnterDeviceNameView> {
             style: theme.textTheme.bodyMedium,
           ),
           const SizedBox(height: 16),
-          DeviceNameField(
-            id: widget.targetDevice.id,
-            onCanSubmitChanged: (canSubmit) {
-              setState(() {
-                _canSubmit = canSubmit;
-              });
-            },
-            onNameChanged: (name) {
-              setState(() {
-                _currentName = name;
-              });
-            },
-            onNamed: (name) => widget.onDeviceName?.call(name),
+          DeviceNameWithArt.forId(
+            widget.targetDevice.id,
+            name: DeviceNameField(
+              id: widget.targetDevice.id,
+              onCanSubmitChanged: (canSubmit) {
+                setState(() {
+                  _canSubmit = canSubmit;
+                });
+              },
+              onNameChanged: (name) {
+                setState(() {
+                  _currentName = name;
+                });
+              },
+              onNamed: (name) => widget.onDeviceName?.call(name),
+            ),
           ),
         ],
       ),

@@ -9,6 +9,7 @@ import 'package:frostsnap/animated_check.dart';
 import 'package:frostsnap/contexts.dart';
 import 'package:frostsnap/copy_feedback.dart';
 import 'package:frostsnap/device_action_fullscreen_dialog.dart';
+import 'package:frostsnap/device_identity_art.dart';
 import 'package:frostsnap/global.dart';
 import 'package:frostsnap/id_ext.dart';
 import 'package:frostsnap/wallet_key_mismatch.dart';
@@ -702,7 +703,7 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
           }
           return ListTile(
             enabled: isConnected,
-            title: Text(label),
+            title: DeviceNameWithArt.forId(deviceId, name: Text(label)),
             trailing: trailing,
           );
         }),

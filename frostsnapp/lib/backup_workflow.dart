@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:frostsnap/contexts.dart';
 import 'package:frostsnap/device_action_backup.dart';
 import 'package:frostsnap/device_action_backup_check.dart';
+import 'package:frostsnap/device_identity_art.dart';
 import 'package:frostsnap/global.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/backup_run.dart';
@@ -27,6 +28,7 @@ class BackupConfirmationDialogContent extends StatelessWidget {
   final int threshold;
   final int totalDevices;
   final String walletName;
+  final DeviceId deviceId;
   final String deviceName;
   final VoidCallback onCancel;
   final VoidCallback onConfirm;
@@ -36,6 +38,7 @@ class BackupConfirmationDialogContent extends StatelessWidget {
     required this.threshold,
     required this.totalDevices,
     required this.walletName,
+    required this.deviceId,
     required this.deviceName,
     required this.onCancel,
     required this.onConfirm,
@@ -157,13 +160,16 @@ class BackupConfirmationDialogContent extends StatelessWidget {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.center,
                           children: [
-                            Text(
-                              deviceName,
-                              style: theme.textTheme.titleLarge?.copyWith(
-                                color: theme.colorScheme.primary,
-                                fontWeight: FontWeight.bold,
+                            DeviceNameWithArt.forId(
+                              deviceId,
+                              name: Text(
+                                deviceName,
+                                style: theme.textTheme.titleLarge?.copyWith(
+                                  color: theme.colorScheme.primary,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                                textAlign: TextAlign.center,
                               ),
-                              textAlign: TextAlign.center,
                             ),
                             const SizedBox(height: 2),
                             Container(
@@ -353,6 +359,7 @@ class _BackupChecklistState extends State<BackupChecklist> {
           threshold: accessStructure.threshold(),
           totalDevices: accessStructure.devices().length,
           walletName: walletName,
+          deviceId: deviceId,
           deviceName: deviceName,
           onCancel: () => Navigator.pop(context, false),
           onConfirm: () => Navigator.pop(context, true),
@@ -500,18 +507,22 @@ class _BackupChecklistState extends State<BackupChecklist> {
                             ),
                           ),
                           Flexible(
-                            child: Text(
-                              devices
-                                  .map(
-                                    (d) =>
-                                        coord.getDeviceName(id: d.deviceId) ??
-                                        '',
-                                  )
-                                  .join(', '),
-                              style: theme.textTheme.bodyMedium?.copyWith(
-                                fontWeight: FontWeight.w500,
-                              ),
-                              softWrap: true,
+                            child: Wrap(
+                              spacing: 12,
+                              runSpacing: 4,
+                              children: [
+                                for (final d in devices)
+                                  DeviceNameWithArt.forId(
+                                    d.deviceId,
+                                    name: Text(
+                                      coord.getDeviceName(id: d.deviceId) ?? '',
+                                      style: theme.textTheme.bodyMedium
+                                          ?.copyWith(
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                    ),
+                                  ),
+                              ],
                             ),
                           ),
                         ],
@@ -578,13 +589,16 @@ class _BackupChecklistState extends State<BackupChecklist> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                DeviceWithShareIndex(
-                                  shareIndex: deviceInfo.shareIndex,
-                                  deviceName:
-                                      coord.getDeviceName(
-                                        id: deviceInfo.deviceId,
-                                      ) ??
-                                      '',
+                                DeviceNameWithArt.forId(
+                                  deviceInfo.deviceId,
+                                  name: DeviceWithShareIndex(
+                                    shareIndex: deviceInfo.shareIndex,
+                                    deviceName:
+                                        coord.getDeviceName(
+                                          id: deviceInfo.deviceId,
+                                        ) ??
+                                        '',
+                                  ),
                                 ),
                                 Text(
                                   'Connected',

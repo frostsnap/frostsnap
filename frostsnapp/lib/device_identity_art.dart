@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:frostsnap/device_colors.dart';
 import 'package:frostsnap/genuine_badge.dart';
+import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/device_list.dart';
 import 'package:frostsnap/theme.dart';
 
@@ -130,44 +131,47 @@ class DeviceIdentityArt extends StatelessWidget {
 }
 
 class _Tile extends StatelessWidget {
-  const _Tile({required this.swatch});
+  const _Tile({required this.swatch, this.dimension = _tileSize});
 
   /// `null` when the case colour is unknown.
   final CaseSwatch? swatch;
+  final double dimension;
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final swatch = this.swatch;
+    final scale = dimension / _tileSize;
+    final radius = _tileRadius * scale;
     final silhouette = SvgPicture.asset(
       swatch == null ? _unknownSilhouette : _silhouette,
       colorMapper: swatch == null ? null : _CaseColorMapper(swatch),
-      width: 36,
-      height: 43,
+      width: 36 * scale,
+      height: 43 * scale,
       excludeFromSemantics: true,
     );
 
     if (swatch == null) {
       return DottedBorder(
         borderType: BorderType.RRect,
-        radius: _tileRadius,
+        radius: radius,
         color: cs.outline,
         strokeWidth: 1,
         dashPattern: const [4, 3],
         padding: EdgeInsets.zero,
         child: SizedBox.square(
-          dimension: _tileSize,
+          dimension: dimension,
           child: Center(child: silhouette),
         ),
       );
     }
 
     return Container(
-      width: _tileSize,
-      height: _tileSize,
+      width: dimension,
+      height: dimension,
       alignment: Alignment.center,
       decoration: BoxDecoration(
-        borderRadius: const BorderRadius.all(_tileRadius),
+        borderRadius: BorderRadius.all(radius),
         border: Border.all(color: cs.onSurface.withValues(alpha: 0.08)),
         gradient: RadialGradient(
           center: const Alignment(0, -0.3),
@@ -195,6 +199,46 @@ class _Badge extends StatelessWidget {
     shadows: const [
       Shadow(color: Color(0x73000000), blurRadius: 2),
       Shadow(color: Color(0x40000000), blurRadius: 3),
+    ],
+  );
+}
+
+/// A device's [name] beside a small picture of its case, for anywhere the app names a device.
+///
+/// Identity only: unlike [DeviceIdentityArt] it never carries the genuine-check result, so it must
+/// not grow a badge or anything that reads as one.
+class DeviceNameWithArt extends StatelessWidget {
+  const DeviceNameWithArt({
+    super.key,
+    required this.caseColor,
+    required this.name,
+  });
+
+  /// The colour [CaseAccent] gives device [id].
+  static Widget forId(DeviceId id, {Key? key, required Widget name}) =>
+      CaseAccent(
+        key: key,
+        id: id,
+        builder: (context, caseColor) =>
+            DeviceNameWithArt(caseColor: caseColor, name: name),
+      );
+
+  /// `null`, or a colour this build has no name for, draws the unknown-colour outline.
+  final CaseColor? caseColor;
+  final Widget name;
+
+  /// Icon-sized, since it takes the place of the generic key icon device rows used to show.
+  static const artSize = 24.0;
+
+  @override
+  Widget build(BuildContext context) => Row(
+    mainAxisSize: MainAxisSize.min,
+    spacing: 10,
+    children: [
+      ExcludeSemantics(
+        child: _Tile(swatch: caseColor?.swatch, dimension: artSize),
+      ),
+      Flexible(child: name),
     ],
   );
 }

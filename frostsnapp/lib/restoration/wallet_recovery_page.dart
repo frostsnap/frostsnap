@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:frostsnap/contexts.dart';
 import 'package:frostsnap/global.dart';
 import 'package:frostsnap/maybe_fullscreen_dialog.dart';
-import 'package:frostsnap/device_colors.dart';
+import 'package:frostsnap/device_identity_art.dart';
 import 'package:frostsnap/restoration.dart';
 import 'package:frostsnap/secure_key_provider.dart';
 import 'package:frostsnap/snackbar.dart';
@@ -304,10 +304,6 @@ class WalletRecoveryPage extends StatelessWidget {
           margin: EdgeInsets.zero,
           child: ListTile(
             contentPadding: EdgeInsets.symmetric(horizontal: 16),
-            leading: CaseAccent(
-              id: share.deviceId,
-              builder: (context, accent) => Icon(Icons.key, color: accent),
-            ),
             trailing: deleteButton,
             subtitle: !showCompatibility
                 ? null
@@ -361,9 +357,12 @@ class WalletRecoveryPage extends StatelessWidget {
                   ),
                 ),
                 Flexible(
-                  child: Text(
-                    deviceName,
-                    style: monospaceTextStyle.copyWith(fontSize: 18),
+                  child: DeviceNameWithArt.forId(
+                    share.deviceId,
+                    name: Text(
+                      deviceName,
+                      style: monospaceTextStyle.copyWith(fontSize: 18),
+                    ),
                   ),
                 ),
               ],

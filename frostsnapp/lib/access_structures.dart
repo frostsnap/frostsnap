@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:frostsnap/backup_workflow.dart';
-import 'package:frostsnap/device_colors.dart';
+import 'package:frostsnap/device_identity_art.dart';
 import 'package:frostsnap/global.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/coordinator.dart';
@@ -98,20 +98,17 @@ class _DeviceChip extends StatelessWidget {
     );
     final theme = Theme.of(context);
 
-    return CaseAccent(
-      id: deviceId,
-      builder: (context, accent) => Chip(
-        label: DeviceWithShareIndex(
+    return Chip(
+      label: DeviceNameWithArt.forId(
+        deviceId,
+        name: DeviceWithShareIndex(
           shareIndex: shareIndex,
           deviceName: deviceName,
         ),
-        backgroundColor: theme.colorScheme.surfaceContainer,
-        side: accent == null
-            ? null
-            : BorderSide(color: accent.withValues(alpha: 0.5)),
-        deleteIcon: const Icon(Icons.close, size: 18),
-        onDeleted: () => _showDeleteDialog(context, deviceName),
       ),
+      backgroundColor: theme.colorScheme.surfaceContainer,
+      deleteIcon: const Icon(Icons.close, size: 18),
+      onDeleted: () => _showDeleteDialog(context, deviceName),
     );
   }
 
@@ -120,10 +117,18 @@ class _DeviceChip extends StatelessWidget {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Remove Device?'),
-        content: Text(
-          'Remove "$deviceName" from this access structure?\n\n'
-          'The device will keep its key share, but you will have to add it '
-          'back to the wallet to use it again.',
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          spacing: 16,
+          children: [
+            DeviceNameWithArt.forId(deviceId, name: Text(deviceName)),
+            Text(
+              'Remove "$deviceName" from this access structure?\n\n'
+              'The device will keep its key share, but you will have to add it '
+              'back to the wallet to use it again.',
+            ),
+          ],
         ),
         actions: [
           TextButton(

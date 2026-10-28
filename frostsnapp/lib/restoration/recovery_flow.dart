@@ -518,6 +518,7 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
           _ => null,
         };
         child = PhysicalBackupSuccessView(
+          deviceId: flowState.targetDevice.id,
           deviceName: deviceName,
           onClose: () {
             Navigator.pop(context, restorationId);

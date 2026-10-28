@@ -13,7 +13,7 @@ import 'package:frostsnap/src/rust/api/signing.dart';
 import 'package:frostsnap/src/rust/api/super_wallet.dart';
 import 'package:frostsnap/src/rust/api/transaction.dart';
 import 'package:frostsnap/theme.dart';
-import 'package:frostsnap/device_colors.dart';
+import 'package:frostsnap/device_identity_art.dart';
 import 'package:frostsnap/genuine_badge.dart';
 import 'package:frostsnap/wallet.dart';
 import 'package:frostsnap/wallet_send_controllers.dart';
@@ -519,17 +519,16 @@ class _WalletSendPageState extends State<WalletSendPage> {
                           ? state.selectSigner(dId: id)
                           : state.deselectSigner(dId: id)
                     : null,
-                secondary: CaseAccent(
-                  id: id,
-                  builder: (context, accent) => Icon(Icons.key, color: accent),
-                ),
                 title: Row(
                   spacing: 8,
                   children: [
                     Expanded(
-                      child: Text(
-                        name ?? '<unknown>',
-                        overflow: TextOverflow.ellipsis,
+                      child: DeviceNameWithArt.forId(
+                        id,
+                        name: Text(
+                          name ?? '<unknown>',
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
                     ),
                     GenuineBadge.forDeviceId(id),
