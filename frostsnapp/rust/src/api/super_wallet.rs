@@ -3,6 +3,7 @@ use super::coordinator::Coordinator;
 use super::transaction::BuildTxState;
 use super::{bitcoin::Transaction, signing::UnsignedTx};
 use crate::api::broadcast::Broadcast;
+use crate::chain_api::ChainApi;
 use crate::frb_generated::{RustAutoOpaque, StreamSink};
 use crate::sink_wrap::SinkWrap;
 use anyhow::{Context as _, Result};
@@ -10,6 +11,7 @@ use bitcoin::Transaction as RTransaction;
 use bitcoin::Txid;
 pub use bitcoin::{Address, Network as BitcoinNetwork, Psbt};
 use flutter_rust_bridge::frb;
+use frostsnap_coordinator::bitcoin::backend::ChainBackend;
 pub use frostsnap_coordinator::bitcoin::wallet::AddressInfo;
 pub use frostsnap_coordinator::bitcoin::wallet::PsbtValidationError;
 pub use frostsnap_coordinator::bitcoin::{chain_sync::ChainClient, wallet::CoordSuperWallet};
@@ -47,7 +49,7 @@ impl PsbtValidationError {
 pub struct SuperWallet {
     pub(crate) inner: Arc<Mutex<CoordSuperWallet>>,
     pub(crate) wallet_streams: Arc<Mutex<WalletStreams>>,
-    chain_sync: ChainClient,
+    chain_sync: ChainApi,
     pub network: BitcoinNetwork,
 }
 
@@ -56,7 +58,7 @@ impl SuperWallet {
     pub(crate) fn load_or_new(
         app_dir: impl AsRef<Path>,
         network: BitcoinNetwork,
-        chain_sync: ChainClient,
+        chain_sync: ChainApi,
     ) -> Result<SuperWallet> {
         let db_file = network.bdk_file(app_dir);
         let db = rusqlite::Connection::open(&db_file).context(format!(
@@ -202,9 +204,12 @@ impl SuperWallet {
     /// Returns feerate in sat/vB.
     #[frb(type_64bit_int)]
     pub fn estimate_fee(&self, target_blocks: Vec<u64>) -> Result<Vec<(u64, u64)>> {
-        let fee_rate_map = self
-            .chain_sync
-            .estimate_fee(target_blocks.into_iter().map(|v| v as usize))?;
+        let fee_rate_map = self.chain_sync.estimate_fee(
+            &target_blocks
+                .into_iter()
+                .map(|v| v as usize)
+                .collect::<Vec<_>>(),
+        )?;
         Ok(fee_rate_map
             .into_iter()
             .map(|(target, fee_rate)| (target as u64, fee_rate.to_sat_per_vb_ceil()))

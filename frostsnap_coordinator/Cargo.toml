@@ -39,3 +39,6 @@ genuine-check = []
 
 [dev-dependencies]
 tempfile = "3.8"
+
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+bip157 = "0.6.3"
