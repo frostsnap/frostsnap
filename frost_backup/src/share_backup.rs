@@ -1,5 +1,6 @@
 use crate::bip39_words::{word_to_index, BIP39_WORDS, BITS_PER_WORD};
 use crate::error::ShareBackupError;
+use crate::schnorr_fun_shim::{self, SecretShare, ShareImage, ShareIndex};
 use alloc::{string::ToString, vec::Vec};
 use core::{
     fmt,
@@ -7,7 +8,7 @@ use core::{
     str::FromStr,
 };
 use schnorr_fun::{
-    frost::{Fingerprint, SecretShare, ShareImage, ShareIndex, SharedKey},
+    frost::{Fingerprint, SharedKey},
     fun::{hash::HashAdd, poly, prelude::*},
 };
 use sha2::{Digest, Sha256};
@@ -41,6 +42,10 @@ const TOTAL_BITS: usize = SCALAR_BITS + POLY_CHECKSUM_BITS as usize + WORDS_CHEC
 /// image* which can allow you to produce the `SharedKey`. See *polynomial
 /// checksum* in the README.
 ///
+/// A `#0` backup is the secret itself: the point at index `0`. It lies on
+/// every polynomial of its key, so its polynomial checksum commits only to
+/// itself and is verified when it is decoded.
+///
 /// [`SharedKey`]: schnorr_fun::frost::SharedKey
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "bincode", derive(bincode::Encode, bincode::Decode))]
@@ -61,9 +66,10 @@ impl ShareBackup {
 
     /// Creates a ShareBackup with polynomial checksum for FROST compatibility
     pub fn from_secret_share_and_shared_key(
-        secret_share: SecretShare,
+        secret_share: impl Into<SecretShare>,
         shared_key: &SharedKey,
     ) -> Self {
+        let secret_share = secret_share.into();
         let poly_checksum =
             Self::compute_poly_checksum(secret_share.index, secret_share.share, shared_key);
         ShareBackup {
@@ -121,16 +127,18 @@ impl ShareBackup {
             return Err(ShareBackupError::WordsChecksumFailed);
         }
 
-        // Convert u32 to ShareIndex (Scalar<Public, NonZero>)
-        let index_scalar = Scalar::<Secret, Zero>::from(index)
-            .non_zero()
-            .ok_or(ShareBackupError::InvalidShareIndex)?
-            .public();
-
         let share = SecretShare {
-            index: index_scalar,
+            index: Scalar::from(index),
             share: scalar,
         };
+
+        // A `#0`'s poly checksum depends only on the backup, so it can be checked now
+        if share.index.is_zero() {
+            let own_key = SharedKey::from_poly(vec![share.share_image().image]);
+            if Self::compute_poly_checksum(share.index, share.share, &own_key) != poly_checksum {
+                return Err(ShareBackupError::PolyChecksumFailed);
+            }
+        }
 
         Ok(ShareBackup {
             share,
@@ -194,10 +202,18 @@ impl ShareBackup {
     }
 
     /// Extracts the secret share after validating polynomial checksum
+    ///
+    /// A share that doesn't lie on `shared_key` also fails with
+    /// [`ShareBackupError::PolyChecksumFailed`].
     pub fn extract_secret<Z: ZeroChoice>(
         self,
         shared_key: &SharedKey<Normal, Z>,
     ) -> Result<SecretShare, ShareBackupError> {
+        // A `#0`'s checksum doesn't bind it to `shared_key`
+        if schnorr_fun_shim::share_image(shared_key, self.index()) != self.share_image() {
+            return Err(ShareBackupError::PolyChecksumFailed);
+        }
+
         // Verify polynomial checksum against the shared key
         let poly_checksum = Self::compute_poly_checksum(self.index(), self.share.share, shared_key);
         if poly_checksum != self.poly_checksum {
@@ -217,10 +233,18 @@ impl ShareBackup {
         scalar: Scalar<Secret, Zero>,
         shared_key: &SharedKey<Normal, Z>,
     ) -> u16 {
+        // A `#0` lies on every polynomial of its key, so it commits only to itself
+        let own_image;
+        let poly = if index.is_zero() {
+            own_image = [g!(scalar * G).normalize()];
+            &own_image[..]
+        } else {
+            shared_key.point_polynomial()
+        };
         let hash = Sha256::new()
             .add(index.to_bytes())
             .add(scalar)
-            .add(shared_key.point_polynomial())
+            .add(poly)
             .finalize();
         u16::from_be_bytes([hash[0], hash[1]]) >> (16 - POLY_CHECKSUM_BITS)
     }
@@ -235,6 +259,8 @@ impl ShareBackup {
     }
 
     /// Generates threshold shares with fingerprint grinding for FROST
+    ///
+    /// A threshold-1 key's backups are all `#0`, the secret itself.
     pub fn generate_shares<R: rand_core::RngCore>(
         secret: Scalar<Secret, NonZero>,
         threshold: usize,
@@ -249,12 +275,11 @@ impl ShareBackup {
         let tweak_poly = shared_key.grind_fingerprint::<sha2::Sha256>(fingerprint);
         let poly = poly::scalar::add(poly, tweak_poly).collect::<Vec<_>>();
 
-        // Generate shares by evaluating the polynomial at indices 1..=n_shares
+        // Generate shares by evaluating the polynomial at indices 1..=n_shares,
+        // or all at 0 for a threshold-1 key
         let shares: Vec<ShareBackup> = (1u32..=n_shares as _)
             .map(|i| {
-                let index = Scalar::<Public, _>::from(i)
-                    .non_zero()
-                    .expect("starts at 1");
+                let index = ShareIndex::from(if threshold == 1 { 0 } else { i });
                 let share_scalar = poly::scalar::eval(&poly, index);
                 let poly_checksum = Self::compute_poly_checksum(index, share_scalar, &shared_key);
 
