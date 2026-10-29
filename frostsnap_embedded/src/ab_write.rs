@@ -87,7 +87,7 @@ struct Slot<'a, S> {
 }
 
 impl<S: NorFlash> Slot<'_, S> {
-    // TODO: justify no erorr type here
+    // TODO: justify no error type here
     pub fn read<T: bincode::Decode<()>>(&self) -> Option<SlotValue<T>> {
         let value = bincode::decode_from_reader::<SlotValue<T>, _, _>(
             self.flash.bincode_reader(),
