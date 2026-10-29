@@ -672,7 +672,7 @@ impl CoordSuperWallet {
     }
 }
 #[cfg(test)]
-mod test {
+pub(crate) mod test {
     use super::*;
     use crate::bitcoin::chain_sync::{ChainClient, ConnectionHandler, ElectrumConfig};
     use crate::bitcoin::wallet::CoordSuperWallet;
@@ -697,7 +697,9 @@ mod test {
 
     /// The handler owns the receiving ends of the client's channels, so it must outlive every
     /// `ChainClient` call or `monitor_keychain`'s send panics.
-    fn chain_client(db: &Arc<Mutex<rusqlite::Connection>>) -> (ChainClient, ConnectionHandler) {
+    pub(crate) fn chain_client(
+        db: &Arc<Mutex<rusqlite::Connection>>,
+    ) -> (ChainClient, ConnectionHandler) {
         let trusted = {
             let mut conn = db.lock().unwrap();
             Persisted::new(&mut *conn, NETWORK).unwrap()

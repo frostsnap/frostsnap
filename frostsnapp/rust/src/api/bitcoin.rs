@@ -14,6 +14,8 @@ use frostsnap_coordinator::bitcoin::wallet::Transaction as WalletTransaction;
 pub use frostsnap_coordinator::frostsnap_core::{self, MasterAppkey};
 use frostsnap_core::bitcoin_transaction::{ScopedTo, TransactionTemplate};
 use frostsnap_core::message::EncodedSignature;
+pub use frostsnap_core::tweak::BitcoinBip32Path;
+use frostsnap_core::tweak::Keychain;
 
 use std::collections::HashMap;
 use std::ops::Deref;
@@ -158,9 +160,10 @@ pub struct Transaction {
     pub confirmation_time: Option<ConfirmationTime>,
     /// Confirmations computed by the wallet model for this transaction snapshot.
     pub confirmations: u32,
+    pub first_seen: Option<u64>,
     pub last_seen: Option<u64>,
     pub prevouts: HashMap<bitcoin::OutPoint, bitcoin::TxOut>,
-    pub is_mine: HashMap<bitcoin::ScriptBuf, u32>,
+    pub is_mine: HashMap<bitcoin::ScriptBuf, BitcoinBip32Path>,
     /// Fee over the size this transaction has *signed*, in sats/vB.
     ///
     /// Supplied by whichever constructor knows it rather than derived here, because the two
@@ -175,11 +178,7 @@ impl Transaction {
     pub(crate) fn from_template(tx_temp: &TransactionTemplate<ScopedTo>) -> Self {
         let raw_tx = tx_temp.to_rust_bitcoin_tx();
         let txid = tx_temp.txid();
-        let is_mine = tx_temp
-            .our_spks()
-            .into_iter()
-            .map(|(spk, path)| (spk, path.index.to_u32()))
-            .collect::<HashMap<_, _>>();
+        let is_mine = tx_temp.our_spks().into_iter().collect::<HashMap<_, _>>();
         let prevouts = tx_temp
             .inputs()
             .iter()
@@ -190,6 +189,7 @@ impl Transaction {
             txid: txid.to_string(),
             confirmation_time: None,
             confirmations: 0,
+            first_seen: None,
             last_seen: None,
             prevouts,
             is_mine,
@@ -241,9 +241,9 @@ impl Transaction {
         Some(inputs.saturating_sub(tx.output.iter().map(|o| o.value.to_sat()).sum()))
     }
 
-    /// Computes the total value of inputs whose previous output script pubkey is in `filter`.
+    /// Computes the total value of inputs whose previous output script pubkey passes `filter`.
     /// The result is `None` if any input is missing a previous output.
-    fn sum_inputs(&self, filter: &HashMap<bitcoin::ScriptBuf, u32>) -> Option<u64> {
+    fn sum_inputs(&self, filter: impl Fn(&bitcoin::Script) -> bool) -> Option<u64> {
         let prevouts = self
             .inner
             .input
@@ -253,18 +253,18 @@ impl Transaction {
         Some(
             prevouts
                 .into_iter()
-                .filter(|prevout| filter.contains_key(prevout.script_pubkey.as_script()))
+                .filter(|prevout| filter(&prevout.script_pubkey))
                 .map(|prevout| prevout.value.to_sat())
                 .sum(),
         )
     }
 
-    /// Computes the total value of outputs whose script pubkey is in `filter`.
-    fn sum_outputs(&self, filter: &HashMap<bitcoin::ScriptBuf, u32>) -> u64 {
+    /// Computes the total value of outputs whose script pubkey passes `filter`.
+    fn sum_outputs(&self, filter: impl Fn(&bitcoin::Script) -> bool) -> u64 {
         self.inner
             .output
             .iter()
-            .filter(|txout| filter.contains_key(txout.script_pubkey.as_script()))
+            .filter(|txout| filter(&txout.script_pubkey))
             .map(|txout| txout.value.to_sat())
             .sum()
     }
@@ -274,15 +274,13 @@ impl Transaction {
     /// Returns `None` if any input is missing a previous output.
     #[frb(sync, type_64bit_int)]
     pub fn sum_inputs_spending_spk(&self, spk: &bitcoin::ScriptBuf) -> Option<u64> {
-        let filter = HashMap::from([(spk.as_script().to_owned(), 0)]);
-        self.sum_inputs(&filter)
+        self.sum_inputs(|s| s == spk.as_script())
     }
 
     /// Computes the total value of outputs that send to the given script pubkey.
     #[frb(sync, type_64bit_int)]
     pub fn sum_outputs_to_spk(&self, spk: &bitcoin::ScriptBuf) -> u64 {
-        let filter = HashMap::from([(spk.as_script().to_owned(), 0)]);
-        self.sum_outputs(&filter)
+        self.sum_outputs(|s| s == spk.as_script())
     }
 
     /// Computes the net change in our owned balance: owned outputs minus owned inputs.
@@ -291,11 +289,11 @@ impl Transaction {
     #[frb(sync, type_64bit_int)]
     pub fn balance_delta(&self) -> Option<i64> {
         let owned_inputs_sum: i64 = self
-            .sum_inputs(&self.is_mine)?
+            .sum_inputs(|s| self.is_mine(s))?
             .try_into()
             .expect("net spent value must convert to i64");
         let owned_outputs_sum: i64 = self
-            .sum_outputs(&self.is_mine)
+            .sum_outputs(|s| self.is_mine(s))
             .try_into()
             .expect("net created value must convert to i64");
         Some(owned_outputs_sum.saturating_sub(owned_inputs_sum))
@@ -313,7 +311,14 @@ impl Transaction {
         self.confirmation_time
             .as_ref()
             .map(|t| t.time)
+            .or(self.first_seen)
+            // Rows persisted before bdk tracked `first_seen` have none, and a `None` here reads
+            // as "never broadcast".
             .or(self.last_seen)
+    }
+
+    fn is_mine(&self, spk: &bitcoin::Script) -> bool {
+        self.is_mine.contains_key(spk)
     }
 
     #[frb(sync)]
@@ -323,13 +328,15 @@ impl Transaction {
             .iter()
             .zip(0_u32..)
             .map(|(txout, vout)| {
-                let derivation_index = self.is_mine.get(&txout.script_pubkey).copied();
+                let owner = self.is_mine.get(&txout.script_pubkey);
                 TxOutInfo {
                     vout,
                     amount: txout.value.to_sat(),
                     script_pubkey: txout.script_pubkey.clone(),
-                    is_mine: derivation_index.is_some(),
-                    derivation_index,
+                    is_mine: owner.is_some(),
+                    derivation_index: owner
+                        .filter(|path| path.account_keychain.keychain == Keychain::External)
+                        .map(|path| path.index.to_u32()),
                 }
             })
             .collect()
@@ -343,6 +350,7 @@ pub struct TxOutInfo {
     pub amount: u64,
     pub script_pubkey: bitcoin::ScriptBuf,
     pub is_mine: bool,
+    /// The receive index; `None` for change, which the user never handed out.
     pub derivation_index: Option<u32>,
 }
 
@@ -378,14 +386,13 @@ impl From<Vec<WalletTransaction>> for TxState {
         let mut untrusted_pending_balance = 0_i64;
 
         for tx in &txs {
-            let filter = &tx.is_mine;
             let net_spent: i64 = tx
-                .sum_inputs(filter)
+                .sum_inputs(|s| tx.is_mine(s))
                 .unwrap_or(0)
                 .try_into()
                 .expect("spent value must fit into i64");
             let net_created: i64 = tx
-                .sum_outputs(filter)
+                .sum_outputs(|s| tx.is_mine(s))
                 .try_into()
                 .expect("created value must fit into i64");
             if net_spent == 0 && tx.confirmation_time.is_none() {
@@ -423,6 +430,7 @@ impl From<WalletTransaction> for Transaction {
             txid: value.txid.to_string(),
             confirmation_time: value.confirmation_time,
             confirmations: value.confirmations,
+            first_seen: value.first_seen,
             last_seen: value.last_seen,
             prevouts: value.prevouts,
             is_mine: value.is_mine,
@@ -827,35 +835,75 @@ mod test {
 
     /// The old `details()` built this from the wallet index, which only knows scripts it has
     /// already derived — so an owned output past the lookahead was shown as a stranger's.
-    #[test]
-    fn recipients_marks_an_owned_output_past_any_lookahead_as_ours() {
+    fn recipients_with_an_owned_output_at(path: BitcoinBip32Path) -> Vec<TxOutInfo> {
         let key = key();
-        let deep = BitcoinBip32Path::internal(idx(400_000));
+        let owner = LocalSpk {
+            master_appkey: key,
+            bip32_path: path,
+        };
         let mut template = template_with_a_foreign_input_first();
         template
             .push_owned_output_checked(
                 &TxOut {
                     value: Amount::from_sat(40_000),
-                    script_pubkey: LocalSpk {
-                        master_appkey: key,
-                        bip32_path: deep,
-                    }
-                    .spk(),
+                    script_pubkey: owner.spk(),
                 },
-                LocalSpk {
-                    master_appkey: key,
-                    bip32_path: deep,
-                },
+                owner,
             )
             .unwrap();
+        Transaction::from_template(&template.as_seen_by(key)).recipients()
+    }
 
-        let tx = Transaction::from_template(&template.as_seen_by(key));
-        let recipients = tx.recipients();
+    #[test]
+    fn recipients_marks_an_owned_output_past_any_lookahead_as_ours() {
+        let recipients =
+            recipients_with_an_owned_output_at(BitcoinBip32Path::external(idx(400_000)));
 
         let ours = recipients.last().unwrap();
         assert!(ours.is_mine, "an owned output is ours at any depth");
         assert_eq!(ours.derivation_index, Some(400_000));
         assert!(!recipients[0].is_mine, "the foreign output is not ours");
+    }
+
+    /// "Received at #3" for change #3 names a receive address the user may have handed out,
+    /// which is a different script.
+    #[test]
+    fn a_change_output_is_ours_but_has_no_receive_index() {
+        let recipients = recipients_with_an_owned_output_at(BitcoinBip32Path::internal(idx(3)));
+
+        let change = recipients.last().unwrap();
+        assert!(change.is_mine);
+        assert_eq!(change.derivation_index, None);
+    }
+
+    fn pending(first_seen: Option<u64>, last_seen: Option<u64>) -> WalletTransaction {
+        let tx = Transaction::from_template(&single_owned_input_template().as_seen_by(key()));
+        WalletTransaction {
+            txid: tx.raw_txid(),
+            inner: std::sync::Arc::new(tx.inner),
+            confirmation_time: None,
+            confirmations: 0,
+            first_seen,
+            last_seen,
+            prevouts: tx.prevouts,
+            is_mine: tx.is_mine,
+        }
+    }
+
+    #[test]
+    fn a_pending_transaction_keeps_its_time_when_seen_again() {
+        let seen_once = Transaction::from(pending(Some(1_000), Some(1_000)));
+        let seen_again = Transaction::from(pending(Some(1_000), Some(2_000)));
+
+        assert_eq!(seen_once.timestamp(), Some(1_000));
+        assert_eq!(seen_again.timestamp(), Some(1_000));
+    }
+
+    #[test]
+    fn a_pending_transaction_without_first_seen_still_has_a_time() {
+        let legacy = Transaction::from(pending(None, Some(2_000)));
+
+        assert_eq!(legacy.timestamp(), Some(2_000));
     }
 
     /// The old `details()` looked prevouts up in the wallet's graph, which does not contain a
