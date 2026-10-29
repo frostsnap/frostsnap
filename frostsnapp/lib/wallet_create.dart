@@ -52,6 +52,14 @@ class WalletCreateForm {
 
   int? threshold;
 
+  void ensureValidThreshold() {
+    final totalCount = selectedDevices.length;
+    if (totalCount > 0 &&
+        (threshold == null || threshold! < 1 || threshold! > totalCount)) {
+      threshold = recommendedThresholdFor(totalCount);
+    }
+  }
+
   bool get allDevicesNamed =>
       selectedDevices.every((id) => deviceNames.containsKey(id));
 }
@@ -577,12 +585,9 @@ class WalletCreateController extends ChangeNotifier {
 
     if (nextStep != null) {
       if (nextStep == WalletCreateStep.threshold) {
-        // Seed the default threshold eagerly on transition so `canGoNext` is
-        // true as soon as the threshold step first renders.
-        final totalCount = _form.selectedDevices.length;
-        if (totalCount > 0) {
-          _form.threshold ??= recommendedThresholdFor(totalCount);
-        }
+        // Validate before rendering: returning to device selection can reduce
+        // the device count below the previously chosen threshold.
+        _form.ensureValidThreshold();
       }
       _step = nextStep;
       notifyListeners();
