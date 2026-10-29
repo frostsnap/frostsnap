@@ -1,3 +1,5 @@
+use super::broadcast::Broadcast;
+use super::signer_selection::SignerSelection;
 use super::super_wallet::SuperWallet;
 use super::{
     bitcoin::{Psbt, RTransaction, Transaction, TxOutInfo},
@@ -19,6 +21,7 @@ use frostsnap_core::{
     WireSignTask,
 };
 use std::collections::HashSet;
+use std::sync::Arc;
 use tracing::{event, Level};
 
 /// An outgoing Bitcoin transaction that has not been successfully broadcast.
@@ -292,6 +295,15 @@ impl Coordinator {
     #[frb(sync)]
     pub fn nonces_available(&self, id: DeviceId) -> u32 {
         self.0.nonces_available(id)
+    }
+
+    #[frb(sync)]
+    pub fn signer_selection(&self) -> SignerSelection {
+        SignerSelection::new(
+            Arc::new(self.0.nonce_counts()),
+            &self.0.nonces_reserved,
+            Broadcast::default(),
+        )
     }
 
     pub fn try_restore_signing_session(

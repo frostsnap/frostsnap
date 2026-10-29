@@ -1,4 +1,4 @@
-import 'package:frostsnap/id_ext.dart';
+import 'package:frostsnap/device_selector.dart';
 import 'package:frostsnap/src/rust/api/broadcast.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -379,10 +379,6 @@ class _ConsolidatePageState extends State<ConsolidatePage> {
       final threshold = accessStruct.threshold();
       final selected = state.selectedSigners();
       final remaining = threshold - selected.length;
-      final signers = state.availableSigners().sortByKeyShareIndex(
-        accessStruct,
-        (signer) => signer.$1,
-      );
       body = Card.outlined(
         color: cardColor,
         shape: cardShape(context),
@@ -390,36 +386,15 @@ class _ConsolidatePageState extends State<ConsolidatePage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
-            ListTile(
-              dense: true,
-              title: Text('Select Signers'),
-              trailing: Text('$threshold required'),
-            ),
-            Column(
-              children: signers.map((device) {
-                final (id, name) = device;
-                final nonces = coord.noncesAvailable(id: id);
-                final isSelected = state.isSignerSelected(dId: id);
-
-                if (nonces == 0) state.deselectSigner(dId: id);
-
-                return CheckboxListTile(
-                  value: isSelected,
-                  onChanged: remaining > 0 || isSelected
-                      ? (checked) => checked ?? false
-                            ? state.selectSigner(dId: id)
-                            : state.deselectSigner(dId: id)
-                      : null,
-                  secondary: Icon(Icons.key),
-                  title: Text(name ?? '<unknown>'),
-                  subtitle: nonces == 0
-                      ? Text(
-                          'no nonces remaining or too many signing sessions',
-                          style: TextStyle(color: theme.colorScheme.error),
-                        )
-                      : null,
-                );
-              }).toList(),
+            DeviceSelectorList(
+              title: 'Select Signers',
+              trailing: '$threshold required',
+              devices: DeviceItem.fromAccessStructure(accessStruct),
+              selected: selected.toSet(),
+              canSelectMore: remaining > 0,
+              onChanged: (id, checked) => checked
+                  ? state.selectSigner(dId: id)
+                  : state.deselectSigner(dId: id),
             ),
             Padding(
               padding: const EdgeInsets.all(12.0),

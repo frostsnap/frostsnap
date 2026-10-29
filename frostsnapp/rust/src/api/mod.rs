@@ -16,6 +16,7 @@ pub mod qr;
 pub mod recovery;
 pub mod send;
 pub mod settings;
+pub mod signer_selection;
 pub mod signing;
 pub mod super_wallet;
 pub mod transaction;
