@@ -198,8 +198,16 @@ impl ChainClient {
 
     /// Track `keychain` through `next_index` plus lookahead. Re-calling with a larger
     /// `next_index` widens the live subscription window in place (bdk_electrum_streaming
-    /// >= 0.5.3); equal or smaller is a no-op, so the window never narrows.
-    pub fn monitor_keychain(&self, keychain: KeychainId, next_index: u32) {
+    /// >= 0.5.3); a smaller one never narrows it.
+    ///
+    /// `expected_spk_txids` are added to the `(spk, txid)` pairs the chain source expects under
+    /// this keychain, whatever `next_index` is. Only expected txids can be reported as evicted.
+    pub fn monitor_keychain(
+        &self,
+        keychain: KeychainId,
+        next_index: u32,
+        expected_spk_txids: Vec<(bitcoin::ScriptBuf, bitcoin::Txid)>,
+    ) {
         self.start_client();
         let descriptor = descriptor_for_account_keychain(
             keychain,
@@ -207,7 +215,7 @@ impl ChainClient {
             bitcoin::NetworkKind::Main,
         );
         self.client
-            .track_descriptor(keychain, descriptor, next_index)
+            .track_descriptor(keychain, descriptor, next_index, expected_spk_txids)
             .expect("must track keychain");
     }
 
@@ -374,8 +382,11 @@ impl ConnectionHandler {
             let super_wallet = super_wallet.lock().expect("must lock");
             network = super_wallet.network;
             chain_tip = super_wallet.chain_tip();
-            self.cache.txs.extend(super_wallet.tx_cache());
-            self.cache.anchors.extend(super_wallet.anchor_cache());
+            self.cache.tx_cache.txs.extend(super_wallet.tx_cache());
+            self.cache
+                .tx_cache
+                .anchors
+                .extend(super_wallet.anchor_cache());
         }
 
         tracing::info!("Running ConnectionHandler for {} network", network);
@@ -774,37 +785,50 @@ mod test {
         let descriptor = descriptor_for_account_keychain(keychain, bitcoin::NetworkKind::Main);
 
         let mut tracker = DerivedSpkTracker::new(lookahead);
-        tracker.insert_descriptor(keychain, descriptor.clone(), 5);
-        assert_eq!(tracker.index_of_spk_hash(spk_hash_at(keychain, 900)), None);
+        tracker.insert_descriptor(keychain, descriptor.clone(), 5, []);
+        assert_eq!(
+            tracker
+                .indices_of_spk_hash(spk_hash_at(keychain, 900))
+                .next(),
+            None
+        );
 
-        let widened = tracker.insert_descriptor(keychain, descriptor.clone(), 901);
+        let widened = tracker.insert_descriptor(keychain, descriptor.clone(), 901, []);
         assert!(
             !widened.is_empty(),
             "widening must hand back new hashes to subscribe"
         );
         assert_eq!(
-            tracker.index_of_spk_hash(spk_hash_at(keychain, 900)),
+            tracker
+                .indices_of_spk_hash(spk_hash_at(keychain, 900))
+                .next(),
             Some((keychain, 900)),
             "the matched index must be watched"
         );
         assert_eq!(
-            tracker.index_of_spk_hash(spk_hash_at(keychain, 901 + lookahead + 1)),
+            tracker
+                .indices_of_spk_hash(spk_hash_at(keychain, 901 + lookahead + 1))
+                .next(),
             Some((keychain, 901 + lookahead + 1)),
             "lookahead extends past next_index"
         );
         assert_eq!(
-            tracker.index_of_spk_hash(spk_hash_at(keychain, 901 + lookahead + 2)),
+            tracker
+                .indices_of_spk_hash(spk_hash_at(keychain, 901 + lookahead + 2))
+                .next(),
             None
         );
 
         assert!(
             tracker
-                .insert_descriptor(keychain, descriptor, 5)
+                .insert_descriptor(keychain, descriptor, 5, [])
                 .is_empty(),
             "a smaller next_index must be a no-op"
         );
         assert_eq!(
-            tracker.index_of_spk_hash(spk_hash_at(keychain, 900)),
+            tracker
+                .indices_of_spk_hash(spk_hash_at(keychain, 900))
+                .next(),
             Some((keychain, 900)),
             "the window must never narrow"
         );

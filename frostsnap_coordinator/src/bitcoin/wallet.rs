@@ -220,7 +220,27 @@ impl CoordSuperWallet {
             drop(db);
 
             // again in case it found something tell electrum that it's got to start looking further.
-            self.resync_monitoring();
+            // This is the chain source's first sight of the key, so provide it with
+            // `expected_spk_txids` so that evictions (e.g. a tx dropped while we were offline)
+            // can be detected against the local tx set.
+            let mut expected = HashMap::<KeychainId, Vec<(ScriptBuf, Txid)>>::new();
+            for (spk, txid) in self.tx_graph.list_expected_spk_txids(
+                self.chain.as_ref(),
+                self.chain.tip().block_id(),
+                ((master_appkey, BitcoinAccountKeychain::external()), 0)
+                    ..=(
+                        (master_appkey, BitcoinAccountKeychain::internal()),
+                        u32::MAX,
+                    ),
+            ) {
+                let &(keychain_id, _) = self
+                    .tx_graph
+                    .index
+                    .index_of_spk(spk.clone())
+                    .expect("listed spks are indexed");
+                expected.entry(keychain_id).or_default().push((spk, txid));
+            }
+            self.resync_monitoring(expected);
         }
     }
 
@@ -230,17 +250,26 @@ impl CoordSuperWallet {
     /// client. This saves server bandwidth but if we find something further out
     /// than electrum is looking we have to tell it about it.
     ///
-    /// Free to over-call, at the message level and not merely the state level: a tracked window only
-    /// ever widens, and only scripts it does not already hold become subscribe requests. A wallet
-    /// with nothing far out generates no traffic.
-    fn resync_monitoring(&self) {
+    /// Cheap to over-call: a tracked window only ever widens, and only scripts it does not already
+    /// hold become subscribe requests.
+    ///
+    /// The chain source keeps its expected txids current from server histories, so
+    /// `expected_spk_txids` should only hold txids it has never seen: those of a newly tracked key.
+    fn resync_monitoring(
+        &self,
+        mut expected_spk_txids: HashMap<KeychainId, Vec<(ScriptBuf, Txid)>>,
+    ) {
         for (keychain_id, _) in self.tx_graph.index.keychains() {
             let next_index = self
                 .tx_graph
                 .index
                 .last_revealed_index(keychain_id)
                 .map_or(0, |lr| lr + 1);
-            self.chain_client.monitor_keychain(keychain_id, next_index);
+            self.chain_client.monitor_keychain(
+                keychain_id,
+                next_index,
+                expected_spk_txids.remove(&keychain_id).unwrap_or_default(),
+            );
         }
     }
 
@@ -475,7 +504,7 @@ impl CoordSuperWallet {
         // A frontier can only move by revealing, which lands in the changeset, so `changed` covers
         // every case worth signalling.
         if changed {
-            self.resync_monitoring();
+            self.resync_monitoring(HashMap::new());
         }
         Ok(changed)
     }
@@ -618,7 +647,10 @@ impl ConfirmationTime {
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::bitcoin::chain_sync::ConnectionHandler;
+    use crate::bitcoin::test_common::*;
     use bitcoin::key::{Secp256k1, TweakedPublicKey};
+    use frostsnap_core::tweak::{BitcoinAccountKeychain, BitcoinBip32Path, NormalIndex};
     use frostsnap_core::{schnorr_fun::fun::Point, tweak::AppTweak};
 
     #[test]
@@ -660,6 +692,61 @@ mod test {
             bitcoin::ScriptBuf::new_p2tr_tweaked(TweakedPublicKey::dangerous_assume_tweaked(
                 xonly.into()
             )),
+        );
+    }
+
+    /// Every `(keychain, spk, txid)` the drained tracking messages told the chain source to expect.
+    fn expected_sent(
+        handler: &mut ConnectionHandler,
+    ) -> Vec<(KeychainId, bitcoin::ScriptBuf, bitcoin::Txid)> {
+        use bdk_electrum_streaming::ClientAction;
+        handler
+            .drain_tracked()
+            .into_iter()
+            .flat_map(|action| match action {
+                ClientAction::AddDescriptor {
+                    keychain,
+                    expected_spk_txids,
+                    ..
+                } => expected_spk_txids
+                    .into_iter()
+                    .map(|(spk, txid)| (keychain, spk, txid))
+                    .collect(),
+                _ => vec![],
+            })
+            .collect()
+    }
+
+    /// A key's stored txs are sent as expected when it is first tracked, so a tx dropped while we
+    /// were offline can be evicted. Ordinary updates send none: the chain source keeps its expected
+    /// txids current itself.
+    #[test]
+    fn stored_txs_are_expected_once_on_startup() {
+        let mut f = Fixture::new();
+        let funded = f.fund(0, 50_000, 100);
+        assert_eq!(
+            expected_sent(&mut f.handler),
+            vec![],
+            "wallet updates must not resend expected txids"
+        );
+
+        // Restart on the same database.
+        let db = f.wallet.db.clone();
+        let (client, mut handler) = chain_client(&db);
+        let mut wallet = CoordSuperWallet::load_or_init(db, NETWORK, client).unwrap();
+        wallet.list_addresses(f.master_appkey);
+
+        let spk = crate::bitcoin::peek_spk(
+            f.master_appkey,
+            BitcoinBip32Path::external(NormalIndex::new(0).unwrap()),
+        );
+        assert_eq!(
+            expected_sent(&mut handler),
+            vec![(
+                (f.master_appkey, BitcoinAccountKeychain::external()),
+                spk,
+                funded.txid
+            )]
         );
     }
 }
