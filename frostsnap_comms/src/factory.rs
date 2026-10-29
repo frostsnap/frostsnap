@@ -25,7 +25,8 @@ frostsnap_core::impl_fromstr_deserialize! {
     }
 }
 
-pub fn pad_message_for_rsa(message_digest: &[u8]) -> PaddedMessageBlock {
+/// Pads a SHA-256 digest for RSA PKCS#1 v1.5 signing.
+pub fn pad_message_for_rsa(message_digest: &[u8; 32]) -> PaddedMessageBlock {
     // Hard-code the ASN.1 DigestInfo prefix for SHA-256
     const SHA256_ASN1_PREFIX: &[u8] = &[
         0x30, 0x31, 0x30, 0x0d, 0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x01,
@@ -60,6 +61,23 @@ pub fn pad_message_for_rsa(message_digest: &[u8]) -> PaddedMessageBlock {
         .copy_from_slice(message_digest);
 
     PaddedMessageBlock(padded_block)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pad_message_for_rsa_encodes_sha256_digest() {
+        let digest = [0x42; 32];
+        let padded = pad_message_for_rsa(&digest).0;
+        let separator = padded.len() - 19 - digest.len() - 1;
+
+        assert_eq!(&padded[..2], &[0x00, 0x01]);
+        assert!(padded[2..separator].iter().all(|byte| *byte == 0xff));
+        assert_eq!(padded[separator], 0x00);
+        assert_eq!(&padded[padded.len() - digest.len()..], &digest);
+    }
 }
 
 #[derive(Debug, Clone)]
