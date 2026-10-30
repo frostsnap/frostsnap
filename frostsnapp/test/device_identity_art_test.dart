@@ -178,6 +178,7 @@ void main() {
           state: DeviceListState(
             devices: listed,
             unlisted: unlisted,
+            busyPorts: const [],
             stateId: 0,
           ),
         );

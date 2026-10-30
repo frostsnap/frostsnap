@@ -34,8 +34,10 @@ pub struct UsbSerialManager {
     awaiting_magic: HashMap<String, AwaitingMagic>,
     /// Read magic magic bytes
     ready: HashMap<String, FramedSerialPort>,
-    /// ports that seems to be busy
+    /// Ports we've already warned about lacking permission, so we only log it once
     ignored: HashSet<String>,
+    /// Ports another process holds open, with when we last tried to open them
+    busy: HashMap<String, std::time::Instant>,
     /// Devices who Announce'd, mappings to port serial numbers
     device_ports: HashMap<DeviceId, DevicePort>,
     /// Reverse lookup from ports to devices (daisy chaining)
@@ -57,6 +59,10 @@ pub struct DevicePort {
     firmware_digest: Sha256Digest,
 }
 
+/// How often to retry opening a port another process holds, so the device shows up soon after
+/// that process lets go of it.
+const BUSY_RETRY_PERIOD: Duration = Duration::from_secs(1);
+
 const COORDINATOR_MAGIC_BYTES_PERDIOD: std::time::Duration =
     std::time::Duration::from_millis(MAGIC_BYTES_PERIOD);
 
@@ -76,6 +82,7 @@ impl UsbSerialManager {
             awaiting_magic: Default::default(),
             ready: Default::default(),
             ignored: Default::default(),
+            busy: Default::default(),
             device_ports: Default::default(),
             reverse_device_ports: Default::default(),
             registered_devices: Default::default(),
@@ -104,6 +111,7 @@ impl UsbSerialManager {
         self.awaiting_magic.remove(port);
         self.ready.remove(port);
         self.ignored.remove(port);
+        self.busy.remove(port);
         if let Some(device_ids) = self.reverse_device_ports.remove(port) {
             for device_id in device_ids {
                 if self.device_ports.remove(&device_id).is_some() {
@@ -136,6 +144,7 @@ impl UsbSerialManager {
         let span = span!(Level::DEBUG, "poll_ports");
         let _enter = span.enter();
         let mut device_changes = vec![];
+        let busy_before = self.busy_ports();
 
         let connected_now: HashSet<String> = self
             .serial_impl
@@ -169,21 +178,33 @@ impl UsbSerialManager {
             self.disconnect(&port, &mut device_changes);
         }
 
+        for (port_name, last_tried) in &self.busy {
+            if last_tried.elapsed() >= BUSY_RETRY_PERIOD {
+                self.pending.insert(port_name.clone());
+            }
+        }
+
         for port_name in self.pending.drain().collect::<Vec<_>>() {
             let device_port = self
                 .serial_impl
                 .open_device_port(&port_name, frostsnap_comms::BAUDRATE)
                 .map(FramedSerialPort::new);
+            if !matches!(device_port, Err(PortOpenError::DeviceBusy)) {
+                self.busy.remove(&port_name);
+            }
             match device_port {
                 Err(e) => match e {
                     PortOpenError::DeviceBusy => {
-                        if !self.ignored.contains(&port_name) {
+                        let newly_busy = self
+                            .busy
+                            .insert(port_name.clone(), std::time::Instant::now())
+                            .is_none();
+                        if newly_busy {
                             event!(
-                                Level::ERROR,
+                                Level::WARN,
                                 port = port_name,
-                                "Could not open port because it's being used by another process"
+                                "Could not open port because it's being used by another process, will keep retrying"
                             );
-                            self.ignored.insert(port_name.clone());
                         }
                     }
                     PortOpenError::PermissionDenied => {
@@ -516,7 +537,20 @@ impl UsbSerialManager {
             }
         }
 
+        let busy_now = self.busy_ports();
+        if busy_now != busy_before {
+            device_changes.push(DeviceChange::BusyPorts {
+                ports: busy_now.into_iter().collect(),
+            });
+        }
+
         device_changes
+    }
+
+    /// Ports with a Frostsnap device on them that we can't open because another process (e.g.
+    /// another instance of the app) is using them.
+    pub fn busy_ports(&self) -> BTreeSet<String> {
+        self.busy.keys().cloned().collect()
     }
 
     fn handle_announce(
@@ -791,6 +825,11 @@ pub enum DeviceChange {
         from: DeviceId,
         message: genuine_check::DeviceMessage,
     },
+    /// The set of ports we can't open because another process is using them has changed. Holds
+    /// the full new set, which is empty once none are busy.
+    BusyPorts {
+        ports: Vec<String>,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -892,5 +931,113 @@ mod test {
         assert!(manager.device_ports.is_empty());
         assert!(manager.reverse_device_ports.is_empty());
         assert!(manager.registered_devices.is_empty());
+    }
+
+    /// Plugged-in Frostsnap ports, each either held by another process or free. A free port fails
+    /// to open with some other error because there's no real device behind it.
+    #[derive(Clone, Default)]
+    struct FakePorts {
+        ports: std::sync::Arc<std::sync::Mutex<HashMap<String, bool>>>,
+        open_attempts: std::sync::Arc<std::sync::Mutex<usize>>,
+    }
+
+    impl FakePorts {
+        fn set(&self, port: &str, busy: Option<bool>) {
+            let mut ports = self.ports.lock().unwrap();
+            match busy {
+                Some(busy) => ports.insert(port.to_string(), busy),
+                None => ports.remove(port),
+            };
+        }
+
+        fn open_attempts(&self) -> usize {
+            *self.open_attempts.lock().unwrap()
+        }
+    }
+
+    impl Serial for FakePorts {
+        fn available_ports(&self) -> Vec<PortDesc> {
+            self.ports
+                .lock()
+                .unwrap()
+                .keys()
+                .map(|id| PortDesc {
+                    id: id.clone(),
+                    vid: USB_VID,
+                    pid: USB_PID,
+                })
+                .collect()
+        }
+
+        fn open_device_port(&self, id: &str, _: u32) -> Result<crate::SerialPort, PortOpenError> {
+            *self.open_attempts.lock().unwrap() += 1;
+            if self.ports.lock().unwrap()[id] {
+                Err(PortOpenError::DeviceBusy)
+            } else {
+                Err(PortOpenError::Other("no real device".into()))
+            }
+        }
+    }
+
+    fn busy_changes(changes: Vec<DeviceChange>) -> Vec<Vec<String>> {
+        changes
+            .into_iter()
+            .filter_map(|change| match change {
+                DeviceChange::BusyPorts { ports } => Some(ports),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// A second instance of the app can't open ports the first one holds. It must tell the app
+    /// which ports are busy, and keep retrying them so the device shows up once they're free.
+    #[test]
+    fn reports_busy_ports_and_retries_them() {
+        let serial = FakePorts::default();
+        let mut manager = UsbSerialManager::new(Box::new(serial.clone()));
+        let make_retry_due = |manager: &mut UsbSerialManager| {
+            for last_tried in manager.busy.values_mut() {
+                *last_tried -= BUSY_RETRY_PERIOD;
+            }
+        };
+
+        serial.set("port-1", Some(true));
+        assert_eq!(
+            busy_changes(manager.poll_ports()),
+            vec![vec!["port-1".to_string()]]
+        );
+
+        // Nothing new to report, and no retry before the retry period is up.
+        let attempts = serial.open_attempts();
+        assert!(busy_changes(manager.poll_ports()).is_empty());
+        assert_eq!(serial.open_attempts(), attempts);
+
+        // Once it's up we try again. Still busy, so still nothing new to report.
+        make_retry_due(&mut manager);
+        assert!(busy_changes(manager.poll_ports()).is_empty());
+        assert_eq!(serial.open_attempts(), attempts + 1);
+
+        // A second busy port is reported along with the first.
+        serial.set("port-2", Some(true));
+        assert_eq!(
+            busy_changes(manager.poll_ports()),
+            vec![vec!["port-1".to_string(), "port-2".to_string()]]
+        );
+
+        // The other process lets go of port-1.
+        serial.set("port-1", Some(false));
+        make_retry_due(&mut manager);
+        assert_eq!(
+            busy_changes(manager.poll_ports()),
+            vec![vec!["port-2".to_string()]]
+        );
+
+        // Unplugging a busy port clears it.
+        serial.set("port-2", None);
+        assert_eq!(
+            busy_changes(manager.poll_ports()),
+            vec![Vec::<String>::new()]
+        );
+        assert!(manager.busy_ports().is_empty());
     }
 }
