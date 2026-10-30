@@ -16,11 +16,14 @@ pub struct DeviceList {
     /// An unlisted device came, went or changed. It has no index to report as a change, but
     /// `unlisted` subscribers still need the new state.
     unlisted_changed: bool,
+    busy_ports: Vec<String>,
+    /// Like `unlisted_changed`: no index to report, but subscribers need the new state.
+    busy_ports_changed: bool,
 }
 
 impl DeviceList {
     pub fn update_ready(&self) -> bool {
-        !self.outbox.is_empty() || self.unlisted_changed
+        !self.outbox.is_empty() || self.unlisted_changed || self.busy_ports_changed
     }
 
     // Order devices by connection order, with any new devices appended
@@ -60,12 +63,13 @@ impl DeviceList {
     pub fn take_update(&mut self) -> api::DeviceListUpdate {
         let changes = core::mem::take(&mut self.outbox);
         let unlisted_changed = core::mem::take(&mut self.unlisted_changed);
+        let busy_ports_changed = core::mem::take(&mut self.busy_ports_changed);
         let update = api::DeviceListUpdate {
             changes,
             state: self.state(),
         };
 
-        if !update.changes.is_empty() || unlisted_changed {
+        if !update.changes.is_empty() || unlisted_changed || busy_ports_changed {
             self.state_counter += 1;
         }
 
@@ -84,6 +88,7 @@ impl DeviceList {
                 .filter(|device| self.index_of(device.id).is_none())
                 .cloned()
                 .collect(),
+            busy_ports: self.busy_ports.clone(),
             state_id: self.state_counter,
         }
     }
@@ -173,6 +178,10 @@ impl DeviceList {
             }
             DeviceChange::AppMessage(_) => { /* not relevant */ }
             DeviceChange::GenuineCheck { .. } => {}
+            DeviceChange::BusyPorts { ports } => {
+                self.busy_ports_changed |= self.busy_ports != ports;
+                self.busy_ports = ports;
+            }
         }
     }
 
@@ -359,5 +368,30 @@ mod test {
         list.set_genuine(A, genuine());
         connect(&mut list, "A");
         assert_eq!(changes(&list.take_update()), vec![row("Added", "A", false)]);
+    }
+
+    /// Busy ports have no row in the list, but subscribers still need an update so the app can
+    /// show (and later hide) its banner.
+    #[test]
+    fn busy_ports_changes_are_published() {
+        let mut list = DeviceList::default();
+        let busy = |ports: &[&str]| DeviceChange::BusyPorts {
+            ports: ports.iter().map(|port| port.to_string()).collect(),
+        };
+
+        list.consume_manager_event(busy(&["/dev/ttyACM0"]));
+        assert!(list.update_ready());
+        let update = list.take_update();
+        assert!(update.changes.is_empty());
+        assert_eq!(update.state.busy_ports, vec!["/dev/ttyACM0".to_string()]);
+        assert!(!list.update_ready());
+
+        // the same set again is not a change
+        list.consume_manager_event(busy(&["/dev/ttyACM0"]));
+        assert!(!list.update_ready());
+
+        list.consume_manager_event(busy(&[]));
+        assert!(list.update_ready());
+        assert!(list.take_update().state.busy_ports.is_empty());
     }
 }

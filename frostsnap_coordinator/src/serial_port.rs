@@ -259,15 +259,17 @@ impl Serial for DesktopSerial {
             // writing.
             .timeout(Duration::from_millis(5_000))
             .open()
-            .map_err(|e| {
-                let msg = e.to_string();
-                if msg == "Device or resource busy" {
-                    PortOpenError::DeviceBusy
-                } else if msg == "Permission denied" {
+            .map_err(|e| match e.kind() {
+                // serialport reports a port held by another process as `NoDevice`. On Linux and
+                // macOS that's EBUSY from its exclusive (TIOCEXCL) open, or the port's flock
+                // being held. On Windows it's "Access is denied", though Windows also uses
+                // `NoDevice` for a port that has just been unplugged. That port drops out of
+                // `available_ports` on the next poll, which clears it.
+                serialport::ErrorKind::NoDevice => PortOpenError::DeviceBusy,
+                serialport::ErrorKind::Io(std::io::ErrorKind::PermissionDenied) => {
                     PortOpenError::PermissionDenied
-                } else {
-                    PortOpenError::Other(Box::new(e))
                 }
+                _ => PortOpenError::Other(Box::new(e)),
             })
     }
 }
