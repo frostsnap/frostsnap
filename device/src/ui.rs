@@ -3,8 +3,13 @@ use alloc::{boxed::Box, string::String};
 use frost_backup::ShareBackup;
 use frostsnap_comms::{DeviceName, Sha256Digest};
 use frostsnap_core::{
-    device::{restoration::EnterBackupPhase, KeyGenPhase3, SignPhase1},
-    message::HeldShare2,
+    device::{
+        card::{CardScreen, CardUserAction, HomeLine},
+        card_restore::{CardRestoreDecoded, CardRestorePhase, CardRestoreReport},
+        restoration::{ConsolidatePhase, EnterBackupPhase, ThresholdWarning},
+        KeyGenPhase3, SignPhase1,
+    },
+    message::{card::CardHalfEntries, HeldShare2},
     schnorr_fun::frost::ShareIndex,
     tweak::BitcoinBip32Path,
     AccessStructureRef,
@@ -70,6 +75,9 @@ pub enum Workflow {
     Standby {
         device_name: DeviceName,
         held_share: HeldShare2,
+        /// "Backup not checked" or "Backup failed: don't use" under the key name (design §7.5
+        /// D21).
+        card_line: Option<HomeLine>,
     },
     UserPrompt(Prompt),
     NamingDevice {
@@ -96,6 +104,15 @@ pub enum Workflow {
         access_structure_ref: AccessStructureRef,
         rand_seed: u32,
     },
+    /// A screen of a card session, or a restore's wait (design §4.1).
+    Card(CardScreen),
+    /// R1: the entry of words 1-32 for a card restore, from word 1, or at the review with
+    /// the entries kept ("Edit words 1-32" after a failed decode).
+    CardRestoreEntry {
+        phase: Box<CardRestorePhase>,
+        review: Option<CardHalfEntries>,
+    },
+    CardRestoreReport(Box<CardRestoreReport>),
 }
 
 impl Workflow {
@@ -119,6 +136,12 @@ pub enum Prompt {
         size: u32,
     },
     EraseDevice,
+    /// Consolidating a card share whose threshold isn't the wallet's, or doesn't read: the
+    /// user holds to go on (build plan A11). Without a warning it isn't prompted.
+    ConsolidateThreshold {
+        phase: Box<ConsolidatePhase>,
+        warning: ThresholdWarning,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -156,5 +179,22 @@ pub enum UiEvent {
     BackupChecked {
         access_structure_ref: AccessStructureRef,
         share_index: ShareIndex,
+    },
+    Card(CardUserAction),
+    /// Leave a card screen for the home screen. It needs no session, so a terminal screen
+    /// can always be left.
+    CardExit,
+    /// The user held "Done" on the review of words 1-32: `None` for "Can't read this word".
+    /// Its `Debug` shows no word.
+    CardRestoreEntered {
+        phase: Box<CardRestorePhase>,
+        entries: CardHalfEntries,
+    },
+    /// "Edit words 1-32" after a failed decode.
+    CardRestoreEdit,
+    CardRestoreConfirm(Box<CardRestoreDecoded>),
+    /// The user held through the threshold warning: the consolidation finishes.
+    ConsolidateConfirm {
+        phase: Box<ConsolidatePhase>,
     },
 }
