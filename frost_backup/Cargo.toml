@@ -7,6 +7,9 @@ edition = "2021"
 schnorr_fun = { workspace = true, features = ["alloc"] }
 sha2 = { workspace = true, default-features = false }
 rand_core = { workspace = true }
+# The card's bit proofs are stock sigma_fun proofs, so this version fixes their format.
+sigma_fun = { version = "=0.9.0", default-features = false, features = ["secp256k1"] }
+rand_chacha = { workspace = true }
 
 # optional
 rand = { workspace = true, optional = true }
@@ -31,6 +34,10 @@ std = [
 ]
 
 default = ["cli"]
+
+# The offline repair tool's decode, which may ignore the masks (spec PK.8 escape hatch, owner
+# B13). Never for firmware: a restore whose words 33-64 came from a phone needs the masks.
+offline-repair = []
 
 bincode = [
     "dep:bincode",
