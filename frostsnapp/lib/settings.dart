@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io' show Platform;
 
 import 'package:collection/collection.dart';
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:frostsnap/address.dart';
 import 'package:frostsnap/access_structures.dart';
@@ -21,6 +22,8 @@ import 'package:frostsnap/theme.dart';
 import 'package:rxdart/rxdart.dart';
 import 'package:frostsnap/todo.dart';
 import 'package:frostsnap/udev_setup.dart';
+import 'package:frostsnap/verifiable_card/card_flow_preview.dart';
+import 'package:frostsnap/verifiable_card/not_checked_dialog.dart';
 import 'package:frostsnap/wallet.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
 import 'package:frostsnap/stream_ext.dart';
@@ -132,6 +135,9 @@ class SettingsPage extends StatelessWidget {
                     icon: Icons.qr_code,
                     bodyBuilder: (context) {
                       final wallet = walletCtx.wallet;
+                      if (cardLockHolds(wallet.keyId())) {
+                        return const CardNotCheckedNotice();
+                      }
                       return ExportDescriptorPage(
                         walletDescriptor: walletCtx.network.descriptorForKey(
                           masterAppkey: wallet.masterAppkey,
@@ -244,6 +250,14 @@ class SettingsPage extends StatelessWidget {
                     );
                   },
                 ),
+                // Debug builds only: the verifiable card's phone pages,
+                // driven by a fake stream, without a device.
+                if (kDebugMode)
+                  SettingsItem(
+                    title: Text("Preview backup card pages"),
+                    icon: Icons.preview,
+                    bodyBuilder: (context) => const CardFlowPreviewPage(),
+                  ),
                 SettingsItem(
                   title: Text(
                     "Erase multiple devices",

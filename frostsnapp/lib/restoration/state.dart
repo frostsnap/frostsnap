@@ -97,6 +97,11 @@ sealed class RecoveryFlowStage with _$RecoveryFlowStage {
   const factory RecoveryFlowStage.enterBackup({required String deviceName}) =
       EnterBackupStage;
 
+  /// A 64-word card: words 1–32 on the device, words 33–64 in the app.
+  /// The context determines the decode target and what happens with the share
+  const factory RecoveryFlowStage.enterCard({required String deviceName}) =
+      EnterCardStage;
+
   /// User is setting the threshold for restoration
   /// This happens after wallet name/network entry for new restorations
   const factory RecoveryFlowStage.enterThreshold({
