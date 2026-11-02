@@ -20,6 +20,7 @@ miniscript = { version = "12.3", optional = true }
 
 [features]
 cli = [
+    "offline-repair",
     "clap",
     "std",
     "rand",
@@ -46,6 +47,10 @@ bincode = [
 
 [[bin]]
 name = "frost_backup"
+required-features = ["cli"]
+
+[[bin]]
+name = "card_offline_recover"
 required-features = ["cli"]
 
 [dev-dependencies]

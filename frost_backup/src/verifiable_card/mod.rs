@@ -23,6 +23,8 @@
 pub mod codec;
 pub mod jobs;
 pub mod layout;
+#[cfg(feature = "offline-repair")]
+pub mod offline;
 pub mod phone;
 pub mod proof;
 pub mod rng;

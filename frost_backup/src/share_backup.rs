@@ -72,6 +72,14 @@ impl ShareBackup {
         }
     }
 
+    /// Overwrites the secret share and the checksum, for a caller done with a backup it parsed
+    /// (the offline card tool's other backups).
+    pub fn wipe(&mut self) {
+        self.share.share = Scalar::zero();
+        self.poly_checksum = 0;
+        core::hint::black_box(&mut self.share.share);
+    }
+
     /// Decodes a ShareBackup from index and 25 BIP39 words, validating checksums
     pub fn from_words(index: u32, words: [&str; NUM_WORDS]) -> Result<Self, ShareBackupError> {
         // First, convert each word to its BITS_PER_WORD-bit index
