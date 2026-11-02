@@ -408,6 +408,30 @@ impl FrostCoordinator {
         }]
     }
 
+    /// Asks the device to enter a 64-word card, words 1–32 on the device. `target` is the
+    /// wallet's polynomial F when the app knows the wallet, `recorded_format` the card format the
+    /// app's record of the key gives, and `share_indices` the wallet's share indices, which keep
+    /// a repair within its time (build plan A6). The device replies with `PhysicalEntered`, as
+    /// for a 25-word backup.
+    pub fn tell_device_to_load_card(
+        &self,
+        enter_physical_id: EnterPhysicalId,
+        device_id: DeviceId,
+        target: Option<SharedKey>,
+        recorded_format: Option<u8>,
+        share_indices: Option<Vec<u8>>,
+    ) -> CoordinatorSend {
+        CoordinatorSend::ToDevice {
+            message: CoordinatorToDeviceMessage::Restoration(CoordinatorRestoration::EnterCard {
+                enter_physical_id,
+                target,
+                recorded_format,
+                share_indices,
+            }),
+            destinations: [device_id].into(),
+        }
+    }
+
     /// Check a physical backup loaded by a device that you know belongs to a certain access structure.
     pub fn check_physical_backup(
         &self,
@@ -505,6 +529,8 @@ impl FrostCoordinator {
                 access_structure_ref,
                 share_index: share_image.index,
             });
+        // Its refusal, for a card-restored share, goes to this request's protocol.
+        self.card.end_session(from);
 
         Ok(TellDeviceConsolidateBackup {
             device_id: from,
@@ -974,7 +1000,7 @@ impl FrostCoordinator {
     /// access structure because a device can hold pending backups for several
     /// wallets, and those wallets need not share an encryption key.
     pub fn consolidate_pending_physical_backups(
-        &self,
+        &mut self,
         device_id: DeviceId,
         access_structure_ref: AccessStructureRef,
         encryption_key: SymmetricKey,
@@ -1013,8 +1039,22 @@ impl FrostCoordinator {
                 ),
                 destinations: [device_id].into(),
             });
+        if message.is_some() {
+            // Its refusal, for a card-restored share, goes to this request's protocol.
+            self.card.end_session(device_id);
+        }
 
         Ok(message)
+    }
+
+    /// A card key's shares are backed up on verifiable cards, never as 25 words.
+    fn refuse_legacy_backup_for_card_key(&self, key_id: KeyId) -> Result<(), ActionError> {
+        if self.key_backup_format(key_id) == super::card::BackupFormat::Card64 {
+            return Err(ActionError::StateInconsistent(
+                "this key's shares are backed up on verifiable cards".into(),
+            ));
+        }
+        Ok(())
     }
 
     pub fn request_device_display_backup(
@@ -1027,6 +1067,7 @@ impl FrostCoordinator {
             key_id,
             access_structure_id,
         } = access_structure_ref;
+        self.refuse_legacy_backup_for_card_key(key_id)?;
         let complete_key = &self
             .keys
             .get(&key_id)
@@ -1055,6 +1096,8 @@ impl FrostCoordinator {
             .ok_or(ActionError::StateInconsistent(
                 "couldn't decrypt root key".into(),
             ))?;
+        // Its refusal, for a card-restored share, goes to this request's protocol.
+        self.card.end_session(device_id);
         Ok(vec![CoordinatorSend::ToDevice {
             message: CoordinatorToDeviceMessage::Restoration(
                 CoordinatorRestoration::DisplayBackup {
@@ -1078,6 +1121,7 @@ impl FrostCoordinator {
             key_id,
             access_structure_id,
         } = access_structure_ref;
+        self.refuse_legacy_backup_for_card_key(key_id)?;
         let complete_key = &self
             .keys
             .get(&key_id)
@@ -1106,6 +1150,8 @@ impl FrostCoordinator {
             .ok_or(ActionError::StateInconsistent(
                 "couldn't decrypt root key".into(),
             ))?;
+        // Its refusal, for a card-restored share, goes to this request's protocol.
+        self.card.end_session(device_id);
         Ok(vec![CoordinatorSend::ToDevice {
             message: CoordinatorToDeviceMessage::Restoration(CoordinatorRestoration::CheckBackup {
                 coord_share_decryption_contrib,
