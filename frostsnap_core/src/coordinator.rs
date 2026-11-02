@@ -955,6 +955,11 @@ impl FrostCoordinator {
             DeviceToCoordinatorMessage::Restoration(message) => {
                 self.recv_restoration_message(from, message)
             }
+            // The phone's side of the card comes in the next commit
+            DeviceToCoordinatorMessage::Card(_) => Err(Error::coordinator_invalid_message(
+                message_kind,
+                "this coordinator doesn't run card flows",
+            )),
         }
     }
 

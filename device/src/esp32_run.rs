@@ -737,6 +737,8 @@ impl<'a> DeviceLoop<'a> {
                         DeviceToUserMessage::NonceJobs(batch) => {
                             self.nonce_task_batch = Some(batch);
                         }
+                        // The card's screens and job loop come with the device layer.
+                        DeviceToUserMessage::Card(_) => {}
                     };
                 }
             }
