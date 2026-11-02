@@ -10,7 +10,9 @@ extern crate alloc;
 
 pub mod bip39_words;
 pub mod recovery;
+pub mod reveal_card;
 pub mod share_backup;
+pub mod verifiable_card;
 
 mod error;
 pub use error::*;

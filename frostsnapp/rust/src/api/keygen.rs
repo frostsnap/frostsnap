@@ -1,4 +1,4 @@
-use crate::{frb_generated::StreamSink, sink_wrap::SinkWrap};
+use crate::{frb_generated::StreamSink, sink_wrap::report_start_failure};
 use anyhow::Result;
 use bitcoin::Network as BitcoinNetwork;
 use flutter_rust_bridge::frb;
@@ -39,13 +39,15 @@ impl super::coordinator::Coordinator {
         network: BitcoinNetwork,
         event_stream: StreamSink<KeyGenState>,
     ) -> Result<()> {
-        self.0.generate_new_key(
-            devices,
-            threshold,
-            key_name,
-            KeyPurpose::Bitcoin(network),
-            SinkWrap(event_stream),
-        )
+        report_start_failure(event_stream, |sink| {
+            self.0.generate_new_key(
+                devices,
+                threshold,
+                key_name,
+                KeyPurpose::Bitcoin(network),
+                sink,
+            )
+        })
     }
 
     pub fn finalize_keygen(

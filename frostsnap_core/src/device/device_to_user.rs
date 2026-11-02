@@ -23,4 +23,5 @@ pub enum DeviceToUserMessage {
     },
     Restoration(Box<restoration::ToUserRestoration>),
     NonceJobs(NonceJobBatch),
+    Card(Box<card::ToUserCard>),
 }

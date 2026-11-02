@@ -237,7 +237,7 @@ impl Run {
                 &mut coordinator_rng,
             )
             .unwrap();
-        let keygen_id = keygen_init.0.keygen_id;
+        let keygen_id = keygen_init.begin.keygen_id;
         run.extend(keygen_init);
 
         run.run_until_finished(env, rng).unwrap();

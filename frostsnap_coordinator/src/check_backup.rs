@@ -9,6 +9,9 @@ use frostsnap_core::{
 #[derive(Debug, Clone)]
 pub struct CheckBackupState {
     pub backup_manually_entered_valid: Option<bool>,
+    /// The device refused: the share was restored from a verifiable card, whose words it never
+    /// checks as 25.
+    pub refused: bool,
 }
 
 enum CheckBackupKind {
@@ -26,6 +29,7 @@ pub struct CheckBackupProtocol {
     device_id: DeviceId,
     abort: bool,
     finished: bool,
+    refused: bool,
     confirmed: bool,
     messages: Vec<CoordinatorSendMessage>,
     should_send: bool,
@@ -88,6 +92,7 @@ impl CheckBackupProtocol {
             sink: Box::new(sink),
             abort: false,
             finished: false,
+            refused: false,
             confirmed: false,
             messages,
             should_send: true,
@@ -108,6 +113,11 @@ impl UiProtocol for CheckBackupProtocol {
     fn is_complete(&self) -> Option<Completion> {
         if self.finished {
             Some(Completion::Success)
+        } else if self.refused {
+            // The device already went back to its home screen.
+            Some(Completion::Abort {
+                send_cancel_to_all_devices: false,
+            })
         } else if self.abort {
             Some(Completion::Abort {
                 send_cancel_to_all_devices: true,
@@ -150,6 +160,7 @@ impl UiProtocol for CheckBackupProtocol {
                 self.confirmed = true;
                 self.sink.send(CheckBackupState {
                     backup_manually_entered_valid: None,
+                    refused: false,
                 });
                 true
             }
@@ -175,6 +186,17 @@ impl UiProtocol for CheckBackupProtocol {
                 self.confirmed = confirmed;
                 self.sink.send(CheckBackupState {
                     backup_manually_entered_valid: Some(confirmed),
+                    refused: false,
+                });
+                true
+            }
+            (_, CoordinatorToUserMessage::CardRefused { device_id, .. })
+                if device_id == self.device_id =>
+            {
+                self.refused = true;
+                self.sink.send(CheckBackupState {
+                    backup_manually_entered_valid: None,
+                    refused: true,
                 });
                 true
             }
@@ -197,5 +219,59 @@ impl UiProtocol for CheckBackupProtocol {
 
     fn as_mut_any(&mut self) -> &mut dyn std::any::Any {
         self
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::{ui_protocol::UiStack, Sink};
+    use frostsnap_core::message::card::CardRefusal;
+    use frostsnap_core::schnorr_fun::fun::{marker::*, Scalar};
+    use frostsnap_core::{AccessStructureId, KeyId};
+    use std::sync::{Arc, Mutex};
+
+    #[derive(Clone, Default)]
+    struct FakeSink(Arc<Mutex<Vec<CheckBackupState>>>);
+
+    impl Sink<CheckBackupState> for FakeSink {
+        fn send(&self, state: CheckBackupState) {
+            self.0.lock().unwrap().push(state);
+        }
+    }
+
+    /// The device refuses the 25-word check of a card-restored share: the check ends and says
+    /// why, and nothing is broadcast to the devices.
+    #[test]
+    fn a_card_refusal_ends_it() {
+        let device_id = DeviceId([2; 33]);
+        let sink = FakeSink::default();
+        let mut stack = UiStack::default();
+        stack.push(CheckBackupProtocol {
+            device_id,
+            abort: false,
+            finished: false,
+            refused: false,
+            confirmed: false,
+            messages: vec![],
+            should_send: false,
+            kind: CheckBackupKind::Modern {
+                access_structure_ref: AccessStructureRef {
+                    key_id: KeyId([1; 32]),
+                    access_structure_id: AccessStructureId([3; 32]),
+                },
+                share_index: Scalar::<Secret, NonZero>::one().public(),
+            },
+            sink: Box::new(sink.clone()),
+        });
+        stack.process_to_user_message(CoordinatorToUserMessage::CardRefused {
+            device_id,
+            reason: CardRefusal::WrongState,
+        });
+        let last = sink.0.lock().unwrap().last().cloned().expect("a state");
+        assert!(last.refused);
+        assert_eq!(last.backup_manually_entered_valid, None);
+        assert!(!stack.clean_finished(), "finished, with no cancel to send");
+        assert!(stack.get_mut::<CheckBackupProtocol>().is_none());
     }
 }

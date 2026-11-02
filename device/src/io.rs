@@ -279,7 +279,12 @@ impl SerialIo<'_> {
                 .write_bytes(bytes)
                 .map_err(SerialInterfaceError::UartWriteError)?,
             SerialIo::Jtag { jtag, .. } => {
-                let _infallible = jtag.write(bytes);
+                // A byte at a time, each waiting for room in the FIFO. `write` commits a short
+                // chunk and doesn't wait for the host to take it, so the next chunk can overrun
+                // the FIFO and lose bytes, which desyncs the host's framing on big frames.
+                for &byte in bytes {
+                    while jtag.write_byte_nb(byte).is_err() {}
+                }
             }
         }
         Ok(())

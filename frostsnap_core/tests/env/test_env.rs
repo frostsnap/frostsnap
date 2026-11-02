@@ -202,6 +202,9 @@ impl Env for TestEnv {
             CoordinatorToUserMessage::ReplenishedNonces { device_id } => {
                 self.received_nonce_replenishes.insert(device_id);
             }
+            CoordinatorToUserMessage::Card(_)
+            | CoordinatorToUserMessage::CardRefused { .. }
+            | CoordinatorToUserMessage::CardRestore(_) => { /* the card flow has its own tests */ }
         }
     }
 
@@ -273,6 +276,7 @@ impl Env for TestEnv {
                 self.verification_requests
                     .insert(from, (address, bip32_path));
             }
+            DeviceToUserMessage::Card(_) => { /* card flows are driven in tests/card.rs */ }
             DeviceToUserMessage::NonceJobs(mut batch) => {
                 // Run the batch to completion and send a single response
                 batch.run_until_finished(&mut TestDeviceKeyGen);

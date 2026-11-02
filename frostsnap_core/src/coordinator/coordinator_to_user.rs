@@ -12,6 +12,15 @@ pub enum CoordinatorToUserMessage {
     ReplenishedNonces {
         device_id: DeviceId,
     },
+    Card(super::card::CardToUser),
+    /// A device refused a card request outside a card flow: today only the 25-word display or
+    /// check of a card-restored share, which the device never shows.
+    CardRefused {
+        device_id: DeviceId,
+        reason: crate::message::card::CardRefusal,
+    },
+    /// A frame from a device in a card restore, for the restore page.
+    CardRestore(super::card::CardRestoreToUser),
 }
 
 impl Gist for CoordinatorToUserMessage {

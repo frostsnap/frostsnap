@@ -5,6 +5,139 @@ pub fn firmware_version() -> alloc::string::String {
     alloc::format!("{}.{}.{}", major, minor, patch)
 }
 
+/// Drivers for the card demos: each stands in for core, answering the widget's events the
+/// way core would, with made-up data.
+pub mod card_demos {
+    use crate::{
+        card::{DeviceRoundAnswer, DeviceRoundEvent},
+        prelude::*,
+        KeyTouch,
+    };
+    use embedded_graphics::{pixelcolor::Rgb565, prelude::*};
+    use frost_backup::verifiable_card::{codec, layout::WORDS};
+    use frostsnap_core::schnorr_fun::{
+        frost::{SecretShare, SharedKey},
+        fun::{
+            marker::{Public, Secret, Zero},
+            poly, Scalar,
+        },
+    };
+
+    /// The 64 words of a fixed 2-of-3 share's card (share 1 of F(x) = 7 + 11x, both times G):
+    /// words 1-32 are `[..32]`, words 33-64 `[32..]`.
+    pub fn demo_card_words() -> [u16; WORDS] {
+        let poly: alloc::vec::Vec<Scalar<Secret, Zero>> = [7u8, 11]
+            .map(|n| {
+                let mut bytes = [0u8; 32];
+                bytes[31] = n;
+                Scalar::from_bytes_mod_order(bytes)
+            })
+            .to_vec();
+        let index = Scalar::<Public, Zero>::from(1u32)
+            .non_zero()
+            .expect("1 isn't zero");
+        let share = SecretShare {
+            index,
+            share: poly::scalar::eval(&poly, index),
+        };
+        let key = SharedKey::from_poly(poly::scalar::to_point_poly(&poly))
+            .non_zero()
+            .expect("7G isn't zero");
+        codec::encode(&share, &key)
+            .expect("the demo share has a card")
+            .words
+    }
+
+    /// Words 1-32 of [`demo_card_words`].
+    pub fn demo_device_half() -> [u16; 32] {
+        demo_card_words()[..32].try_into().expect("32 words")
+    }
+
+    macro_rules! delegate {
+        ($ty:ty, $field:ident, $on_draw:ident) => {
+            impl DynWidget for $ty {
+                fn set_constraints(&mut self, max_size: Size) {
+                    self.size = max_size;
+                    self.$field.set_constraints(max_size)
+                }
+                fn sizing(&self) -> crate::Sizing {
+                    self.$field.sizing()
+                }
+                fn handle_touch(
+                    &mut self,
+                    point: Point,
+                    current_time: Instant,
+                    is_release: bool,
+                ) -> Option<KeyTouch> {
+                    self.$field.handle_touch(point, current_time, is_release)
+                }
+                fn handle_vertical_drag(
+                    &mut self,
+                    prev_y: Option<u32>,
+                    new_y: u32,
+                    is_release: bool,
+                ) {
+                    self.$field.handle_vertical_drag(prev_y, new_y, is_release)
+                }
+                fn force_full_redraw(&mut self) {
+                    self.$field.force_full_redraw()
+                }
+            }
+
+            impl Widget for $ty {
+                type Color = Rgb565;
+                fn draw<D: DrawTarget<Color = Rgb565>>(
+                    &mut self,
+                    target: &mut SuperDrawTarget<D, Rgb565>,
+                    current_time: Instant,
+                ) -> Result<(), D::Error> {
+                    self.$on_draw();
+                    self.$field.draw(target, current_time)
+                }
+            }
+        };
+    }
+
+    /// The device round's answer screen, with the widest words the fit report found.
+    pub struct DeviceRoundDemo {
+        answer: DeviceRoundAnswer,
+        k: u8,
+        display: u32,
+        size: Size,
+    }
+
+    // TOMORROW, TOMATO, TONIGHT, then DOCUMENT, DOLPHIN, DOMAIN
+    const QUESTIONS: [[u16; 3]; 2] = [[1825, 1824, 1828], [515, 518, 519]];
+
+    impl Default for DeviceRoundDemo {
+        fn default() -> Self {
+            Self::new()
+        }
+    }
+
+    impl DeviceRoundDemo {
+        pub fn new() -> Self {
+            Self {
+                answer: DeviceRoundAnswer::new(44, 0, QUESTIONS[0], 1),
+                k: 0,
+                display: 1,
+                size: Size::zero(),
+            }
+        }
+
+        fn poll(&mut self) {
+            if let Some(DeviceRoundEvent::Pick { .. }) = self.answer.take_event() {
+                self.k = (self.k + 1) % 5;
+                self.display += 1;
+                let j = 32 + (self.k * 7 + 12) % 32;
+                self.answer
+                    .set_question(j, self.k, QUESTIONS[(self.k % 2) as usize], self.display);
+            }
+        }
+    }
+    delegate!(DeviceRoundDemo, answer, poll);
+}
+
 /// Macro for selecting and running demo widgets
 #[macro_export]
 macro_rules! demo_widget {
@@ -1406,8 +1539,178 @@ macro_rules! demo_widget {
                 let widget = CheckBackupScreen::new(TEST_WORD_INDICES, 42, 0xDEAD_BEEF);
                 $run_macro!(widget);
             }
+            "card_pages" => {
+                use $crate::card::{self, CardInfoPage, Footer};
+
+                /// Every card info page in turn; pages with no footer advance on a tap.
+                struct CardPagesDemo {
+                    index: usize,
+                    page: CardInfoPage,
+                    size: Size,
+                    clear: bool,
+                }
+
+                impl CardPagesDemo {
+                    const LEN: usize = card::ALL_CARD_COPY.len() + 5;
+
+                    fn page_at(index: usize) -> CardInfoPage {
+                        match index.checked_sub(card::ALL_CARD_COPY.len()) {
+                            None => card::ALL_CARD_COPY[index].page(),
+                            Some(0) => card::key_restored_page(2, Some(2), true),
+                            Some(1) => card::words_didnt_fit_page((1 << 6) | (1 << 39)),
+                            Some(2) => card::words_unreadable_page(1 << 6),
+                            Some(3) => card::threshold_warning_page(Some(3), Some(2)),
+                            Some(_) => card::threshold_hold_page(Some(3), 2),
+                        }
+                    }
+
+                    fn next(&mut self) {
+                        self.index = (self.index + 1) % Self::LEN;
+                        self.page = Self::page_at(self.index);
+                        self.page.set_constraints(self.size);
+                        self.clear = true;
+                    }
+                }
+
+                impl $crate::DynWidget for CardPagesDemo {
+                    fn set_constraints(&mut self, max_size: Size) {
+                        self.size = max_size;
+                        self.page.set_constraints(max_size);
+                    }
+                    fn sizing(&self) -> $crate::Sizing { self.size.into() }
+                    fn handle_touch(&mut self, point: Point, current_time: $crate::Instant, is_release: bool) -> Option<$crate::KeyTouch> {
+                        if is_release && self.page.footer() == Footer::None {
+                            self.next();
+                            return None;
+                        }
+                        self.page.handle_touch(point, current_time, is_release)
+                    }
+                    fn handle_vertical_drag(&mut self, prev_y: Option<u32>, new_y: u32, is_release: bool) {
+                        self.page.handle_vertical_drag(prev_y, new_y, is_release)
+                    }
+                    fn force_full_redraw(&mut self) { self.page.force_full_redraw() }
+                }
+
+                impl $crate::Widget for CardPagesDemo {
+                    type Color = Rgb565;
+                    fn draw<D: embedded_graphics::draw_target::DrawTarget<Color = Rgb565>>(
+                        &mut self,
+                        target: &mut $crate::SuperDrawTarget<D, Rgb565>,
+                        current_time: $crate::Instant,
+                    ) -> Result<(), D::Error> {
+                        if self.page.is_done() {
+                            self.next();
+                        }
+                        if core::mem::take(&mut self.clear) {
+                            target.clear(PALETTE.background)?;
+                            self.page.force_full_redraw();
+                        }
+                        self.page.draw(target, current_time)
+                    }
+                }
+
+                let widget = CardPagesDemo { index: 0, page: CardPagesDemo::page_at(0), size: Size::zero(), clear: false };
+                $run_macro!(widget);
+            }
+            "card_device_half" => {
+                let words = $crate::demo_widget::card_demos::demo_device_half();
+                let widget = $crate::backup::BackupDisplay::card_half(words);
+                $run_macro!(widget);
+            }
+            "card_self_check" => {
+                let words = $crate::demo_widget::card_demos::demo_device_half();
+                let items = (0..32u8).map(|j| (j + 1, words[j as usize])).collect();
+                let widget = $crate::backup::CheckBackupScreen::for_words(items, "Words 1-32 checked", 0xDEAD_BEEF);
+                $run_macro!(widget);
+            }
+            "card_phone_half_next" => {
+                let widget = $crate::card::COPY_PHONE_HALF_NEXT.page();
+                $run_macro!(widget);
+            }
+            "card_restore_entry" => {
+                let widget = $crate::card::CardRestoreEntry::new();
+                $run_macro!(widget);
+            }
+            "card_success" => {
+                let widget = $crate::card::CardSuccess::new("Backup checked");
+                $run_macro!(widget);
+            }
+            "card_device_round" => {
+                let widget = $crate::demo_widget::card_demos::DeviceRoundDemo::new();
+                $run_macro!(widget);
+            }
+            "card_gate" => {
+                use $crate::card::GateScreen;
+
+                /// A tap releases the next dot, alternating with the preparing state.
+                struct GateDemo {
+                    gate: GateScreen,
+                }
+
+                impl $crate::DynWidget for GateDemo {
+                    fn set_constraints(&mut self, max_size: Size) { self.gate.set_constraints(max_size) }
+                    fn sizing(&self) -> $crate::Sizing { self.gate.sizing() }
+                    fn handle_touch(&mut self, _point: Point, _current_time: $crate::Instant, is_release: bool) -> Option<$crate::KeyTouch> {
+                        if is_release {
+                            let (dots, preparing) = (self.gate.dots(), self.gate.is_preparing());
+                            if preparing {
+                                self.gate.set(dots + 1, false);
+                            } else {
+                                self.gate.set(dots % 5, true);
+                            }
+                        }
+                        None
+                    }
+                    fn force_full_redraw(&mut self) { self.gate.force_full_redraw() }
+                }
+
+                impl $crate::Widget for GateDemo {
+                    type Color = Rgb565;
+                    fn draw<D: embedded_graphics::draw_target::DrawTarget<Color = Rgb565>>(
+                        &mut self,
+                        target: &mut $crate::SuperDrawTarget<D, Rgb565>,
+                        current_time: $crate::Instant,
+                    ) -> Result<(), D::Error> {
+                        self.gate.draw(target, current_time)
+                    }
+                }
+
+                let widget = GateDemo { gate: GateScreen::new(0, true) };
+                $run_macro!(widget);
+            }
+            "card_busy" => {
+                use $crate::card::{CardBusyScreen, BUSY_PREPARING_CARD};
+
+                /// The progress runs over 20 seconds and starts again.
+                struct BusyDemo {
+                    busy: CardBusyScreen,
+                }
+
+                impl $crate::DynWidget for BusyDemo {
+                    fn set_constraints(&mut self, max_size: Size) { self.busy.set_constraints(max_size) }
+                    fn sizing(&self) -> $crate::Sizing { self.busy.sizing() }
+                    fn force_full_redraw(&mut self) { self.busy.force_full_redraw() }
+                }
+
+                impl $crate::Widget for BusyDemo {
+                    type Color = Rgb565;
+                    fn draw<D: embedded_graphics::draw_target::DrawTarget<Color = Rgb565>>(
+                        &mut self,
+                        target: &mut $crate::SuperDrawTarget<D, Rgb565>,
+                        current_time: $crate::Instant,
+                    ) -> Result<(), D::Error> {
+                        let elapsed = current_time.as_millis() % 20_000;
+                        self.busy.set_progress(elapsed as f32 / 20_000.0);
+                        self.busy.draw(target, current_time)
+                    }
+                }
+
+                let (title, status) = BUSY_PREPARING_CARD;
+                let widget = BusyDemo { busy: CardBusyScreen::new(title, status) };
+                $run_macro!(widget);
+            }
             _ => {
-                panic!("Unknown demo: '{}'. Valid demos: hello_world, bip39_entry, log_touches, numeric_keyboard, hold_confirm, welcome, column_cross_axis, column_center, row_cross_axis, row_center, row_inside_column, bip39_backup, all_words, fade_in, fade_switcher, device_name, device_name_cursor, bobbing_icon, swipe_up_chevron, keygen_check, sign_prompt, bitcoin_amount, slide_in, firmware_upgrade_progress, firmware_upgrade_download, firmware_upgrade_erase, firmware_upgrade_passive, progress, firmware_upgrade, array_column, vec_column, word_selector, address, standby, standby_recovery, screen_test, multiline_string, logo_colors, standby_transitions, erase_device, aa_compare, border_iter, check_backup", $demo);
+                panic!("Unknown demo: '{}'. Valid demos: hello_world, bip39_entry, log_touches, numeric_keyboard, hold_confirm, welcome, column_cross_axis, column_center, row_cross_axis, row_center, row_inside_column, bip39_backup, all_words, fade_in, fade_switcher, device_name, device_name_cursor, bobbing_icon, swipe_up_chevron, keygen_check, sign_prompt, bitcoin_amount, slide_in, firmware_upgrade_progress, firmware_upgrade_download, firmware_upgrade_erase, firmware_upgrade_passive, progress, firmware_upgrade, array_column, vec_column, word_selector, address, standby, standby_recovery, screen_test, multiline_string, logo_colors, standby_transitions, erase_device, aa_compare, border_iter, check_backup, card_pages, card_device_half, card_self_check, card_phone_half_next, card_restore_entry, card_success, card_device_round, card_gate, card_busy", $demo);
             }
         }
     };
