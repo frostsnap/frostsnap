@@ -24,6 +24,8 @@ use flutter_rust_bridge::frb;
 
 use frostsnap_coordinator::frostsnap_core;
 
+pub use frostsnap_core::message::signing::SpContactSessionId;
+
 pub use frostsnap_core::{
     device::KeyPurpose, message::EncodedSignature, AccessStructureId, AccessStructureRef, DeviceId,
     KeyId, KeygenId, MasterAppkey, RestorationId, SessionHash, SignSessionId, SymmetricKey,
@@ -66,6 +68,7 @@ bytes_id_mirror!(_KeyId, KeyId, 32);
 bytes_id_mirror!(_SessionHash, SessionHash, 32);
 bytes_id_mirror!(_EncodedSignature, EncodedSignature, 64);
 bytes_id_mirror!(_SignSessionId, SignSessionId, 32);
+bytes_id_mirror!(_SpContactSessionId, SpContactSessionId, 32);
 bytes_id_mirror!(_RestorationId, RestorationId, 16);
 bytes_id_mirror!(_SymmetricKey, SymmetricKey, 32);
 

@@ -10,6 +10,7 @@ use frostsnap_coordinator::{
     keygen::KeyGenState,
     nonce_replenish::NonceReplenishState,
     signing::SigningState,
+    sp_contact::SpContactState,
     verify_address::VerifyAddressProtocolState,
 };
 
@@ -75,6 +76,7 @@ bridge_sink!(KeyGenState);
 bridge_sink!(FirmwareUpgradeConfirmState);
 bridge_sink!(VerifyAddressProtocolState);
 bridge_sink!(SigningState);
+bridge_sink!(SpContactState);
 bridge_sink!(bool);
 bridge_sink!(f32);
 bridge_sink!(ChainStatus);

@@ -211,26 +211,6 @@ impl SuperWallet {
             .collect())
     }
 
-    #[frb(sync)]
-    pub fn calculate_available(
-        &self,
-        master_appkey: MasterAppkey,
-        target_addresses: Vec<RustAutoOpaque<Address>>,
-        feerate: f32,
-    ) -> u64 {
-        let mut wallet = self.inner.lock().unwrap();
-        wallet
-            .calculate_avaliable_value(
-                master_appkey,
-                target_addresses
-                    .into_iter()
-                    .map(|a| a.blocking_read().clone()),
-                feerate,
-                true,
-            )
-            .max(0) as u64
-    }
-
     /// Start building transaction.
     ///
     /// Returns `None` if wallet under `master_appkey` is incomplete.

@@ -10,13 +10,15 @@ use crate::{
 use anyhow::{anyhow, Result};
 use flutter_rust_bridge::frb;
 pub use frostsnap_coordinator::signing::SigningState;
+pub use frostsnap_coordinator::sp_contact::SpContactState;
 pub use frostsnap_core::bitcoin_transaction::{ScopedTo, TransactionTemplate};
 pub use frostsnap_core::coordinator::ActiveSignSession;
 pub use frostsnap_core::coordinator::{SignSessionProgress, StartSign};
 use frostsnap_core::MasterAppkey;
 use frostsnap_core::{
-    message::EncodedSignature, AccessStructureRef, DeviceId, KeyId, SignSessionId, SymmetricKey,
-    WireSignTask,
+    message::{signing::SpContactSessionId, EncodedSignature},
+    silent_payments::SignedSpContact,
+    AccessStructureRef, DeviceId, KeyId, SignSessionId, SymmetricKey, WireSignTask,
 };
 use std::collections::HashSet;
 use tracing::{event, Level};
@@ -37,6 +39,34 @@ impl UnbroadcastedTx {
     #[frb(sync)]
     pub fn is_signed(&self) -> bool {
         self.active_session.is_none()
+    }
+}
+
+#[frb(mirror(SpContactState), unignore)]
+pub struct _SpContactState {
+    pub session_id: SpContactSessionId,
+    pub confirmed: Vec<DeviceId>,
+    pub needed_from: Vec<DeviceId>,
+    pub connected_but_need_request: Vec<DeviceId>,
+    pub aborted: Option<String>,
+}
+
+/// A trusted silent payment contact of a wallet.
+#[derive(Clone, Debug)]
+pub struct SpContactEntry {
+    pub(crate) contact: SignedSpContact,
+    pub(crate) address: String,
+}
+
+impl SpContactEntry {
+    #[frb(sync)]
+    pub fn name(&self) -> String {
+        self.contact.contact.details.name.clone()
+    }
+
+    #[frb(sync)]
+    pub fn address(&self) -> String {
+        self.address.clone()
     }
 }
 
@@ -478,6 +508,65 @@ impl Coordinator {
     ) -> Result<()> {
         self.0
             .request_device_sign(device_id, session_id, encryption_key)
+    }
+
+    /// Starts adding a contact: each of `devices` shows its name and address, and answers with its
+    /// share of the ECDH once the user holds. Once a threshold have,
+    /// [`Self::start_sp_contact_sign`] opens the session that signs it.
+    pub fn start_sp_contact(
+        &self,
+        access_structure_ref: AccessStructureRef,
+        name: String,
+        address: String,
+        devices: Vec<DeviceId>,
+        encryption_key: SymmetricKey,
+        sink: StreamSink<SpContactState>,
+    ) -> Result<()> {
+        report_start_failure(sink, |sink| {
+            self.0.start_sp_contact(
+                access_structure_ref,
+                name,
+                address,
+                devices.into_iter().collect(),
+                encryption_key,
+                sink,
+            )
+        })
+    }
+
+    #[frb(sync)]
+    pub fn request_sp_contact_ecdh(
+        &self,
+        session_id: SpContactSessionId,
+        device_id: DeviceId,
+        encryption_key: SymmetricKey,
+    ) -> Result<()> {
+        self.0
+            .request_sp_contact_ecdh(session_id, device_id, encryption_key)
+    }
+
+    /// Opens signing with the devices that answered. The session is followed like any other,
+    /// through [`Self::try_restore_signing_session`], and ends with [`Self::finish_sp_contact`].
+    pub fn start_sp_contact_sign(&self, session_id: SpContactSessionId) -> Result<SignSessionId> {
+        self.0.start_sp_contact_sign(session_id)
+    }
+
+    pub fn finish_sp_contact(&self, session_id: SignSessionId) -> Result<()> {
+        self.0.finish_sp_contact(session_id)
+    }
+
+    pub fn cancel_sp_contact(&self, session_id: SpContactSessionId) -> Result<()> {
+        self.0.cancel_sp_contact(session_id)
+    }
+
+    /// The trusted contacts of `key_id`, by name.
+    #[frb(sync)]
+    pub fn sp_contacts(&self, key_id: KeyId) -> Vec<SpContactEntry> {
+        self.0.sp_contacts(key_id)
+    }
+
+    pub fn remove_sp_contact(&self, key_id: KeyId, name: String) -> Result<()> {
+        self.0.remove_sp_contact(key_id, name)
     }
 
     pub fn cancel_sign_session(&self, ssid: SignSessionId) -> Result<()> {
