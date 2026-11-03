@@ -285,6 +285,17 @@ impl Coordinator {
         self.0.erase_all_devices();
     }
 
+    /// Developer tool so two app instances on one host don't fight over the same devices.
+    #[frb(sync)]
+    pub fn set_usb_enabled(&self, enabled: bool) {
+        self.0.set_usb_enabled(enabled);
+    }
+
+    #[frb(sync)]
+    pub fn usb_enabled(&self) -> bool {
+        self.0.usb_enabled()
+    }
+
     pub fn cancel_protocol(&self) {
         self.0.cancel_protocol()
     }

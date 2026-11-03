@@ -447,6 +447,14 @@ impl FfiCoordinator {
         self.usb_sender.send_cancel(id)
     }
 
+    pub fn set_usb_enabled(&self, enabled: bool) {
+        self.usb_sender.set_usb_enabled(enabled);
+    }
+
+    pub fn usb_enabled(&self) -> bool {
+        self.usb_sender.usb_enabled()
+    }
+
     pub fn generate_new_key(
         &self,
         devices: Vec<DeviceId>,

@@ -193,6 +193,64 @@ run +ARGS="": maybe-gen
     cd frostsnapp && FROSTSNAP_ENV={{env}} BUNDLE_FIRMWARE=1 \
       flutter run $FLAVOR_FLAG --dart-define=BUILD_COMMIT="$BUILD_COMMIT" --dart-define=BUILD_VERSION="$BUILD_VERSION" {{ARGS}}
 
+# Run two app instances with separate data dirs to test multi-party flows on one host; turn USB off in developer settings on one so they don't fight over the devices.
+run-dual INSTANCE="": maybe-gen
+    #!/bin/sh
+    set -e
+    just env={{env}} build-firmware-signed
+    BUILD_COMMIT=$(just get-build-commit)
+    BUILD_VERSION=$(just get-build-version)
+    DART_DEFINES="--dart-define=BUILD_COMMIT=$BUILD_COMMIT --dart-define=BUILD_VERSION=$BUILD_VERSION"
+    REPO_DIR={{quote(justfile_directory())}}
+    DATA_DIR_A="--data-dir=$REPO_DIR/tmp/run-dual/a"
+    DATA_DIR_B="--data-dir=$REPO_DIR/tmp/run-dual/b"
+    case "$(uname -s)" in
+        Darwin)
+            FLUTTER_TARGET=macos
+            BG_BINARY=frostsnapp/build/macos/Build/Products/Debug/Frostsnap.app/Contents/MacOS/Frostsnap
+            ;;
+        Linux)
+            FLUTTER_TARGET=linux
+            BG_BINARY=frostsnapp/build/linux/x64/debug/bundle/Frostsnap
+            ;;
+        *)
+            echo "run-dual: unsupported platform $(uname -s)" >&2
+            exit 1
+            ;;
+    esac
+    run_instance() {
+        cd frostsnapp && env FROSTSNAP_ENV={{env}} BUNDLE_FIRMWARE=1 \
+          flutter run -d "$FLUTTER_TARGET" $DART_DEFINES -a "$1"
+    }
+    case "{{INSTANCE}}" in
+        a) run_instance "$DATA_DIR_A" ;;
+        b) run_instance "$DATA_DIR_B" ;;
+        "")
+            (cd frostsnapp && FROSTSNAP_ENV={{env}} BUNDLE_FIRMWARE=1 \
+              flutter build "$FLUTTER_TARGET" --debug $DART_DEFINES)
+            "$BG_BINARY" "$DATA_DIR_B" &
+            BG_PID=$!
+            # The desktop app survives the terminal's SIGINT, so b (and any a that a killed
+            # `flutter run` orphaned) must be reaped explicitly. The pkill patterns match only
+            # the data-dir argument so nothing unrelated is hit; pkill takes a regex, so the
+            # checkout path's metacharacters are escaped to match it literally.
+            pkill_literal() {
+                pkill -f -- "$(printf '%s' "$1" | sed 's/[][\\.*^$+?(){}|]/\\&/g')" 2>/dev/null || true
+            }
+            cleanup() {
+                kill "$BG_PID" 2>/dev/null || true
+                pkill_literal "$DATA_DIR_B"
+                pkill_literal "$DATA_DIR_A"
+            }
+            trap cleanup EXIT INT TERM
+            (run_instance "$DATA_DIR_A")
+            ;;
+        *)
+            echo "run-dual: INSTANCE must be a, b or empty" >&2
+            exit 1
+            ;;
+    esac
+
 # Run the app with unsigned legacy firmware (for legacy devices)
 legacy-run +ARGS="": maybe-gen
     #!/bin/sh
