@@ -1072,7 +1072,7 @@ mod test {
         let change_index = template
             .as_seen_by(plan.master_appkey)
             .iter_our_outputs()
-            .map(|(_, _, spk)| spk.bip32_path.index.to_u32())
+            .map(|(_, _, path)| path.index.to_u32())
             .next()
             .expect("send has a change output");
         assert_eq!(change_index, 1);

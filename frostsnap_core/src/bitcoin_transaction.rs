@@ -11,7 +11,7 @@ use bitcoin::{
 
 use crate::{
     message::EncodedSignature,
-    tweak::{AppTweak, BitcoinBip32Path, BitcoinTweak, BitcoinTweakKind, Keychain},
+    tweak::{AppTweak, BitcoinBip32Path, BitcoinTweak, Keychain, LeafPath},
     MasterAppkey,
 };
 
@@ -380,17 +380,17 @@ impl TransactionTemplate<ScopedTo> {
             .filter_map(|(i, input)| Some((i, input, input.owner.local_owner()?)))
     }
 
-    /// Every script this key owns in this transaction, on either side, with the path that
-    /// derives it.
+    /// Every script this key owns in this transaction at a wallet path, on either side, with
+    /// that path. A script-path input has no such path, being a coin of someone's descriptor.
     ///
     /// The template is the authority on what is ours; asking a wallet index instead answers
     /// a different question and is bounded by whatever it has derived so far.
     pub fn our_spks(&self) -> BTreeMap<ScriptBuf, BitcoinBip32Path> {
         self.iter_our_inputs()
-            .map(|(_, _, owner)| (owner.spk(), owner.bip32_path))
+            .filter_map(|(_, _, owner)| Some((owner.spk(), owner.bip32_path()?)))
             .chain(
                 self.iter_our_outputs()
-                    .map(|(_, _, owner)| (owner.spk(), owner.bip32_path)),
+                    .map(|(_, output, bip32_path)| (output.owner.spk(), bip32_path)),
             )
             .collect()
     }
@@ -448,11 +448,13 @@ impl TransactionTemplate<ScopedTo> {
         Ok(tx)
     }
 
-    pub fn iter_our_outputs(&self) -> impl Iterator<Item = (usize, &Output, &LocalSpk)> {
+    /// Our outputs with the wallet path each is at. Every one has one: scoping made any
+    /// output of ours that is not a plain key-spend foreign.
+    pub fn iter_our_outputs(&self) -> impl Iterator<Item = (usize, &Output, BitcoinBip32Path)> {
         self.outputs
             .iter()
             .enumerate()
-            .filter_map(|(i, output)| Some((i, output, output.owner.local_owner()?)))
+            .filter_map(|(i, output)| Some((i, output, output.owner.local_owner()?.bip32_path()?)))
     }
 
     /// Whether signing this ourselves produces a transaction anyone can broadcast.
@@ -520,9 +522,7 @@ impl TransactionTemplate<ScopedTo> {
             .any(|output| matches!(output.owner, SpkOwner::Foreign(_)));
         let internal_count = self
             .iter_our_outputs()
-            .filter(|(_, _, local)| {
-                local.bip32_path.account_keychain.keychain == Keychain::Internal
-            })
+            .filter(|(_, _, bip32_path)| bip32_path.account_keychain.keychain == Keychain::Internal)
             .count();
         // A single change output alongside a foreign recipient is the shape of an
         // ordinary send; disclosing it would train users to skim past their own
@@ -537,12 +537,15 @@ impl TransactionTemplate<ScopedTo> {
                 let owned = match &output.owner {
                     SpkOwner::Foreign(_) => None,
                     SpkOwner::Local(local) => {
+                        let bip32_path = local
+                            .bip32_path()
+                            .expect("scoping leaves only plain outputs ours");
                         if hide_single_change
-                            && local.bip32_path.account_keychain.keychain == Keychain::Internal
+                            && bip32_path.account_keychain.keychain == Keychain::Internal
                         {
                             return None;
                         }
-                        Some(local.bip32_path)
+                        Some(bip32_path)
                     }
                 };
                 Some(PromptRecipient {
@@ -714,16 +717,17 @@ impl Input {
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct LocalSpk {
     pub master_appkey: MasterAppkey,
-    pub bip32_path: BitcoinBip32Path,
     pub spend: LocalSpend,
 }
 
 /// How this wallet spends a taproot output it has a key in.
 #[derive(bincode::Encode, bincode::Decode, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum LocalSpend {
-    /// We are the taproot internal key and spend the key path. `merkle_root` is `None` for a
-    /// plain BIP86 output, or `Some` when the output also commits to a script tree.
+    /// We are the taproot internal key, at a wallet path, and spend the key path.
+    /// `merkle_root` is `None` for a plain BIP86 output, or `Some` when the output also commits
+    /// to a script tree.
     KeySpend {
+        bip32_path: BitcoinBip32Path,
         #[bincode(with_serde)]
         merkle_root: Option<TapNodeHash>,
     },
@@ -742,7 +746,7 @@ pub enum LocalSpend {
 /// proof) that a witness `[signature, leaf_script, control_block]` needs.
 #[derive(bincode::Encode, bincode::Decode, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct LeafSpend {
-    pub bip32_path: BitcoinBip32Path,
+    pub path: LeafPath,
     #[bincode(with_serde)]
     pub leaf_script: ScriptBuf,
     /// Always a valid [`LeafVersion`]: checked at construction and decode.
@@ -752,13 +756,13 @@ pub struct LeafSpend {
 
 impl LeafSpend {
     pub fn new(
-        bip32_path: BitcoinBip32Path,
+        path: impl Into<LeafPath>,
         leaf_script: ScriptBuf,
         leaf_version: LeafVersion,
         control_block: Vec<u8>,
     ) -> Self {
         Self {
-            bip32_path,
+            path: path.into(),
             leaf_script,
             leaf_version: leaf_version.to_consensus(),
             control_block,
@@ -777,9 +781,8 @@ impl LeafSpend {
     /// Our key in a leaf is the raw BIP32-derived key: the taproot tweak only applies to the
     /// internal key.
     pub fn app_tweak(&self) -> AppTweak {
-        AppTweak::Bitcoin(BitcoinTweak {
-            bip32_path: self.bip32_path,
-            kind: BitcoinTweakKind::ScriptSpend,
+        AppTweak::Bitcoin(BitcoinTweak::ScriptSpend {
+            leaf_path: self.path,
         })
     }
 
@@ -862,15 +865,14 @@ impl LocalSpk {
     ) -> Self {
         Self {
             master_appkey,
-            bip32_path,
-            spend: LocalSpend::KeySpend { merkle_root },
+            spend: LocalSpend::KeySpend {
+                bip32_path,
+                merkle_root,
+            },
         }
     }
 
     /// A script-path spend of the output `script_pubkey`, signing each of `leaves`.
-    ///
-    /// `bip32_path` is the first leaf's: no one key owns the coin, and that is the one it is
-    /// named by.
     ///
     /// # Panics
     ///
@@ -880,13 +882,12 @@ impl LocalSpk {
         script_pubkey: ScriptBuf,
         leaves: Vec<LeafSpend>,
     ) -> Self {
-        let bip32_path = leaves
-            .first()
-            .expect("a script-path spend signs at least one leaf")
-            .bip32_path;
+        assert!(
+            !leaves.is_empty(),
+            "a script-path spend signs at least one leaf"
+        );
         Self {
             master_appkey,
-            bip32_path,
             spend: LocalSpend::ScriptSpend {
                 script_pubkey,
                 leaves,
@@ -894,17 +895,38 @@ impl LocalSpk {
         }
     }
 
+    /// The wallet path of our internal key, on the key path. A script-path coin has none: its
+    /// keys sit wherever its descriptor put them.
+    pub fn bip32_path(&self) -> Option<BitcoinBip32Path> {
+        match &self.spend {
+            LocalSpend::KeySpend { bip32_path, .. } => Some(*bip32_path),
+            LocalSpend::ScriptSpend { .. } => None,
+        }
+    }
+
     /// The tweak the key-path signature is made with, on the key path.
     fn key_path_tweak(&self) -> Option<AppTweak> {
         match &self.spend {
-            LocalSpend::KeySpend { merkle_root } => Some(AppTweak::Bitcoin(BitcoinTweak {
-                bip32_path: self.bip32_path,
-                kind: BitcoinTweakKind::KeySpend {
-                    merkle_root: *merkle_root,
-                },
+            LocalSpend::KeySpend {
+                bip32_path,
+                merkle_root,
+            } => Some(AppTweak::Bitcoin(BitcoinTweak::KeySpend {
+                bip32_path: *bip32_path,
+                merkle_root: *merkle_root,
             })),
             LocalSpend::ScriptSpend { .. } => None,
         }
+    }
+
+    /// True for a plain BIP86 key-spend, the only kind the pre-scripted encodings carry.
+    fn is_plain(&self) -> bool {
+        matches!(
+            self.spend,
+            LocalSpend::KeySpend {
+                merkle_root: None,
+                ..
+            }
+        )
     }
 
     /// One entry per signature this input takes, in signing order: `None` for the key path, or
@@ -936,10 +958,7 @@ impl LocalSpk {
 
     /// True if this is anything other than a plain BIP86 key-spend.
     pub fn spends_extra_conditions(&self) -> bool {
-        match &self.spend {
-            LocalSpend::KeySpend { merkle_root } => merkle_root.is_some(),
-            LocalSpend::ScriptSpend { .. } => true,
-        }
+        !self.is_plain()
     }
 
     /// Proves this owner derives `spk`, which is what separates a claim that is ours from one
@@ -950,18 +969,22 @@ impl LocalSpk {
     /// `spk`'s output key.
     fn check_spk(&self, spk: &ScriptBuf) -> Result<(), Box<SpkDoesntMatchPathError>> {
         let expected = self.spk();
-        let leaves_proven = self
+        let unproven_leaf = self
             .leaves()
             .iter()
-            .all(|leaf| leaf.is_ours_in(self.master_appkey, spk));
-        if *spk != expected || !leaves_proven {
+            .find(|leaf| !leaf.is_ours_in(self.master_appkey, spk));
+        if *spk != expected || unproven_leaf.is_some() {
+            let path = match (self.bip32_path(), unproven_leaf) {
+                (Some(bip32_path), _) => bip32_path.path_segments_from_bitcoin_appkey().collect(),
+                (None, leaf) => leaf
+                    .or(self.leaves().first())
+                    .map(|leaf| leaf.path.path_segments_from_bitcoin_appkey().collect())
+                    .unwrap_or_default(),
+            };
             return Err(Box::new(SpkDoesntMatchPathError {
                 got: spk.clone(),
                 expected,
-                path: self
-                    .bip32_path
-                    .path_segments_from_bitcoin_appkey()
-                    .collect(),
+                path,
                 master_appkey: self.master_appkey,
             }));
         }
@@ -1080,16 +1103,21 @@ impl bincode::Encode for SpkOwner {
                 0u32.encode(encoder)?;
                 bincode::serde::Compat(spk).encode(encoder)
             }
-            SpkOwner::Local(local) => {
-                let plain = local.spend == (LocalSpend::KeySpend { merkle_root: None });
-                if plain { 1u32 } else { 2u32 }.encode(encoder)?;
-                local.master_appkey.encode(encoder)?;
-                local.bip32_path.encode(encoder)?;
-                if !plain {
-                    local.spend.encode(encoder)?;
+            SpkOwner::Local(local) => match &local.spend {
+                LocalSpend::KeySpend {
+                    bip32_path,
+                    merkle_root: None,
+                } => {
+                    1u32.encode(encoder)?;
+                    local.master_appkey.encode(encoder)?;
+                    bip32_path.encode(encoder)
                 }
-                Ok(())
-            }
+                spend => {
+                    2u32.encode(encoder)?;
+                    local.master_appkey.encode(encoder)?;
+                    spend.encode(encoder)
+                }
+            },
         }
     }
 }
@@ -1100,40 +1128,38 @@ impl<Context> bincode::Decode<Context> for SpkOwner {
     ) -> Result<Self, bincode::error::DecodeError> {
         Ok(match u32::decode(decoder)? {
             0 => SpkOwner::Foreign(bincode::serde::Compat::<ScriptBuf>::decode(decoder)?.0),
-            variant @ (1 | 2) => {
+            1 => SpkOwner::Local(LocalSpk::key_spend(
+                bincode::Decode::decode(decoder)?,
+                bincode::Decode::decode(decoder)?,
+            )),
+            2 => {
                 let master_appkey = bincode::Decode::decode(decoder)?;
-                let bip32_path = bincode::Decode::decode(decoder)?;
-                let spend = if variant == 1 {
-                    LocalSpend::KeySpend { merkle_root: None }
-                } else {
-                    match bincode::Decode::decode(decoder)? {
-                        LocalSpend::KeySpend { merkle_root: None } => {
-                            return Err(bincode::error::DecodeError::Other(
-                                "a plain key-spend owner must be encoded as variant 1",
-                            ))
-                        }
-                        LocalSpend::ScriptSpend { leaves, .. }
-                            if leaves.first().map(|leaf| leaf.bip32_path) != Some(bip32_path) =>
-                        {
-                            return Err(bincode::error::DecodeError::Other(
-                                "a script-path owner is named by its first leaf's path",
-                            ))
-                        }
-                        LocalSpend::ScriptSpend { leaves, .. }
-                            if leaves.iter().any(|leaf| {
-                                LeafVersion::from_consensus(leaf.leaf_version).is_err()
-                            }) =>
-                        {
-                            return Err(bincode::error::DecodeError::Other(
-                                "invalid taproot leaf version",
-                            ))
-                        }
-                        spend => spend,
+                let spend = match bincode::Decode::decode(decoder)? {
+                    LocalSpend::KeySpend {
+                        merkle_root: None, ..
+                    } => {
+                        return Err(bincode::error::DecodeError::Other(
+                            "a plain key-spend owner must be encoded as variant 1",
+                        ))
                     }
+                    LocalSpend::ScriptSpend { leaves, .. } if leaves.is_empty() => {
+                        return Err(bincode::error::DecodeError::Other(
+                            "a script-path owner signs at least one leaf",
+                        ))
+                    }
+                    LocalSpend::ScriptSpend { leaves, .. }
+                        if leaves.iter().any(|leaf| {
+                            LeafVersion::from_consensus(leaf.leaf_version).is_err()
+                        }) =>
+                    {
+                        return Err(bincode::error::DecodeError::Other(
+                            "invalid taproot leaf version",
+                        ))
+                    }
+                    spend => spend,
                 };
                 SpkOwner::Local(LocalSpk {
                     master_appkey,
-                    bip32_path,
                     spend,
                 })
             }
@@ -1315,11 +1341,33 @@ mod test {
 
         // A plain key-spend smuggled in as the scripted variant would be a second encoding of
         // the same owner.
-        let mut second_form = legacy_bytes.clone();
-        second_form[0] = 2;
+        let mut second_form = bincode::encode_to_vec(2u32, config).unwrap();
+        second_form.extend(bincode::encode_to_vec(master_appkey, config).unwrap());
         second_form.extend(
-            bincode::encode_to_vec(LocalSpend::KeySpend { merkle_root: None }, config).unwrap(),
+            bincode::encode_to_vec(
+                LocalSpend::KeySpend {
+                    bip32_path,
+                    merkle_root: None,
+                },
+                config,
+            )
+            .unwrap(),
         );
+
+        // An owner with no leaf to sign is no script-path spend at all.
+        let mut no_leaves = bincode::encode_to_vec(2u32, config).unwrap();
+        no_leaves.extend(bincode::encode_to_vec(master_appkey, config).unwrap());
+        no_leaves.extend(
+            bincode::encode_to_vec(
+                LocalSpend::ScriptSpend {
+                    script_pubkey: ScriptBuf::new(),
+                    leaves: vec![],
+                },
+                config,
+            )
+            .unwrap(),
+        );
+        assert!(bincode::decode_from_slice::<SpkOwner, _>(&no_leaves, config).is_err());
         assert!(bincode::decode_from_slice::<SpkOwner, _>(&second_form, config).is_err());
     }
 

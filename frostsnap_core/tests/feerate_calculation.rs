@@ -1,8 +1,6 @@
 use bitcoin::{Amount, ScriptBuf, TxOut};
 use frostsnap_core::bitcoin_transaction::{LocalSpk, TransactionTemplate};
-use frostsnap_core::tweak::{
-    AppTweak, BitcoinBip32Path, BitcoinTweak, BitcoinTweakKind, NormalIndex,
-};
+use frostsnap_core::tweak::{AppTweak, BitcoinBip32Path, BitcoinTweak, NormalIndex};
 use frostsnap_core::MasterAppkey;
 use schnorr_fun::fun::G;
 
@@ -80,9 +78,8 @@ fn feerate_weighs_a_script_path_witness() {
     let secp = bitcoin::secp256k1::Secp256k1::new();
     let master_appkey = MasterAppkey::derive_from_rootkey(G.normalize());
     let leaf_path = BitcoinBip32Path::external(NormalIndex::new(1).unwrap());
-    let leaf_key = AppTweak::Bitcoin(BitcoinTweak {
-        bip32_path: leaf_path,
-        kind: BitcoinTweakKind::ScriptSpend,
+    let leaf_key = AppTweak::Bitcoin(BitcoinTweak::ScriptSpend {
+        leaf_path: leaf_path.into(),
     })
     .derive_xonly_key(&master_appkey.to_xpub());
     let leaf_script = bitcoin::script::Builder::new()
@@ -158,9 +155,8 @@ fn feerate_assumes_the_largest_of_several_leaves() {
     let secp = bitcoin::secp256k1::Secp256k1::new();
     let master_appkey = MasterAppkey::derive_from_rootkey(G.normalize());
     let key_at = |index: u32| -> bitcoin::XOnlyPublicKey {
-        AppTweak::Bitcoin(BitcoinTweak {
-            bip32_path: BitcoinBip32Path::external(NormalIndex::new(index).unwrap()),
-            kind: BitcoinTweakKind::ScriptSpend,
+        AppTweak::Bitcoin(BitcoinTweak::ScriptSpend {
+            leaf_path: BitcoinBip32Path::external(NormalIndex::new(index).unwrap()).into(),
         })
         .derive_xonly_key(&master_appkey.to_xpub())
         .into()

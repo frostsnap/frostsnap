@@ -4,7 +4,7 @@ use crate::{
         SpkDoesntMatchPathError, TransactionTemplate,
     },
     message::EncodedSignature,
-    tweak::{AppTweakKind, BitcoinBip32Path},
+    tweak::{AppTweakKind, BitcoinBip32Path, LeafPath},
     MasterAppkey,
 };
 use alloc::{
@@ -114,16 +114,16 @@ impl TransactionTemplate {
             }
 
             // The key path is preferred: it is cheaper and reveals nothing of the script tree.
-            let (bip32_path, candidates, spend) =
+            let (candidates, spend) =
                 match claimed_path(
                     input.tap_internal_key.as_ref(),
                     &input.tap_key_origins,
                     &ours_by_fingerprint,
                 ) {
                     Ok((bip32_path, candidates)) => (
-                        bip32_path,
                         candidates,
                         LocalSpend::KeySpend {
+                            bip32_path,
                             merkle_root: input.tap_merkle_root,
                         },
                     ),
@@ -166,12 +166,18 @@ impl TransactionTemplate {
 
             // Our internal key under a script tree; master refused this too, as a mismatch.
             if scripted_spends == ScriptedSpends::Refuse
-                && spend != (LocalSpend::KeySpend { merkle_root: None })
+                && !matches!(
+                    spend,
+                    LocalSpend::KeySpend {
+                        merkle_root: None,
+                        ..
+                    }
+                )
             {
                 return Err(PsbtValidationError::ScriptedSpend { input: i });
             }
 
-            push_owned(candidates, bip32_path, &spend, |owner| {
+            push_owned(candidates, &spend, |owner| {
                 template.push_owned_input(input_push, owner)
             })?;
             owned_count += 1;
@@ -193,8 +199,10 @@ impl TransactionTemplate {
             match claim {
                 Ok((bip32_path, candidates)) => push_owned(
                     candidates,
-                    bip32_path,
-                    &LocalSpend::KeySpend { merkle_root: None },
+                    &LocalSpend::KeySpend {
+                        bip32_path,
+                        merkle_root: None,
+                    },
                     |owner| template.push_owned_output_checked(txout, owner),
                 )?,
                 Err(reason) => {
@@ -330,14 +338,20 @@ fn claimed_path<'a>(
         .get(tap_internal_key)
         .map(|(_, key_source)| key_source)
         .ok_or(NotOurs::NoOrigin)?;
-    our_path(key_source, ours_by_fingerprint)
+    our_path(
+        key_source,
+        ours_by_fingerprint,
+        BitcoinBip32Path::from_u32_slice,
+    )
 }
 
-/// The path `key_source` names, and every key of ours whose fingerprint it names.
-fn our_path<'a>(
+/// The path `key_source` names, as `fits` reads it, and every key of ours whose fingerprint
+/// it names. A hardened path is never ours, whatever `fits` accepts.
+fn our_path<'a, P>(
     (fingerprint, derivation_path): &bip32::KeySource,
     ours_by_fingerprint: &'a BTreeMap<Fingerprint, Vec<MasterAppkey>>,
-) -> Result<(BitcoinBip32Path, &'a [MasterAppkey]), NotOurs> {
+    fits: impl FnOnce(&[u32]) -> Option<P>,
+) -> Result<(P, &'a [MasterAppkey]), NotOurs> {
     let candidates = ours_by_fingerprint
         .get(fingerprint)
         .ok_or(NotOurs::ForeignFingerprint)?;
@@ -350,7 +364,7 @@ fn our_path<'a>(
         })
         .collect::<Result<Vec<_>, _>>()?;
 
-    let bip32_path = BitcoinBip32Path::from_u32_slice(&path).ok_or_else(|| {
+    let fitted = fits(&path).ok_or_else(|| {
         NotOurs::UnusualPath(
             path.iter()
                 .map(|n| n.to_string())
@@ -359,10 +373,10 @@ fn our_path<'a>(
         )
     })?;
 
-    Ok((bip32_path, candidates))
+    Ok((fitted, candidates))
 }
 
-type LeafClaim<'a> = (BitcoinBip32Path, &'a [MasterAppkey], LocalSpend);
+type LeafClaim<'a> = (&'a [MasterAppkey], LocalSpend);
 
 /// Every tapscript leaf of `input` that one of our keys is in, as a script-path spend.
 ///
@@ -372,6 +386,10 @@ type LeafClaim<'a> = (BitcoinBip32Path, &'a [MasterAppkey], LocalSpend);
 /// choice, and our keys may sit at different paths in different leaves. As with the key path,
 /// which candidate key it is, and whether each leaf really holds that key under this prevout,
 /// is [`push_owned`]'s to settle, and one leaf failing fails the PSBT.
+///
+/// A leaf key may sit on any normal keychain, not only receive or change: liana-gui derives a
+/// signer reused in a recovery path on keychains 2, 3 and so on. Any other shape of path is
+/// skipped, as for a key-path spend.
 ///
 /// Leaves are gathered under the first of our fingerprints found: one owner signs an input, and
 /// a leaf under another of our keys is that key's to sign.
@@ -386,11 +404,12 @@ fn claimed_leaf<'a>(
         if leaf_hashes.is_empty() {
             continue;
         }
-        let (bip32_path, candidates) = match our_path(key_source, ours_by_fingerprint) {
-            Ok(claim) => claim,
-            Err(NotOurs::Hardened) => return Err(hardened_error()),
-            Err(_) => continue,
-        };
+        let (path, candidates) =
+            match our_path(key_source, ours_by_fingerprint, LeafPath::from_u32_slice) {
+                Ok(claim) => claim,
+                Err(NotOurs::Hardened) => return Err(hardened_error()),
+                Err(_) => continue,
+            };
         if !core::ptr::eq(*owner_candidates.get_or_insert(candidates), candidates) {
             continue;
         }
@@ -400,7 +419,7 @@ fn claimed_leaf<'a>(
                 *leaf_version,
             )) {
                 leaves.push(LeafSpend::new(
-                    bip32_path,
+                    path,
                     leaf_script.clone(),
                     *leaf_version,
                     control_block.serialize(),
@@ -409,9 +428,8 @@ fn claimed_leaf<'a>(
         }
     }
 
-    Ok(match (owner_candidates, leaves.first()) {
-        (Some(candidates), Some(first)) => Some((
-            first.bip32_path,
+    Ok(match owner_candidates {
+        Some(candidates) if !leaves.is_empty() => Some((
             candidates,
             LocalSpend::ScriptSpend {
                 script_pubkey: txout.script_pubkey.clone(),
@@ -433,7 +451,6 @@ fn hardened_error() -> PsbtValidationError {
 /// recorded as foreign — silently demoting it would let a PSBT lie about us without saying so.
 fn push_owned(
     candidates: &[MasterAppkey],
-    bip32_path: BitcoinBip32Path,
     spend: &LocalSpend,
     mut push: impl FnMut(LocalSpk) -> Result<(), Box<SpkDoesntMatchPathError>>,
 ) -> Result<(), Box<SpkDoesntMatchPathError>> {
@@ -441,7 +458,6 @@ fn push_owned(
     for &master_appkey in candidates {
         match push(LocalSpk {
             master_appkey,
-            bip32_path,
             spend: spend.clone(),
         }) {
             Ok(()) => return Ok(()),
@@ -574,8 +590,9 @@ mod test {
         key.derive_appkey(AppTweakKind::Bitcoin).fingerprint()
     }
 
-    fn derivation_of(path: BitcoinBip32Path) -> DerivationPath {
-        path.path_segments_from_bitcoin_appkey()
+    fn derivation_of(path: impl Into<LeafPath>) -> DerivationPath {
+        path.into()
+            .path_segments_from_bitcoin_appkey()
             .map(|i| ChildNumber::from_normal_idx(i).expect("test path is unhardened"))
             .collect()
     }
@@ -1300,10 +1317,9 @@ mod test {
     }
 
     /// The untweaked key at `path`: a taproot internal key, or the key that goes in a leaf.
-    fn raw_key_of(key: MasterAppkey, path: BitcoinBip32Path) -> XOnlyPublicKey {
-        AppTweak::Bitcoin(BitcoinTweak {
-            bip32_path: path,
-            kind: crate::tweak::BitcoinTweakKind::ScriptSpend,
+    fn raw_key_of(key: MasterAppkey, path: impl Into<LeafPath>) -> XOnlyPublicKey {
+        AppTweak::Bitcoin(BitcoinTweak::ScriptSpend {
+            leaf_path: path.into(),
         })
         .derive_xonly_key(&key.to_xpub())
         .into()
@@ -1346,10 +1362,11 @@ mod test {
     /// a script and control block for each leaf.
     fn leaf_input(
         key: MasterAppkey,
-        path: BitcoinBip32Path,
+        path: impl Into<LeafPath>,
         leaves: &[ScriptBuf],
         value: u64,
     ) -> psbt::Input {
+        let path = path.into();
         let secp = bitcoin::secp256k1::Secp256k1::verification_only();
         let spend_info = tree_of(leaves, stranger_internal_key());
         let tap_scripts = leaves
@@ -1481,43 +1498,43 @@ mod test {
         assert!(signed.inputs[0].tap_key_sig.is_none());
     }
 
-    /// Our keys at different paths in two leaves, as Liana lays out one signer across spending
-    /// paths: both leaves are signed, each signature in the slot for its own key and leaf.
+    fn leaf_path(segments: &[u32]) -> LeafPath {
+        LeafPath::from_u32_slice(segments).expect("test leaf path fits")
+    }
+
+    /// One Frostsnap in both a Liana primary path and its recovery path. liana-gui derives a
+    /// reused signer at multipath `<2n;2n+1>`, so the recovery key sits on keychain 2, a path
+    /// no wallet address uses. Both leaves are signed, each signature in the slot for its own
+    /// key and leaf.
     #[test]
-    fn our_keys_in_two_leaves_are_each_signed() {
+    fn a_signer_in_liana_primary_and_recovery_paths_signs_both() {
         let key = our_key();
-        let now = BitcoinBip32Path::external(idx(4));
-        let later = BitcoinBip32Path::external(idx(7));
-        let now_leaf = checksig_leaf(raw_key_of(key, now));
-        let later_leaf = bitcoin::script::Builder::new()
-            .push_x_only_key(&raw_key_of(key, later))
+        let primary = leaf_path(&[0, 0, 0, 4]);
+        let recovery = leaf_path(&[0, 0, 2, 4]);
+        let primary_leaf = checksig_leaf(raw_key_of(key, primary));
+        let recovery_leaf = bitcoin::script::Builder::new()
+            .push_x_only_key(&raw_key_of(key, recovery))
             .push_opcode(bitcoin::opcodes::all::OP_CHECKSIGVERIFY)
             .push_int(144)
             .push_opcode(bitcoin::opcodes::all::OP_CSV)
             .into_script();
-        let leaves = [now_leaf.clone(), later_leaf.clone()];
-        let mut input = leaf_input(key, now, &leaves, 100_000);
+        let leaves = [primary_leaf.clone(), recovery_leaf.clone()];
+        let mut input = leaf_input(key, primary, &leaves, 100_000);
         let hash_of = |leaf: &ScriptBuf| {
             taproot::TapLeafHash::from_script(leaf, taproot::LeafVersion::TapScript)
         };
-        input.tap_key_origins = [
-            (
-                raw_key_of(key, now),
+        input.tap_key_origins = [(primary, &primary_leaf), (recovery, &recovery_leaf)]
+            .into_iter()
+            .map(|(path, leaf)| {
                 (
-                    vec![hash_of(&now_leaf)],
-                    (fingerprint_of(key), derivation_of(now)),
-                ),
-            ),
-            (
-                raw_key_of(key, later),
-                (
-                    vec![hash_of(&later_leaf)],
-                    (fingerprint_of(key), derivation_of(later)),
-                ),
-            ),
-        ]
-        .into_iter()
-        .collect();
+                    raw_key_of(key, path),
+                    (
+                        vec![hash_of(leaf)],
+                        (fingerprint_of(key), derivation_of(path)),
+                    ),
+                )
+            })
+            .collect();
         let psbt = psbt_of(vec![input], vec![foreign_txout(90_000)]);
 
         let template = TransactionTemplate::from_psbt_with(&psbt, &[key], ScriptedSpends::Allow)
@@ -1527,13 +1544,16 @@ mod test {
         let paths = owner
             .leaves()
             .iter()
-            .map(|leaf| (leaf.bip32_path, leaf.leaf_hash()))
+            .map(|leaf| (leaf.path, leaf.leaf_hash()))
             .collect::<BTreeMap<_, _>>();
         assert_eq!(
             paths,
-            [(now, hash_of(&now_leaf)), (later, hash_of(&later_leaf))]
-                .into_iter()
-                .collect()
+            [
+                (primary, hash_of(&primary_leaf)),
+                (recovery, hash_of(&recovery_leaf))
+            ]
+            .into_iter()
+            .collect()
         );
         assert!(
             !template.owns_every_input(),
@@ -1543,7 +1563,7 @@ mod test {
         let tags = owner
             .leaves()
             .iter()
-            .map(|leaf| (leaf.bip32_path, if leaf.bip32_path == now { 1 } else { 2 }))
+            .map(|leaf| (leaf.path, if leaf.path == primary { 1 } else { 2 }))
             .collect::<Vec<_>>();
         let signatures = tags
             .iter()
@@ -1553,7 +1573,11 @@ mod test {
             .attach_signatures_to_psbt(&signatures, &psbt)
             .unwrap();
         for (path, tag) in tags {
-            let leaf = if path == now { &now_leaf } else { &later_leaf };
+            let leaf = if path == primary {
+                &primary_leaf
+            } else {
+                &recovery_leaf
+            };
             assert_eq!(
                 signed.inputs[0].tap_script_sigs[&(raw_key_of(key, path), hash_of(leaf))]
                     .signature
@@ -1563,6 +1587,53 @@ mod test {
         }
         assert_eq!(signed.inputs[0].tap_script_sigs.len(), 2);
         assert!(signed.inputs[0].tap_key_sig.is_none());
+    }
+
+    /// A leaf origin one segment deeper than a wallet path, such as the `xpub/1/<0;1>/*` form
+    /// in Liana's descriptor tests, is an unusual path and not signed. Keys at mixed depths are
+    /// the collision BIP388 warns about, and no Liana or BIP388 wallet produces one.
+    #[test]
+    fn a_leaf_origin_deeper_than_a_wallet_path_is_not_signed() {
+        let key = our_key();
+        let segments = [0, 0, 1, 0, 7];
+        use crate::tweak::TweakableKey;
+        let leaf_key: XOnlyPublicKey = key
+            .to_xpub()
+            .derive_bip32([AppTweakKind::Bitcoin as u32].into_iter().chain(segments))
+            .into_key()
+            .into_xonly()
+            .into();
+        let leaf = checksig_leaf(leaf_key);
+        let mut input = leaf_input(
+            key,
+            leaf_path(&[0, 0, 0, 0]),
+            core::slice::from_ref(&leaf),
+            100_000,
+        );
+        input.tap_key_origins = [(
+            leaf_key,
+            (
+                vec![taproot::TapLeafHash::from_script(
+                    &leaf,
+                    taproot::LeafVersion::TapScript,
+                )],
+                (
+                    fingerprint_of(key),
+                    segments
+                        .iter()
+                        .map(|&i| ChildNumber::from_normal_idx(i).unwrap())
+                        .collect(),
+                ),
+            ),
+        )]
+        .into_iter()
+        .collect();
+        let psbt = psbt_of(vec![input], vec![foreign_txout(90_000)]);
+
+        assert!(matches!(
+            TransactionTemplate::from_psbt_with(&psbt, &[key], ScriptedSpends::Allow),
+            Err(PsbtValidationError::NothingToSign { .. })
+        ));
     }
 
     /// When our key is the internal key too, only the key path is signed, as Bitcoin Core does.

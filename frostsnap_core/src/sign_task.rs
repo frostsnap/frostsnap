@@ -70,9 +70,8 @@ impl WireSignTask {
             template
                 .as_seen_by(master_appkey)
                 .iter_our_outputs()
-                .filter_map(move |(_, _, spk)| {
-                    (spk.bip32_path.account_keychain == internal)
-                        .then_some(spk.bip32_path.index.to_u32())
+                .filter_map(move |(_, _, path)| {
+                    (path.account_keychain == internal).then_some(path.index.to_u32())
                 })
                 .collect::<Vec<_>>()
         })
@@ -121,9 +120,7 @@ impl WireSignTask {
                 // allocated change or revealed an address past the ceiling would have its own task
                 // refused here. Reaching that is implausible today, and closing it properly means
                 // one shared issuance boundary in the wallet, which is the cleanup.
-                for (_, _, owner) in tx_template.iter_our_outputs() {
-                    let path = owner.bip32_path;
-
+                for (_, _, path) in tx_template.iter_our_outputs() {
                     if path.account_keychain.account != BitcoinAccount::default() {
                         return Err(SignTaskError::UnwatchedAccount {
                             account: path.account_keychain.account,
@@ -433,9 +430,8 @@ mod test {
         let secp = bitcoin::secp256k1::Secp256k1::new();
         let leaf_path = BitcoinBip32Path::external(NormalIndex::new(3).unwrap());
         let leaf_key: bitcoin::XOnlyPublicKey =
-            crate::tweak::AppTweak::Bitcoin(crate::tweak::BitcoinTweak {
-                bip32_path: leaf_path,
-                kind: crate::tweak::BitcoinTweakKind::ScriptSpend,
+            crate::tweak::AppTweak::Bitcoin(crate::tweak::BitcoinTweak::ScriptSpend {
+                leaf_path: leaf_path.into(),
             })
             .derive_xonly_key(&signing.to_xpub())
             .into();

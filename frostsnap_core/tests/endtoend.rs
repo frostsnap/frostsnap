@@ -364,20 +364,21 @@ fn signing_a_bitcoin_transaction_produces_valid_signatures() {
     // A script-path spend of a tapscript leaf `<our key> OP_CHECKSIG` under an unrelated
     // internal key.
     let secp = bitcoin::secp256k1::Secp256k1::new();
-    let checksig_leaf = |index: u32| {
-        let leaf_key =
-            frostsnap_core::tweak::AppTweak::Bitcoin(frostsnap_core::tweak::BitcoinTweak {
-                bip32_path: BitcoinBip32Path::external(NormalIndex::new(index).unwrap()),
-                kind: frostsnap_core::tweak::BitcoinTweakKind::ScriptSpend,
-            })
-            .derive_xonly_key(&master_appkey.to_xpub());
+    let leaf_path_at = |keychain: u32, index: u32| {
+        frostsnap_core::tweak::LeafPath::from_u32_slice(&[0, 0, keychain, index]).unwrap()
+    };
+    let checksig_leaf = |leaf_path: frostsnap_core::tweak::LeafPath| {
+        let leaf_key = frostsnap_core::tweak::AppTweak::Bitcoin(
+            frostsnap_core::tweak::BitcoinTweak::ScriptSpend { leaf_path },
+        )
+        .derive_xonly_key(&master_appkey.to_xpub());
         bitcoin::script::Builder::new()
             .push_x_only_key(&leaf_key.into())
             .push_opcode(bitcoin::opcodes::all::OP_CHECKSIG)
             .into_script()
     };
-    let leaf_path = BitcoinBip32Path::external(NormalIndex::new(9).unwrap());
-    let leaf_script = checksig_leaf(9);
+    let leaf_path = leaf_path_at(0, 9);
+    let leaf_script = checksig_leaf(leaf_path);
     let internal_key = bitcoin::secp256k1::Keypair::from_seckey_slice(&secp, &[9u8; 32])
         .unwrap()
         .x_only_public_key()
@@ -405,9 +406,11 @@ fn signing_a_bitcoin_transaction_produces_valid_signatures() {
         bitcoin::Amount::from_sat(31_337),
     );
 
-    // Our keys at two different paths in two leaves of one output, as Liana lays out a signer
-    // shared across spending paths: each leaf gets its own signature.
-    let two_leaves = [(10, checksig_leaf(10)), (11, checksig_leaf(11))];
+    // One signer in a Liana primary path and its recovery path. liana-gui gives a reused
+    // signer keychains `<2n;2n+1>`, so the recovery key is on keychain 2. Each leaf gets its
+    // own signature.
+    let two_leaves = [leaf_path_at(0, 10), leaf_path_at(2, 10)]
+        .map(|leaf_path| (leaf_path, checksig_leaf(leaf_path)));
     let spend_info = bitcoin::taproot::TaprootBuilder::new()
         .add_leaf(1, two_leaves[0].1.clone())
         .unwrap()
@@ -421,9 +424,9 @@ fn signing_a_bitcoin_transaction_produces_valid_signatures() {
             bitcoin::ScriptBuf::new_p2tr(&secp, internal_key, spend_info.merkle_root()),
             two_leaves
                 .iter()
-                .map(|(index, leaf_script)| {
+                .map(|(leaf_path, leaf_script)| {
                     frostsnap_core::bitcoin_transaction::LeafSpend::new(
-                        BitcoinBip32Path::external(NormalIndex::new(*index).unwrap()),
+                        *leaf_path,
                         leaf_script.clone(),
                         LeafVersion::TapScript,
                         spend_info
