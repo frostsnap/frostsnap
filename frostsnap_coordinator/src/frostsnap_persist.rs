@@ -16,7 +16,7 @@ use std::collections::{HashMap, VecDeque};
 use tracing::{event, Level};
 
 impl Persist<rusqlite::Connection> for FrostCoordinator {
-    type Update = VecDeque<coordinator::Mutation>;
+    type Update = VecDeque<coordinator::StagedMutation>;
     type LoadParams = ();
 
     fn migrate(conn: &mut rusqlite::Connection) -> anyhow::Result<()> {
@@ -73,7 +73,11 @@ impl Persist<rusqlite::Connection> for FrostCoordinator {
         conn: &mut rusqlite::Connection,
         update: Self::Update,
     ) -> anyhow::Result<()> {
-        for mutation in update {
+        for coordinator::StagedMutation {
+            mutation,
+            tied_to_key,
+        } in update
+        {
             match mutation {
                 coordinator::Mutation::Keygen(coordinator::keys::KeyMutation::DeleteKey(
                     key_id,
@@ -94,7 +98,7 @@ impl Persist<rusqlite::Connection> for FrostCoordinator {
                 mutation => {
                     conn.execute(
                         "INSERT INTO fs_coordinator_mutations (tied_to_key, tied_to_restoration, mutation, version) VALUES (?1, ?2, ?3, 0)",
-                        params![mutation.tied_to_key(self), mutation.tied_to_restoration(), BincodeWrapper(mutation)],
+                        params![tied_to_key, mutation.tied_to_restoration(), BincodeWrapper(mutation)],
                     )?;
                 }
             }
@@ -103,8 +107,8 @@ impl Persist<rusqlite::Connection> for FrostCoordinator {
     }
 }
 
-impl TakeStaged<VecDeque<coordinator::Mutation>> for FrostCoordinator {
-    fn take_staged_update(&mut self) -> Option<VecDeque<coordinator::Mutation>> {
+impl TakeStaged<VecDeque<coordinator::StagedMutation>> for FrostCoordinator {
+    fn take_staged_update(&mut self) -> Option<VecDeque<coordinator::StagedMutation>> {
         let mutations = self.take_staged_mutations();
         if mutations.is_empty() {
             None

@@ -300,6 +300,11 @@ fn test_all_coordinator_mutations() {
         Mutation::Signing(SigningMutation::ForgetFinishedSignSession {
             session_id: SignSessionId([12u8; 32]),
         }),
+        Mutation::Signing(SigningMutation::ConsumeNonces {
+            device_id: DeviceId([6u8; 33]),
+            stream_id: NonceStreamId([7u8; 16]),
+            up_to_but_not_including: 5,
+        }),
     ];
 
     // Test each mutation
@@ -414,6 +419,12 @@ fn test_all_coordinator_mutations() {
                 assert_bincode_hex_eq!(
                     mutation,
                     "01050c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c"
+                );
+            }
+            Mutation::Signing(SigningMutation::ConsumeNonces { .. }) => {
+                assert_bincode_hex_eq!(
+                    mutation,
+                    "01060606060606060606060606060606060606060606060606060606060606060606060707070707070707070707070707070705"
                 );
             }
             Mutation::Restoration(RestorationMutation::NewRestoration2 { .. }) => {
