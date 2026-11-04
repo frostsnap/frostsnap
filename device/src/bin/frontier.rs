@@ -8,8 +8,6 @@ extern crate alloc;
 use esp_hal::main;
 use frostsnap_device::{esp32_run, peripherals::DevicePeripherals, resources::Resources};
 
-esp_bootloader_esp_idf::esp_app_desc!();
-
 #[main]
 fn main() -> ! {
     // Initialize heap

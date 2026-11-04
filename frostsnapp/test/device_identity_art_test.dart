@@ -38,8 +38,9 @@ ConnectedDevice _device({
   id[0] = seed;
   return ConnectedDevice(
     name: name,
-    firmware: FirmwareVersion(
+    firmware: DeviceFirmware(
       digest: Sha256Digest(field0: U8Array32(Uint8List(32))),
+      version: const DeviceVersion.unreported(),
     ),
     id: DeviceId(field0: U8Array33(id)),
     recoveryMode: const RecoveryMode.off(),

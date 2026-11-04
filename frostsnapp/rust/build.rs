@@ -4,7 +4,7 @@ use std::path::Path;
 
 fn main() {
     println!("cargo::rustc-check-cfg=cfg(bundle_firmware)");
-    println!("cargo::rustc-check-cfg=cfg(genuine_cert_key)");
+    println!("cargo::rustc-check-cfg=cfg(genuine_cert_key, values(\"prod\", \"dev\"))");
     println!("cargo:rerun-if-env-changed=BUNDLE_FIRMWARE");
     println!("cargo:rerun-if-env-changed=FROSTSNAP_ENV");
 
@@ -32,15 +32,12 @@ fn main() {
         None => {}
     }
 
-    // Genuine certificate key — derived from FROSTSNAP_ENV
-    if let Some(env_name) = &frostsnap_env {
-        let key_path = format!("../../frostsnap_factory/genuine/{env_name}/public_key.hex");
-        copy_to_out(
-            &key_path,
-            &out_dir,
-            "genuine_cert_key.hex",
-            "genuine_cert_key",
-        );
+    match frostsnap_env.as_deref() {
+        Some(env_name @ ("prod" | "dev")) => {
+            println!("cargo:rustc-cfg=genuine_cert_key=\"{env_name}\"");
+        }
+        Some(env_name) => panic!("FROSTSNAP_ENV={env_name} has no genuine certificate key"),
+        None => {}
     }
 }
 

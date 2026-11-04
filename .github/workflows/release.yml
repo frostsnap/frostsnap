@@ -27,8 +27,8 @@ jobs:
         run: |
           mkdir -p firmware
           gh release download ${{ env.TAG_NAME }} --pattern "firmware.bin" --dir firmware
-      - name: Verify firmware signature and known version
-        run: cargo run -p frostsnap_factory --release -- verify-firmware --require-known-version -i firmware/firmware.bin
+      - name: Verify firmware signature and release version
+        run: cargo run -p frostsnap_factory --release -- verify-firmware --release-tag ${{ env.TAG_NAME }} -i firmware/firmware.bin
 
   build-android:
     name: "Build Android"

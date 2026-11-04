@@ -1,5 +1,5 @@
 use crate::{
-    Completion, FirmwareUpgradeEligibility, FirmwareVersion, Sink, UiProtocol, ValidatedFirmwareBin,
+    Completion, DeviceFirmware, FirmwareUpgradeEligibility, Sink, UiProtocol, ValidatedFirmwareBin,
 };
 
 use frostsnap_comms::{
@@ -12,7 +12,7 @@ pub struct FirmwareUpgradeProtocol {
     state: FirmwareUpgradeConfirmState,
     sent_first_message: bool,
     firmware_bin: ValidatedFirmwareBin,
-    devices: HashMap<DeviceId, FirmwareVersion>,
+    devices: HashMap<DeviceId, DeviceFirmware>,
     /// Devices that are already on the target firmware auto-ack without a
     /// user prompt. We still need to wait for these acks before starting the
     /// flash (they signal the device is ready to forward bytes), but they
@@ -23,25 +23,34 @@ pub struct FirmwareUpgradeProtocol {
 
 impl FirmwareUpgradeProtocol {
     pub fn new(
-        devices: HashMap<DeviceId, FirmwareVersion>,
-        need_upgrade: BTreeSet<DeviceId>,
+        devices: HashMap<DeviceId, DeviceFirmware>,
         firmware_bin: ValidatedFirmwareBin,
         sink: impl Sink<FirmwareUpgradeConfirmState> + 'static,
     ) -> Self {
         // Check if any device has incompatible firmware
         let abort_reason = devices.values().find_map(|fw| {
-            match firmware_bin.firmware_version().check_upgrade_eligibility(&fw.digest) {
+            match firmware_bin.firmware_version().check_upgrade_eligibility(fw) {
                 FirmwareUpgradeEligibility::CannotUpgrade { reason } => {
                     Some(format!("One of the devices is incompatible with the upgrade. Unplug it to continue or try upgrading the app. Problem: {reason}"))
                 }
-                _ => None,
+                FirmwareUpgradeEligibility::UpToDate | FirmwareUpgradeEligibility::CanUpgrade => {
+                    None
+                }
             }
         });
+
+        // A device forwards passively exactly when the image is the one it runs
+        // (`start_upgrade` on the device); every other device prompts to install.
+        let need_upgrade = devices
+            .iter()
+            .filter(|(_, fw)| fw.digest != firmware_bin.digest())
+            .map(|(id, _)| *id)
+            .collect();
 
         Self {
             state: FirmwareUpgradeConfirmState {
                 devices: devices.keys().copied().collect(),
-                need_upgrade: need_upgrade.into_iter().collect(),
+                need_upgrade,
                 confirmations: Default::default(),
                 abort: abort_reason,
                 upgrade_ready_to_start: false,
@@ -122,27 +131,54 @@ impl UiProtocol for FirmwareUpgradeProtocol {
     fn poll(&mut self) -> Vec<CoordinatorSendMessage> {
         let mut to_devices = vec![];
         if !self.sent_first_message && self.state.abort.is_none() {
-            let any_device_needs_legacy = self
-                .devices
-                .values()
-                .any(|fw| !fw.features().upgrade_digest_no_sig);
-
-            let upgrade_message = if any_device_needs_legacy {
-                CoordinatorUpgradeMessage::PrepareUpgrade {
-                    size: self.firmware_bin.size(),
-                    firmware_digest: self.firmware_bin.digest_with_signature(),
+            let mut legacy = BTreeSet::new();
+            let mut digest_only = BTreeSet::new();
+            let mut names_version = BTreeSet::new();
+            for (id, firmware) in &self.devices {
+                let features = firmware.features();
+                if !features.upgrade_digest_no_sig {
+                    legacy.insert(*id);
+                } else if features.upgrade_names_version {
+                    names_version.insert(*id);
+                } else {
+                    digest_only.insert(*id);
                 }
-            } else {
-                CoordinatorUpgradeMessage::PrepareUpgrade2 {
-                    size: self.firmware_bin.size(),
-                    firmware_digest: self.firmware_bin.digest(),
-                }
-            };
+            }
 
-            to_devices.push(CoordinatorSendMessage {
-                target_destinations: frostsnap_comms::Destination::All,
-                message_body: CoordinatorSendBody::Upgrade(upgrade_message),
-            });
+            let size = self.firmware_bin.size();
+            let firmware_digest = self.firmware_bin.digest();
+            let messages = [
+                (
+                    legacy,
+                    CoordinatorUpgradeMessage::PrepareUpgrade {
+                        size,
+                        firmware_digest: self.firmware_bin.digest_with_signature(),
+                    },
+                ),
+                (
+                    digest_only,
+                    CoordinatorUpgradeMessage::PrepareUpgrade2 {
+                        size,
+                        firmware_digest,
+                    },
+                ),
+                (
+                    names_version,
+                    CoordinatorUpgradeMessage::PrepareUpgrade3 {
+                        size,
+                        firmware_digest,
+                        version: self.firmware_bin.version(),
+                    },
+                ),
+            ];
+            for (recipients, message) in messages {
+                if !recipients.is_empty() {
+                    to_devices.push(CoordinatorSendMessage {
+                        target_destinations: frostsnap_comms::Destination::Particular(recipients),
+                        message_body: CoordinatorSendBody::Upgrade(message),
+                    });
+                }
+            }
             self.sent_first_message = true;
         }
 
@@ -172,4 +208,168 @@ pub struct FirmwareUpgradeConfirmState {
     pub need_upgrade: Vec<DeviceId>,
     pub abort: Option<String>,
     pub upgrade_ready_to_start: bool,
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::{DeviceVersion, FirmwareBin, VersionNumber};
+    use frostsnap_comms::firmware_reader::{APP_DESC_MAGIC, APP_DESC_OFFSET, ESP_MAGIC};
+    use frostsnap_comms::Sha256Digest;
+    use frostsnap_macros::hex;
+
+    fn release_0_5_0_image() -> ValidatedFirmwareBin {
+        const SEGMENT_LEN: usize = 0x100;
+        let unpadded = APP_DESC_OFFSET + SEGMENT_LEN;
+        let mut image = vec![0u8; (unpadded + 1 + 15) & !15];
+        image[0] = ESP_MAGIC;
+        image[1] = 1;
+        image[28..32].copy_from_slice(&(SEGMENT_LEN as u32).to_le_bytes());
+        image[APP_DESC_OFFSET..APP_DESC_OFFSET + 4].copy_from_slice(&APP_DESC_MAGIC.to_le_bytes());
+        image[APP_DESC_OFFSET + 16..APP_DESC_OFFSET + 21].copy_from_slice(b"0.5.0");
+        let bin = FirmwareBin::new(Box::leak(image.into_boxed_slice()));
+        let bin = bin.validate().unwrap();
+        assert_eq!(bin.version(), VersionNumber::new(0, 5, 0));
+        bin
+    }
+
+    fn device(n: u8) -> DeviceId {
+        DeviceId([n; 33])
+    }
+
+    fn ack(protocol: &mut FirmwareUpgradeProtocol, id: DeviceId) {
+        assert!(protocol.process_comms_message(id, CommsMisc::AckUpgradeMode));
+    }
+
+    #[test]
+    fn only_the_same_image_forwards_passively() {
+        let bin = release_0_5_0_image();
+        let same_image = device(1);
+        let same_release_other_build = device(2);
+        let older = device(3);
+        let devices = HashMap::from([
+            (
+                same_image,
+                DeviceFirmware {
+                    digest: bin.digest(),
+                    version: DeviceVersion::Reported {
+                        version: bin.version(),
+                        environment: bin.firmware_version().environment,
+                    },
+                },
+            ),
+            (
+                same_release_other_build,
+                DeviceFirmware {
+                    digest: Sha256Digest([2; 32]),
+                    version: DeviceVersion::Reported {
+                        version: bin.version(),
+                        environment: bin.firmware_version().environment,
+                    },
+                },
+            ),
+            (
+                older,
+                DeviceFirmware {
+                    digest: Sha256Digest([3; 32]),
+                    version: DeviceVersion::Unreported,
+                },
+            ),
+        ]);
+
+        let mut protocol = FirmwareUpgradeProtocol::new(devices, bin, ());
+        assert_eq!(protocol.state.abort, None);
+        assert_eq!(
+            BTreeSet::from_iter(protocol.state.need_upgrade.iter().copied()),
+            BTreeSet::from([same_release_other_build, older])
+        );
+
+        ack(&mut protocol, same_release_other_build);
+        ack(&mut protocol, older);
+        assert!(
+            protocol.is_complete().is_none(),
+            "the passive device hasn't acked"
+        );
+        assert_eq!(protocol.state.confirmations.len(), 2);
+
+        ack(&mut protocol, same_image);
+        assert_eq!(protocol.state.confirmations.len(), 2);
+        assert!(matches!(protocol.is_complete(), Some(Completion::Success)));
+    }
+
+    #[test]
+    fn each_device_is_sent_the_preparation_it_understands() {
+        let bin = release_0_5_0_image();
+        let v0_0_1 = device(1);
+        let v0_4_0 = device(2);
+        let reporting = device(3);
+        let devices = HashMap::from([
+            (
+                v0_0_1,
+                DeviceFirmware {
+                    digest: Sha256Digest(hex!(
+                        "8f45ae6b72c241a20798acbd3c6d3e54071cae73e335df1785f2d485a915da4c"
+                    )),
+                    version: DeviceVersion::Unreported,
+                },
+            ),
+            (
+                v0_4_0,
+                DeviceFirmware {
+                    digest: Sha256Digest(hex!(
+                        "037c345c9db9866d30e219ae56de5efe3905a4050a82df362590d5017e709df0"
+                    )),
+                    version: DeviceVersion::Unreported,
+                },
+            ),
+            (
+                reporting,
+                DeviceFirmware {
+                    digest: Sha256Digest([3; 32]),
+                    version: DeviceVersion::Reported {
+                        version: bin.version(),
+                        environment: bin.firmware_version().environment,
+                    },
+                },
+            ),
+        ]);
+
+        let mut protocol = FirmwareUpgradeProtocol::new(devices, bin, ());
+        let sent = protocol.poll();
+        assert_eq!(sent.len(), 3);
+        for message in sent {
+            let frostsnap_comms::Destination::Particular(recipients) = message.target_destinations
+            else {
+                panic!("each preparation names its recipients");
+            };
+            let CoordinatorSendBody::Upgrade(upgrade) = message.message_body else {
+                panic!("expected an upgrade message");
+            };
+            match upgrade {
+                CoordinatorUpgradeMessage::PrepareUpgrade {
+                    firmware_digest, ..
+                } => {
+                    assert_eq!(recipients, BTreeSet::from([v0_0_1]));
+                    assert_eq!(firmware_digest, bin.digest_with_signature());
+                }
+                CoordinatorUpgradeMessage::PrepareUpgrade2 {
+                    firmware_digest, ..
+                } => {
+                    assert_eq!(recipients, BTreeSet::from([v0_4_0]));
+                    assert_eq!(firmware_digest, bin.digest());
+                }
+                CoordinatorUpgradeMessage::PrepareUpgrade3 {
+                    firmware_digest,
+                    version,
+                    ..
+                } => {
+                    assert_eq!(recipients, BTreeSet::from([reporting]));
+                    assert_eq!(firmware_digest, bin.digest());
+                    assert_eq!(version, bin.version());
+                }
+                CoordinatorUpgradeMessage::EnterUpgradeMode => panic!("not yet"),
+            }
+        }
+        assert!(protocol.poll().is_empty(), "prepared once");
+    }
 }

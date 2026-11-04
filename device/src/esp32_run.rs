@@ -1,6 +1,5 @@
 //! Main event loop for the device
 
-use crate::partitions::PartitionExt;
 use crate::{
     erase,
     flash::{Mutation, MutationLog},
@@ -14,8 +13,8 @@ use alloc::{boxed::Box, collections::VecDeque, string::ToString, vec::Vec};
 use frostsnap_comms::genuine_certificate::DsSignature;
 use frostsnap_comms::genuine_check::{self, AttestationSignature, AttestedDevice, DsSignedMessage};
 use frostsnap_comms::{
-    CommsMisc, CoordinatorSendBody, CoordinatorUpgradeMessage, DeviceName, DeviceSendBody,
-    ReceiveSerial, Sha256Digest, Upstream, MAGIC_BYTES_PERIOD,
+    firmware_version::Environment, CommsMisc, CoordinatorSendBody, CoordinatorUpgradeMessage,
+    DeviceName, DeviceSendBody, ReceiveSerial, Sha256Digest, Upstream, MAGIC_BYTES_PERIOD,
 };
 use frostsnap_core::{
     device::{DeviceToUserMessage, FrostSigner},
@@ -62,6 +61,7 @@ struct DeviceLoop<'a> {
     name: Option<DeviceName>,
     device_id: DeviceId,
     active_firmware_digest: Sha256Digest,
+    environment: Environment,
     upstream_connection: UpstreamConnection,
 
     // Mutable loop state
@@ -88,6 +88,8 @@ impl<'a> DeviceLoop<'a> {
             ref mut crypto,
             ref mut nvs,
             ota: ref mut ota_partitions,
+            active_firmware_digest,
+            environment,
             ref mut ui,
             ref mut upstream_serial,
             ref mut downstream_serial,
@@ -144,13 +146,6 @@ impl<'a> DeviceLoop<'a> {
             }
         }
 
-        let active_partition = ota_partitions.active_partition();
-        let (firmware_size, _firmware_and_signature_block_size) =
-            active_partition.firmware_size().unwrap();
-        let active_firmware_digest = crypto
-            .force_normal_mode()
-            .digest(&active_partition, Some(firmware_size));
-
         let device_id = signer.device_id();
 
         let workflow = match (name.as_ref(), signer.held_shares().next()) {
@@ -180,7 +175,8 @@ impl<'a> DeviceLoop<'a> {
             signer,
             name,
             device_id,
-            active_firmware_digest,
+            active_firmware_digest: *active_firmware_digest,
+            environment: *environment,
             upstream_connection,
             soft_reset: true,
             downstream_connection_state: DownstreamConnectionState::Disconnected,
@@ -343,8 +339,10 @@ impl<'a> DeviceLoop<'a> {
                     log_and_redraw!(self.ui, "upstream got magic bytes");
 
                     self.upstream_connection
-                        .send_announcement(DeviceSendBody::Announce {
+                        .send_announcement(DeviceSendBody::Announce2 {
                             firmware_digest: self.active_firmware_digest,
+                            version: crate::firmware_version(),
+                            environment: self.environment,
                         });
                     self.upstream_connection
                         .send_to_coordinator([match &self.name {
@@ -550,24 +548,29 @@ impl<'a> DeviceLoop<'a> {
                     CoordinatorUpgradeMessage::PrepareUpgrade {
                         size,
                         firmware_digest,
-                    } => {
-                        let upgrade_ = self.ota_partitions.start_upgrade(
-                            *size,
-                            *firmware_digest,
-                            self.active_firmware_digest,
-                        );
-                        self.upgrade = Some(upgrade_);
                     }
-                    CoordinatorUpgradeMessage::PrepareUpgrade2 {
+                    | CoordinatorUpgradeMessage::PrepareUpgrade2 {
                         size,
                         firmware_digest,
                     } => {
-                        let upgrade_ = self.ota_partitions.start_upgrade(
+                        self.upgrade = Some(self.ota_partitions.start_upgrade(
                             *size,
                             *firmware_digest,
+                            None,
                             self.active_firmware_digest,
-                        );
-                        self.upgrade = Some(upgrade_);
+                        ));
+                    }
+                    CoordinatorUpgradeMessage::PrepareUpgrade3 {
+                        size,
+                        firmware_digest,
+                        version,
+                    } => {
+                        self.upgrade = Some(self.ota_partitions.start_upgrade(
+                            *size,
+                            *firmware_digest,
+                            Some(*version),
+                            self.active_firmware_digest,
+                        ));
                     }
                     CoordinatorUpgradeMessage::EnterUpgradeMode => {}
                 },

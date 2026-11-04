@@ -26,8 +26,8 @@ use frostsnap_coordinator::wait_for_single_device::{
     WaitForSingleDevice, WaitForSingleDeviceState,
 };
 use frostsnap_coordinator::{
-    AppMessageBody, DeviceChange, DeviceMode, FirmwareVersion, Sink, UiProtocol, UiStack,
-    UsbSender, UsbSerialManager, ValidatedFirmwareBin, WaitForToUserMessage,
+    AppMessageBody, DeviceChange, DeviceFirmware, DeviceMode, Sink, UiProtocol, UiStack, UsbSender,
+    UsbSerialManager, ValidatedFirmwareBin, WaitForToUserMessage,
 };
 use frostsnap_core::coordinator::restoration::{
     PhysicalBackupPhase, RecoverShare, RestorationState, ToUserRestoration,
@@ -212,15 +212,11 @@ impl FfiCoordinator {
                     for change in device_changes {
                         device_list.consume_manager_event(change.clone());
                         match change {
-                            DeviceChange::Connected {
-                                id,
-                                firmware_digest,
-                                ..
-                            } => {
+                            DeviceChange::Connected { id, firmware, .. } => {
                                 if let Some(g) = &mut genuine {
                                     if let Some(request) = g.MUTATE_NO_PERSIST().connected(
                                         id,
-                                        FirmwareVersion::new(firmware_digest),
+                                        firmware,
                                         &mut rand::thread_rng(),
                                     ) {
                                         usb_sender
@@ -629,21 +625,13 @@ impl FfiCoordinator {
         let ui_protocol = {
             let device_list = self.device_list.lock().unwrap();
 
-            let devices: HashMap<DeviceId, FirmwareVersion> = device_list
+            let devices: HashMap<DeviceId, DeviceFirmware> = device_list
                 .devices()
                 .into_iter()
                 .map(|device| (device.id, device.firmware))
                 .collect();
 
-            let need_upgrade = device_list
-                .devices()
-                .into_iter()
-                .filter(|device| device.needs_firmware_upgrade())
-                .map(|device| device.id)
-                .collect();
-
-            let ui_protocol =
-                FirmwareUpgradeProtocol::new(devices, need_upgrade, firmware_bin, sink);
+            let ui_protocol = FirmwareUpgradeProtocol::new(devices, firmware_bin, sink);
             ui_protocol.emit_state();
             ui_protocol
         };

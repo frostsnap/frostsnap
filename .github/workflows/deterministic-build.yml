@@ -6,6 +6,11 @@ on:
       - master
   pull_request:
     types: [opened, synchronize, reopened]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Branch, tag or commit to build"
+        required: true
 
 jobs:
   deterministic-build-device:
@@ -15,6 +20,11 @@ jobs:
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+      # On a manual run github.sha is the commit the run started from, not the inputs.ref that was checked out and built.
+      - id: source
+        run: echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
       - uses: taiki-e/install-action@just
       - uses: ./.github/actions/setup-nix
       - uses: ./.github/actions/fetch-cargo-deps
@@ -34,5 +44,5 @@ jobs:
           echo "SHA256: $(sha256sum /var/tmp/frostsnap/target/riscv32imc-unknown-none-elf/release/frontier.bin)"
       - uses: "./.github/actions/upload-artifact"
         with:
-          name: frostsnap-frontier-deterministic-${{ github.sha }}.bin
+          name: frostsnap-frontier-deterministic-${{ steps.source.outputs.commit }}.bin
           path: /var/tmp/frostsnap/target/riscv32imc-unknown-none-elf/release/frontier.bin
