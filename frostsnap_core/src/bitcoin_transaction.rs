@@ -5,12 +5,13 @@ use bitcoin::{
     hashes::{sha256d, Hash},
     key::TweakedPublicKey,
     sighash::SighashCache,
-    OutPoint, Script, ScriptBuf, TapSighash, TxOut, Txid,
+    taproot::{ControlBlock, LeafVersion, TapLeafHash, TapNodeHash},
+    OutPoint, Script, ScriptBuf, TapSighash, TxOut, Txid, XOnlyPublicKey,
 };
 
 use crate::{
     message::EncodedSignature,
-    tweak::{AppTweak, BitcoinBip32Path, Keychain},
+    tweak::{AppTweak, BitcoinBip32Path, BitcoinTweak, BitcoinTweakKind, Keychain},
     MasterAppkey,
 };
 
@@ -160,19 +161,28 @@ impl<S> TransactionTemplate<S> {
         &self.outputs
     }
 
-    pub fn iter_sighash(&self) -> impl Iterator<Item = TapSighash> {
+    /// The sighash for each input. Owned inputs get the sighash for how we spend them (the
+    /// leaf sighash on the script path); foreign inputs get the key-path sighash but are never
+    /// signed.
+    pub fn iter_sighash(&self) -> impl Iterator<Item = TapSighash> + '_ {
         let tx = self.to_rust_bitcoin_tx();
         let mut sighash_cache = SighashCache::new(tx);
         let schnorr_sighashty = bitcoin::sighash::TapSighashType::Default;
         let prevouts = self.inputs.iter().map(Input::txout).collect::<Vec<_>>();
-        (0..self.inputs.len()).map(move |i| {
-            sighash_cache
-                .taproot_key_spend_signature_hash(
+        self.inputs.iter().enumerate().map(move |(i, input)| {
+            let prevouts = bitcoin::sighash::Prevouts::All(&prevouts);
+            match input.owner.local_owner().and_then(LocalSpk::leaf_hash) {
+                Some(leaf_hash) => sighash_cache.taproot_script_spend_signature_hash(
                     i,
-                    &bitcoin::sighash::Prevouts::All(&prevouts),
+                    &prevouts,
+                    leaf_hash,
                     schnorr_sighashty,
-                )
-                .expect("inputs are right length")
+                ),
+                None => {
+                    sighash_cache.taproot_key_spend_signature_hash(i, &prevouts, schnorr_sighashty)
+                }
+            }
+            .expect("inputs are right length")
         })
     }
 
@@ -391,7 +401,11 @@ impl TransactionTemplate<ScopedTo> {
     ) -> Result<bitcoin::Transaction, SignatureCountMismatch> {
         let mut tx = self.to_rust_bitcoin_tx();
         for (i, signature) in self.signatures_by_input_index(signatures)? {
-            tx.input[i].witness = signature_witness(signature);
+            let owner = self.inputs[i]
+                .owner
+                .local_owner()
+                .expect("signatures are only paired with our inputs");
+            tx.input[i].witness = owner.witness(signature);
         }
         Ok(tx)
     }
@@ -409,11 +423,15 @@ impl TransactionTemplate<ScopedTo> {
     /// A PSBT can leave us inputs we do not own, and this template has nowhere to put the
     /// signatures for those — `to_rust_bitcoin_tx` builds every input witnessless — so
     /// witnessing ours still leaves a transaction a node will reject. Whoever else must sign
-    /// finishes it, from the PSBT.
+    /// finishes it, from the PSBT. The same holds for a script-path input whose leaf needs
+    /// more than our signature.
     pub fn owns_every_input(&self) -> bool {
-        self.inputs
-            .iter()
-            .all(|input| input.owner().local_owner().is_some())
+        self.inputs.iter().all(|input| {
+            input
+                .owner()
+                .local_owner()
+                .is_some_and(LocalSpk::is_satisfied_by_our_signature_alone)
+        })
     }
 
     /// Returns true if this transaction has any inputs that need signing by this wallet.
@@ -497,10 +515,15 @@ impl TransactionTemplate<ScopedTo> {
             })
             .collect();
 
+        let spends_scripted_output = self
+            .iter_our_inputs()
+            .any(|(_, _, owner)| owner.spends_extra_conditions());
+
         PromptSignBitcoinTx {
             recipients,
             fee,
             fee_rate_sats_per_vbyte,
+            spends_scripted_output,
         }
     }
 }
@@ -541,6 +564,8 @@ pub struct PromptSignBitcoinTx {
     pub fee: bitcoin::Amount,
     /// Fee rate in sats/vB
     pub fee_rate_sats_per_vbyte: Option<f64>,
+    /// At least one signed input spends a taproot output that commits to a script tree.
+    pub spends_scripted_output: bool,
 }
 
 impl PromptSignBitcoinTx {
@@ -598,16 +623,6 @@ impl core::fmt::Display for SignatureCountMismatch {
 #[cfg(feature = "std")]
 impl std::error::Error for SignatureCountMismatch {}
 
-/// A key-path taproot spend witness, which is what every input this wallet owns uses.
-pub fn signature_witness(signature: &EncodedSignature) -> bitcoin::Witness {
-    let signature = bitcoin::taproot::Signature {
-        signature: bitcoin::secp256k1::schnorr::Signature::from_slice(&signature.0)
-            .expect("a schnorr signature is 64 bytes"),
-        sighash_type: bitcoin::sighash::TapSighashType::Default,
-    };
-    bitcoin::Witness::from_slice(&[signature.to_vec()])
-}
-
 /// The provided spk doesn't match what was derived from the derivation path
 #[derive(Debug, Clone)]
 pub struct SpkDoesntMatchPathError {
@@ -656,18 +671,161 @@ impl Input {
     }
 }
 
-#[derive(bincode::Encode, bincode::Decode, Clone, Debug, PartialEq, Eq, Hash)]
+/// Encoded as part of [`SpkOwner`], which has a hand-written bincode encoding to stay
+/// compatible with old databases and firmware.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct LocalSpk {
     pub master_appkey: MasterAppkey,
     pub bip32_path: BitcoinBip32Path,
+    pub spend: LocalSpend,
+}
+
+/// How this wallet spends a taproot output it has a key in.
+#[derive(bincode::Encode, bincode::Decode, Clone, Debug, PartialEq, Eq, Hash)]
+pub enum LocalSpend {
+    /// We are the taproot internal key and spend the key path. `merkle_root` is `None` for a
+    /// plain BIP86 output, or `Some` when the output also commits to a script tree.
+    KeySpend {
+        #[bincode(with_serde)]
+        merkle_root: Option<TapNodeHash>,
+    },
+    /// We are a key *inside* a tapscript leaf and spend that leaf (script path). The output
+    /// key can't be re-derived from our leaf key alone, so we carry the prevout `script_pubkey`,
+    /// the leaf we're satisfying, and the `control_block` (merkle proof) needed to build the
+    /// witness `[signature, leaf_script, control_block]`.
+    ScriptSpend {
+        #[bincode(with_serde)]
+        script_pubkey: ScriptBuf,
+        #[bincode(with_serde)]
+        leaf_script: ScriptBuf,
+        /// Always a valid [`LeafVersion`]: checked at construction and decode.
+        leaf_version: u8,
+        control_block: Vec<u8>,
+    },
 }
 
 impl LocalSpk {
+    /// A plain BIP86 key-spend-only output (no script tree).
+    pub fn key_spend(master_appkey: MasterAppkey, bip32_path: BitcoinBip32Path) -> Self {
+        Self::key_spend_with_merkle_root(master_appkey, bip32_path, None)
+    }
+
+    /// A key-spend of a taproot output that may also commit to a script tree.
+    pub fn key_spend_with_merkle_root(
+        master_appkey: MasterAppkey,
+        bip32_path: BitcoinBip32Path,
+        merkle_root: Option<TapNodeHash>,
+    ) -> Self {
+        Self {
+            master_appkey,
+            bip32_path,
+            spend: LocalSpend::KeySpend { merkle_root },
+        }
+    }
+
+    /// A script-path spend of `leaf_script` (whose prevout is `script_pubkey`) where our key at
+    /// `bip32_path` appears in the leaf. `control_block` is the leaf's merkle proof.
+    pub fn script_spend(
+        master_appkey: MasterAppkey,
+        bip32_path: BitcoinBip32Path,
+        script_pubkey: ScriptBuf,
+        leaf_script: ScriptBuf,
+        leaf_version: LeafVersion,
+        control_block: Vec<u8>,
+    ) -> Self {
+        Self {
+            master_appkey,
+            bip32_path,
+            spend: LocalSpend::ScriptSpend {
+                script_pubkey,
+                leaf_script,
+                leaf_version: leaf_version.to_consensus(),
+                control_block,
+            },
+        }
+    }
+
+    pub fn app_tweak(&self) -> AppTweak {
+        let kind = match &self.spend {
+            LocalSpend::KeySpend { merkle_root } => BitcoinTweakKind::KeySpend {
+                merkle_root: *merkle_root,
+            },
+            LocalSpend::ScriptSpend { .. } => BitcoinTweakKind::ScriptSpend,
+        };
+        AppTweak::Bitcoin(BitcoinTweak {
+            bip32_path: self.bip32_path,
+            kind,
+        })
+    }
+
+    /// The tapscript leaf hash to sign against, for a script-path spend.
+    pub fn leaf_hash(&self) -> Option<TapLeafHash> {
+        match &self.spend {
+            LocalSpend::KeySpend { .. } => None,
+            LocalSpend::ScriptSpend {
+                leaf_script,
+                leaf_version,
+                ..
+            } => {
+                let version = LeafVersion::from_consensus(*leaf_version)
+                    .expect("checked at construction and decode");
+                Some(TapLeafHash::from_script(leaf_script, version))
+            }
+        }
+    }
+
+    /// The x-only key we actually sign with: the tweaked output key for a key-path spend, or
+    /// the raw leaf key for a script-path spend.
+    pub fn signing_xonly(&self) -> XOnlyPublicKey {
+        self.app_tweak()
+            .derive_xonly_key(&self.master_appkey.to_xpub())
+            .into()
+    }
+
+    /// True if this is anything other than a plain BIP86 key-spend.
+    pub fn spends_extra_conditions(&self) -> bool {
+        match &self.spend {
+            LocalSpend::KeySpend { merkle_root } => merkle_root.is_some(),
+            LocalSpend::ScriptSpend { .. } => true,
+        }
+    }
+
     /// Proves this owner derives `spk`, which is what separates a claim that is ours from one
     /// that is merely made. A PSBT names a key and a path; only the script decides.
+    ///
+    /// A script-path owner carries its `spk` rather than deriving it, so for one the proof is
+    /// that the leaf holds the key we sign with and the control block commits the leaf to
+    /// `spk`'s output key.
     fn check_spk(&self, spk: &ScriptBuf) -> Result<(), Box<SpkDoesntMatchPathError>> {
         let expected = self.spk();
-        if *spk != expected {
+        let leaf_proven = match &self.spend {
+            LocalSpend::KeySpend { .. } => true,
+            LocalSpend::ScriptSpend {
+                leaf_script,
+                control_block,
+                ..
+            } => {
+                let key = self.signing_xonly().serialize();
+                let key_in_leaf = leaf_script.instructions().any(|instruction| {
+                    matches!(
+                        instruction,
+                        Ok(bitcoin::script::Instruction::PushBytes(bytes)) if bytes.as_bytes() == key
+                    )
+                });
+                let committed = match (ControlBlock::decode(control_block), tweaked_output_key(spk))
+                {
+                    (Ok(control_block), Some(output_key)) => control_block
+                        .verify_taproot_commitment(
+                            &bitcoin::secp256k1::Secp256k1::verification_only(),
+                            output_key,
+                            leaf_script,
+                        ),
+                    _ => false,
+                };
+                key_in_leaf && committed
+            }
+        };
+        if *spk != expected || !leaf_proven {
             return Err(Box::new(SpkDoesntMatchPathError {
                 got: spk.clone(),
                 expected,
@@ -682,12 +840,68 @@ impl LocalSpk {
     }
 
     pub fn spk(&self) -> ScriptBuf {
-        let expected_external_xonly =
-            AppTweak::Bitcoin(self.bip32_path).derive_xonly_key(&self.master_appkey.to_xpub());
-        ScriptBuf::new_p2tr_tweaked(TweakedPublicKey::dangerous_assume_tweaked(
-            expected_external_xonly.into(),
-        ))
+        match &self.spend {
+            LocalSpend::KeySpend { .. } => ScriptBuf::new_p2tr_tweaked(
+                TweakedPublicKey::dangerous_assume_tweaked(self.signing_xonly()),
+            ),
+            LocalSpend::ScriptSpend { script_pubkey, .. } => script_pubkey.clone(),
+        }
     }
+
+    /// The witness that spends this with `signature`: `[signature]` on the key path, or
+    /// `[signature, leaf_script, control_block]` on the script path.
+    ///
+    /// Only complete when our signature alone satisfies the leaf; see
+    /// [`Self::is_satisfied_by_our_signature_alone`].
+    pub fn witness(&self, signature: &EncodedSignature) -> bitcoin::Witness {
+        let signature = bitcoin::taproot::Signature {
+            signature: bitcoin::secp256k1::schnorr::Signature::from_slice(&signature.0)
+                .expect("a schnorr signature is 64 bytes"),
+            sighash_type: bitcoin::sighash::TapSighashType::Default,
+        }
+        .to_vec();
+        match &self.spend {
+            LocalSpend::KeySpend { .. } => bitcoin::Witness::from_slice(&[signature]),
+            LocalSpend::ScriptSpend {
+                leaf_script,
+                control_block,
+                ..
+            } => bitcoin::Witness::from_slice(&[
+                signature,
+                leaf_script.to_bytes(),
+                control_block.clone(),
+            ]),
+        }
+    }
+
+    /// Whether [`Self::witness`] is a complete witness: always on the key path, and on the
+    /// script path only for the single-key leaf `<our key> OP_CHECKSIG`. Any other leaf may need
+    /// other keys' signatures or more stack items, which only whoever finalises the PSBT knows.
+    pub fn is_satisfied_by_our_signature_alone(&self) -> bool {
+        match &self.spend {
+            LocalSpend::KeySpend { .. } => true,
+            LocalSpend::ScriptSpend {
+                leaf_script,
+                leaf_version,
+                ..
+            } => {
+                *leaf_version == LeafVersion::TapScript.to_consensus()
+                    && *leaf_script
+                        == bitcoin::script::Builder::new()
+                            .push_slice(self.signing_xonly().serialize())
+                            .push_opcode(bitcoin::opcodes::all::OP_CHECKSIG)
+                            .into_script()
+            }
+        }
+    }
+}
+
+/// The output key of a P2TR `spk`, or `None` if it isn't one.
+fn tweaked_output_key(spk: &Script) -> Option<XOnlyPublicKey> {
+    if !spk.is_p2tr() {
+        return None;
+    }
+    XOnlyPublicKey::from_slice(&spk.as_bytes()[2..34]).ok()
 }
 
 #[derive(bincode::Encode, bincode::Decode, Clone, Debug, PartialEq, Eq, Hash)]
@@ -713,10 +927,91 @@ impl Output {
     }
 }
 
-#[derive(bincode::Encode, bincode::Decode, Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum SpkOwner {
-    Foreign(#[bincode(with_serde)] ScriptBuf),
+    Foreign(ScriptBuf),
     Local(LocalSpk),
+}
+
+/// `SpkOwner` crosses the device wire (inside [`TransactionTemplate`]) and is persisted in
+/// signing session mutations, so its encoding must stay stable. Plain BIP86 key-spends keep
+/// the pre-scripted-taproot layout (`Local { master_appkey, bip32_path }` at variant 1) so old
+/// databases still decode and old firmware still understands plain spends; scripted spends use
+/// an appended variant 2 that also carries the [`LocalSpend`]. Each value has exactly one
+/// encoding: a plain key-spend is never written as variant 2.
+impl bincode::Encode for SpkOwner {
+    fn encode<E: bincode::enc::Encoder>(
+        &self,
+        encoder: &mut E,
+    ) -> Result<(), bincode::error::EncodeError> {
+        match self {
+            SpkOwner::Foreign(spk) => {
+                0u32.encode(encoder)?;
+                bincode::serde::Compat(spk).encode(encoder)
+            }
+            SpkOwner::Local(local) => {
+                let plain = local.spend == (LocalSpend::KeySpend { merkle_root: None });
+                if plain { 1u32 } else { 2u32 }.encode(encoder)?;
+                local.master_appkey.encode(encoder)?;
+                local.bip32_path.encode(encoder)?;
+                if !plain {
+                    local.spend.encode(encoder)?;
+                }
+                Ok(())
+            }
+        }
+    }
+}
+
+impl<Context> bincode::Decode<Context> for SpkOwner {
+    fn decode<D: bincode::de::Decoder>(
+        decoder: &mut D,
+    ) -> Result<Self, bincode::error::DecodeError> {
+        Ok(match u32::decode(decoder)? {
+            0 => SpkOwner::Foreign(bincode::serde::Compat::<ScriptBuf>::decode(decoder)?.0),
+            variant @ (1 | 2) => {
+                let master_appkey = bincode::Decode::decode(decoder)?;
+                let bip32_path = bincode::Decode::decode(decoder)?;
+                let spend = if variant == 1 {
+                    LocalSpend::KeySpend { merkle_root: None }
+                } else {
+                    match bincode::Decode::decode(decoder)? {
+                        LocalSpend::KeySpend { merkle_root: None } => {
+                            return Err(bincode::error::DecodeError::Other(
+                                "a plain key-spend owner must be encoded as variant 1",
+                            ))
+                        }
+                        LocalSpend::ScriptSpend { leaf_version, .. }
+                            if LeafVersion::from_consensus(leaf_version).is_err() =>
+                        {
+                            return Err(bincode::error::DecodeError::OtherString(alloc::format!(
+                                "invalid taproot leaf version {leaf_version}"
+                            )))
+                        }
+                        spend => spend,
+                    }
+                };
+                SpkOwner::Local(LocalSpk {
+                    master_appkey,
+                    bip32_path,
+                    spend,
+                })
+            }
+            variant => {
+                return Err(bincode::error::DecodeError::OtherString(alloc::format!(
+                    "unknown SpkOwner variant {variant}"
+                )))
+            }
+        })
+    }
+}
+
+impl<'de, Context> bincode::BorrowDecode<'de, Context> for SpkOwner {
+    fn borrow_decode<D: bincode::de::BorrowDecoder<'de>>(
+        decoder: &mut D,
+    ) -> Result<Self, bincode::error::DecodeError> {
+        bincode::Decode::decode(decoder)
+    }
 }
 
 impl SpkOwner {
@@ -738,6 +1033,292 @@ impl SpkOwner {
         match self {
             SpkOwner::Foreign(_) => None,
             SpkOwner::Local(owner) => Some(owner),
+        }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::tweak::{AppTweakKind, NormalIndex, TweakableKey};
+    use bitcoin::{
+        opcodes::all::{OP_CHECKSIG, OP_CHECKSIGVERIFY},
+        script::Builder,
+        secp256k1::{Keypair, Secp256k1, SecretKey},
+        sighash::{Prevouts, TapSighashType},
+        taproot::TaprootBuilder,
+        Amount,
+    };
+    use schnorr_fun::fun::{g, G};
+
+    fn key() -> MasterAppkey {
+        MasterAppkey::derive_from_rootkey(g!(2 * G).normalize())
+    }
+
+    fn path(index: u32) -> BitcoinBip32Path {
+        BitcoinBip32Path::external(NormalIndex::new(index).unwrap())
+    }
+
+    /// The untweaked key at `bip32_path`: the taproot internal key of a BIP86 output, and the
+    /// key that goes in a leaf.
+    fn raw_key(master_appkey: MasterAppkey, bip32_path: BitcoinBip32Path) -> XOnlyPublicKey {
+        master_appkey
+            .derive_appkey(AppTweakKind::Bitcoin)
+            .derive_bip32(bip32_path.path_segments_from_bitcoin_appkey())
+            .into_key()
+            .to_libsecp_xonly()
+    }
+
+    /// A key that is nobody's in these tests: the internal key of a script-only output.
+    fn unrelated_internal_key() -> XOnlyPublicKey {
+        Keypair::from_secret_key(
+            &Secp256k1::new(),
+            &SecretKey::from_slice(&[9u8; 32]).unwrap(),
+        )
+        .x_only_public_key()
+        .0
+    }
+
+    /// Script-path spends `leaf_script`, the only leaf of an output under an unrelated key.
+    fn leaf_spend(bip32_path: BitcoinBip32Path, leaf_script: ScriptBuf) -> LocalSpk {
+        let secp = Secp256k1::verification_only();
+        let spend_info = TaprootBuilder::new()
+            .add_leaf(0, leaf_script.clone())
+            .unwrap()
+            .finalize(&secp, unrelated_internal_key())
+            .unwrap();
+        let control_block = spend_info
+            .control_block(&(leaf_script.clone(), LeafVersion::TapScript))
+            .unwrap()
+            .serialize();
+        LocalSpk::script_spend(
+            key(),
+            bip32_path,
+            ScriptBuf::new_p2tr(&secp, unrelated_internal_key(), spend_info.merkle_root()),
+            leaf_script,
+            LeafVersion::TapScript,
+            control_block,
+        )
+    }
+
+    fn single_key_leaf(bip32_path: BitcoinBip32Path) -> ScriptBuf {
+        Builder::new()
+            .push_x_only_key(&raw_key(key(), bip32_path))
+            .push_opcode(OP_CHECKSIG)
+            .into_script()
+    }
+
+    /// The layout `SpkOwner` had before scripted taproot spends. Encodings of this must decode
+    /// as `SpkOwner`, and plain key-spend owners must encode identically, so that old persisted
+    /// signing sessions and old firmware stay compatible.
+    #[derive(bincode::Encode, bincode::Decode)]
+    enum LegacySpkOwner {
+        Foreign(#[bincode(with_serde)] ScriptBuf),
+        Local(LegacyLocalSpk),
+    }
+
+    #[derive(bincode::Encode, bincode::Decode)]
+    struct LegacyLocalSpk {
+        master_appkey: MasterAppkey,
+        bip32_path: BitcoinBip32Path,
+    }
+
+    #[test]
+    fn spk_owner_encoding_is_backwards_compatible() {
+        let config = bincode::config::standard();
+        let master_appkey = key();
+        let bip32_path = path(7);
+
+        let legacy_bytes = bincode::encode_to_vec(
+            LegacySpkOwner::Local(LegacyLocalSpk {
+                master_appkey,
+                bip32_path,
+            }),
+            config,
+        )
+        .unwrap();
+        let key_spend = SpkOwner::Local(LocalSpk::key_spend(master_appkey, bip32_path));
+        assert_eq!(
+            bincode::encode_to_vec(&key_spend, config).unwrap(),
+            legacy_bytes
+        );
+        let (decoded, _) =
+            bincode::decode_from_slice::<SpkOwner, _>(&legacy_bytes, config).unwrap();
+        assert_eq!(decoded, key_spend);
+
+        let foreign_spk = ScriptBuf::new_op_return([1u8; 4]);
+        let legacy_foreign =
+            bincode::encode_to_vec(LegacySpkOwner::Foreign(foreign_spk.clone()), config).unwrap();
+        let foreign = SpkOwner::Foreign(foreign_spk);
+        assert_eq!(
+            bincode::encode_to_vec(&foreign, config).unwrap(),
+            legacy_foreign
+        );
+        let (decoded, _) =
+            bincode::decode_from_slice::<SpkOwner, _>(&legacy_foreign, config).unwrap();
+        assert_eq!(decoded, foreign);
+
+        for owner in [
+            SpkOwner::Local(LocalSpk::key_spend_with_merkle_root(
+                master_appkey,
+                bip32_path,
+                Some(TapNodeHash::from_byte_array([7u8; 32])),
+            )),
+            SpkOwner::Local(leaf_spend(bip32_path, single_key_leaf(bip32_path))),
+        ] {
+            let bytes = bincode::encode_to_vec(&owner, config).unwrap();
+            let (decoded, _) = bincode::decode_from_slice::<SpkOwner, _>(&bytes, config).unwrap();
+            assert_eq!(decoded, owner);
+        }
+
+        // A plain key-spend smuggled in as the scripted variant would be a second encoding of
+        // the same owner.
+        let mut second_form = legacy_bytes.clone();
+        second_form[0] = 2;
+        second_form.extend(
+            bincode::encode_to_vec(LocalSpend::KeySpend { merkle_root: None }, config).unwrap(),
+        );
+        assert!(bincode::decode_from_slice::<SpkOwner, _>(&second_form, config).is_err());
+    }
+
+    /// The output key we derive for a key-spend of a taproot output committing to a script tree
+    /// must match what rust-bitcoin builds from `internal_key + merkle_root`.
+    #[test]
+    fn scripted_keyspend_spk_matches_rust_bitcoin() {
+        let secp = Secp256k1::verification_only();
+        let internal_key = raw_key(key(), path(7));
+        let merkle_root = TapNodeHash::from_byte_array([7u8; 32]);
+
+        let scripted = LocalSpk::key_spend_with_merkle_root(key(), path(7), Some(merkle_root));
+        assert_eq!(
+            scripted.spk(),
+            ScriptBuf::new_p2tr(&secp, internal_key, Some(merkle_root)),
+        );
+
+        let plain = LocalSpk::key_spend(key(), path(7));
+        assert_eq!(plain.spk(), ScriptBuf::new_p2tr(&secp, internal_key, None));
+        assert_ne!(scripted.spk(), plain.spk());
+    }
+
+    /// For a script-path spend, the leaf sighash we compute must equal rust-bitcoin's, the key
+    /// we sign with must be the raw (untweaked) key in the leaf, and the witness must be
+    /// `[signature, leaf_script, control_block]`.
+    #[test]
+    fn script_path_spend_matches_rust_bitcoin() {
+        let leaf_script = single_key_leaf(path(1));
+        let owner = leaf_spend(path(1), leaf_script.clone());
+        assert_eq!(owner.signing_xonly(), raw_key(key(), path(1)));
+
+        let prevout = TxOut {
+            value: Amount::from_sat(100_000),
+            script_pubkey: owner.spk(),
+        };
+        let mut template = TransactionTemplate::new();
+        template
+            .push_owned_input(
+                PushInput::spend_outpoint(&prevout, OutPoint::null()),
+                owner.clone(),
+            )
+            .unwrap();
+        template.push_foreign_output(TxOut {
+            value: Amount::from_sat(90_000),
+            script_pubkey: ScriptBuf::new_op_return([]),
+        });
+
+        let ours = template.iter_sighash().next().unwrap();
+        let tx = template.to_rust_bitcoin_tx();
+        let leaf_hash = TapLeafHash::from_script(&leaf_script, LeafVersion::TapScript);
+        let expected = SighashCache::new(&tx)
+            .taproot_script_spend_signature_hash(
+                0,
+                &Prevouts::All(&[prevout]),
+                leaf_hash,
+                TapSighashType::Default,
+            )
+            .unwrap();
+        assert_eq!(ours, expected);
+
+        let signature = EncodedSignature([5u8; 64]);
+        let signed = template
+            .as_seen_by(key())
+            .to_signed_rust_bitcoin_tx(&[signature])
+            .unwrap();
+        let LocalSpend::ScriptSpend { control_block, .. } = &owner.spend else {
+            unreachable!()
+        };
+        assert_eq!(
+            signed.input[0].witness.to_vec(),
+            vec![
+                signature.0.to_vec(),
+                leaf_script.to_bytes(),
+                control_block.clone()
+            ]
+        );
+    }
+
+    /// Pushing is where ownership is proven, so a script-path owner must be refused when its
+    /// leaf lacks our key or its control block does not commit the leaf to the prevout.
+    #[test]
+    fn a_leaf_we_cannot_prove_is_refused() {
+        let ours = leaf_spend(path(1), single_key_leaf(path(1)));
+
+        let someone_elses_leaf = leaf_spend(path(1), single_key_leaf(path(2)));
+
+        // Our leaf's proof in a different tree, so it commits to a different output key.
+        let mut wrong_control_block = ours.clone();
+        if let LocalSpend::ScriptSpend { control_block, .. } = &mut wrong_control_block.spend {
+            let other_tree = TaprootBuilder::new()
+                .add_leaf(1, single_key_leaf(path(1)))
+                .unwrap()
+                .add_leaf(1, single_key_leaf(path(3)))
+                .unwrap()
+                .finalize(&Secp256k1::verification_only(), unrelated_internal_key())
+                .unwrap();
+            *control_block = other_tree
+                .control_block(&(single_key_leaf(path(1)), LeafVersion::TapScript))
+                .unwrap()
+                .serialize();
+        }
+
+        for (owner, expected) in [
+            (ours, true),
+            (someone_elses_leaf, false),
+            (wrong_control_block, false),
+        ] {
+            let prevout = TxOut {
+                value: Amount::from_sat(100_000),
+                script_pubkey: owner.spk(),
+            };
+            let mut template = TransactionTemplate::new();
+            let pushed = template
+                .push_owned_input(PushInput::spend_outpoint(&prevout, OutPoint::null()), owner);
+            assert_eq!(pushed.is_ok(), expected);
+        }
+    }
+
+    /// Only `<our key> OP_CHECKSIG` is satisfied by our signature alone; any other leaf leaves
+    /// the transaction for whoever finalises the PSBT.
+    #[test]
+    fn only_a_single_key_leaf_lets_us_finalise() {
+        let other_key = raw_key(
+            MasterAppkey::derive_from_rootkey(g!(3 * G).normalize()),
+            path(0),
+        );
+        let two_key_leaf = Builder::new()
+            .push_x_only_key(&raw_key(key(), path(1)))
+            .push_opcode(OP_CHECKSIGVERIFY)
+            .push_x_only_key(&other_key)
+            .push_opcode(OP_CHECKSIG)
+            .into_script();
+
+        for (leaf_script, finalisable) in [(single_key_leaf(path(1)), true), (two_key_leaf, false)]
+        {
+            let mut template = TransactionTemplate::new();
+            template.push_imaginary_owned_input(
+                leaf_spend(path(1), leaf_script),
+                Amount::from_sat(100_000),
+            );
+            assert_eq!(template.as_seen_by(key()).owns_every_input(), finalisable);
         }
     }
 }

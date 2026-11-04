@@ -1,3 +1,5 @@
+use bitcoin::hashes::Hash;
+use bitcoin::taproot::LeafVersion;
 use common::TEST_ENCRYPTION_KEY;
 use frostsnap_core::bitcoin_transaction::{LocalSpk, TransactionTemplate};
 use frostsnap_core::device::KeyPurpose;
@@ -334,19 +336,67 @@ fn signing_a_bitcoin_transaction_produces_valid_signatures() {
     let master_appkey = key_data.complete_key.master_appkey;
 
     tx_template.push_imaginary_owned_input(
-        LocalSpk {
+        LocalSpk::key_spend(
             master_appkey,
-            bip32_path: BitcoinBip32Path::external(NormalIndex::new(7).unwrap()),
-        },
+            BitcoinBip32Path::external(NormalIndex::new(7).unwrap()),
+        ),
         bitcoin::Amount::from_sat(42_000),
     );
 
     tx_template.push_imaginary_owned_input(
-        LocalSpk {
+        LocalSpk::key_spend(
             master_appkey,
-            bip32_path: BitcoinBip32Path::internal(NormalIndex::new(42).unwrap()),
-        },
+            BitcoinBip32Path::internal(NormalIndex::new(42).unwrap()),
+        ),
         bitcoin::Amount::from_sat(1_337_000),
+    );
+
+    // A key-spend of an output that also commits to a script tree.
+    tx_template.push_imaginary_owned_input(
+        LocalSpk::key_spend_with_merkle_root(
+            master_appkey,
+            BitcoinBip32Path::external(NormalIndex::new(8).unwrap()),
+            Some(bitcoin::taproot::TapNodeHash::from_byte_array([13u8; 32])),
+        ),
+        bitcoin::Amount::from_sat(21_000),
+    );
+
+    // A script-path spend of a tapscript leaf `<our key> OP_CHECKSIG` under an unrelated
+    // internal key.
+    let secp = bitcoin::secp256k1::Secp256k1::new();
+    let leaf_path = BitcoinBip32Path::external(NormalIndex::new(9).unwrap());
+    let leaf_key = frostsnap_core::tweak::AppTweak::Bitcoin(frostsnap_core::tweak::BitcoinTweak {
+        bip32_path: leaf_path,
+        kind: frostsnap_core::tweak::BitcoinTweakKind::ScriptSpend,
+    })
+    .derive_xonly_key(&master_appkey.to_xpub());
+    let leaf_script = bitcoin::script::Builder::new()
+        .push_x_only_key(&leaf_key.into())
+        .push_opcode(bitcoin::opcodes::all::OP_CHECKSIG)
+        .into_script();
+    let internal_key = bitcoin::secp256k1::Keypair::from_seckey_slice(&secp, &[9u8; 32])
+        .unwrap()
+        .x_only_public_key()
+        .0;
+    let spend_info = bitcoin::taproot::TaprootBuilder::new()
+        .add_leaf(0, leaf_script.clone())
+        .unwrap()
+        .finalize(&secp, internal_key)
+        .unwrap();
+    let control_block = spend_info
+        .control_block(&(leaf_script.clone(), LeafVersion::TapScript))
+        .unwrap()
+        .serialize();
+    tx_template.push_imaginary_owned_input(
+        LocalSpk::script_spend(
+            master_appkey,
+            leaf_path,
+            bitcoin::ScriptBuf::new_p2tr(&secp, internal_key, spend_info.merkle_root()),
+            leaf_script,
+            LeafVersion::TapScript,
+            control_block,
+        ),
+        bitcoin::Amount::from_sat(31_337),
     );
 
     let task = WireSignTask::BitcoinTransaction(tx_template);
@@ -378,10 +428,69 @@ fn signing_a_bitcoin_transaction_produces_valid_signatures() {
         run.extend(sign_req);
     }
     run.run_until_finished(&mut env, &mut test_rng).unwrap();
-    assert!(
-        checked_task.verify_final_signatures(&schnorr, env.signatures.get(&session_id).unwrap())
-    );
-    // TODO: test actual transaction validity
+    let signatures = env.signatures.get(&session_id).unwrap();
+    assert!(checked_task.verify_final_signatures(&schnorr, signatures));
+
+    // Ground truth from rust-bitcoin rather than from our own derivation: each witness must
+    // carry a signature valid under the key its prevout (or its leaf) actually names, over the
+    // sighash rust-bitcoin computes for that kind of spend.
+    let frostsnap_core::SignTask::BitcoinTransaction { tx_template, .. } =
+        checked_task.into_inner()
+    else {
+        unreachable!()
+    };
+    let signed_tx = tx_template
+        .to_signed_rust_bitcoin_tx(
+            &signatures
+                .iter()
+                .map(|signature| frostsnap_core::message::EncodedSignature::new(*signature))
+                .collect::<Vec<_>>(),
+        )
+        .unwrap();
+    let prevouts = tx_template
+        .inputs()
+        .iter()
+        .map(|input| input.txout())
+        .collect::<Vec<_>>();
+    let mut sighash_cache = bitcoin::sighash::SighashCache::new(&signed_tx);
+    for (i, txin) in signed_tx.input.iter().enumerate() {
+        let witness = txin.witness.to_vec();
+        let output_key =
+            bitcoin::XOnlyPublicKey::from_slice(&prevouts[i].script_pubkey.as_bytes()[2..34])
+                .unwrap();
+        let (key, sighash) = match witness.as_slice() {
+            [_signature] => (
+                output_key,
+                sighash_cache.taproot_key_spend_signature_hash(
+                    i,
+                    &bitcoin::sighash::Prevouts::All(&prevouts),
+                    bitcoin::sighash::TapSighashType::Default,
+                ),
+            ),
+            [_signature, leaf_script, control_block] => {
+                let leaf_script = bitcoin::Script::from_bytes(leaf_script);
+                let control_block = bitcoin::taproot::ControlBlock::decode(control_block).unwrap();
+                assert!(control_block.verify_taproot_commitment(&secp, output_key, leaf_script));
+                (
+                    bitcoin::XOnlyPublicKey::from_slice(&leaf_script.as_bytes()[1..33]).unwrap(),
+                    sighash_cache.taproot_script_spend_signature_hash(
+                        i,
+                        &bitcoin::sighash::Prevouts::All(&prevouts),
+                        bitcoin::taproot::TapLeafHash::from_script(
+                            leaf_script,
+                            LeafVersion::TapScript,
+                        ),
+                        bitcoin::sighash::TapSighashType::Default,
+                    ),
+                )
+            }
+            other => panic!("input {i} has an unexpected witness {other:?}"),
+        };
+        let message = bitcoin::secp256k1::Message::from_digest(sighash.unwrap().to_byte_array());
+        let signature = bitcoin::secp256k1::schnorr::Signature::from_slice(&witness[0]).unwrap();
+        secp.verify_schnorr(&signature, &message, &key)
+            .unwrap_or_else(|e| panic!("input {i}'s signature doesn't verify: {e}"));
+    }
 }
 
 #[test]

@@ -619,7 +619,10 @@ impl ConfirmationTime {
 mod test {
     use super::*;
     use bitcoin::key::{Secp256k1, TweakedPublicKey};
-    use frostsnap_core::{schnorr_fun::fun::Point, tweak::AppTweak};
+    use frostsnap_core::{
+        schnorr_fun::fun::Point,
+        tweak::{AppTweak, BitcoinTweak},
+    };
 
     #[test]
     fn confirmation_count_is_derived_from_the_wallet_snapshot_tip() {
@@ -641,10 +644,10 @@ mod test {
             CoordSuperWallet::descriptors_for_key(master_appkey, bitcoin::NetworkKind::Main);
 
         let (account_keychain, external_descriptor) = &descriptors[0];
-        let xonly = AppTweak::Bitcoin(BitcoinBip32Path {
+        let xonly = AppTweak::Bitcoin(BitcoinTweak::key_spend(BitcoinBip32Path {
             account_keychain: *account_keychain,
             index: NormalIndex::new(42).unwrap(),
-        })
+        }))
         .derive_xonly_key(&master_appkey.to_xpub());
 
         let definite_descriptor = external_descriptor.at_derivation_index(42).unwrap();

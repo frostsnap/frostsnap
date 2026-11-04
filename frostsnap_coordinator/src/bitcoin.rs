@@ -88,7 +88,7 @@ mod test {
     use bitcoin::Network;
     use core::str::FromStr;
     use frostsnap_core::tweak::{
-        AccountKind, AppTweak, BitcoinAccountKeychain, BitcoinBip32Path, NormalIndex,
+        AccountKind, AppTweak, BitcoinAccountKeychain, BitcoinBip32Path, BitcoinTweak, NormalIndex,
     };
 
     use super::*;
@@ -101,20 +101,20 @@ mod test {
             index: NormalIndex::ZERO,
         };
 
-        let internal_tweak = AppTweak::Bitcoin(BitcoinBip32Path {
+        let internal_tweak = AppTweak::Bitcoin(BitcoinTweak::key_spend(BitcoinBip32Path {
             account_keychain: BitcoinAccountKeychain {
                 account,
                 keychain: Keychain::Internal,
             },
             index: NormalIndex::new(84).unwrap(),
-        });
-        let external_tweak = AppTweak::Bitcoin(BitcoinBip32Path {
+        }));
+        let external_tweak = AppTweak::Bitcoin(BitcoinTweak::key_spend(BitcoinBip32Path {
             account_keychain: BitcoinAccountKeychain {
                 account,
                 keychain: Keychain::External,
             },
             index: NormalIndex::new(42).unwrap(),
-        });
+        }));
 
         let multi_x_descriptor =
             multi_x_descriptor_for_account(master_appkey, account, bitcoin::NetworkKind::Main);

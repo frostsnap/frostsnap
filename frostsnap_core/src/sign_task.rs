@@ -181,7 +181,7 @@ impl CheckedSignTask {
                 .iter_our_input_sighashes()
                 .map(|(owner, sighash)| SignItem {
                     message: sighash.as_raw_hash().to_byte_array().to_vec(),
-                    app_tweak: AppTweak::Bitcoin(owner.bip32_path),
+                    app_tweak: owner.app_tweak(),
                 })
                 .collect(),
         }
@@ -279,17 +279,11 @@ mod test {
     fn an_output_under_another_key_is_presented_as_leaving() {
         let signing = signing_key();
         let other = other_key();
-        let their_spk = LocalSpk {
-            master_appkey: other,
-            bip32_path: BitcoinBip32Path::internal(NormalIndex::ZERO),
-        };
+        let their_spk = LocalSpk::key_spend(other, BitcoinBip32Path::internal(NormalIndex::ZERO));
 
         let mut tx_template = TransactionTemplate::new();
         tx_template.push_imaginary_owned_input(
-            LocalSpk {
-                master_appkey: signing,
-                bip32_path: BitcoinBip32Path::external(NormalIndex::ZERO),
-            },
+            LocalSpk::key_spend(signing, BitcoinBip32Path::external(NormalIndex::ZERO)),
             Amount::from_sat(100_000),
         );
         tx_template.push_owned_output(Amount::from_sat(90_000), their_spk.clone());
@@ -343,10 +337,7 @@ mod test {
 
         let mut tx_template = TransactionTemplate::new();
         tx_template.push_imaginary_owned_input(
-            LocalSpk {
-                master_appkey: signing,
-                bip32_path: BitcoinBip32Path::external(NormalIndex::ZERO),
-            },
+            LocalSpk::key_spend(signing, BitcoinBip32Path::external(NormalIndex::ZERO)),
             Amount::from_sat(100_000),
         );
         let op_return = ScriptBuf::from_bytes(vec![0x6a, 0x04, 0xde, 0xad, 0xbe, 0xef]);
@@ -408,10 +399,7 @@ mod test {
 
         let mut tx_template = TransactionTemplate::new();
         tx_template.push_imaginary_owned_input(
-            LocalSpk {
-                master_appkey: signing,
-                bip32_path: BitcoinBip32Path::external(NormalIndex::ZERO),
-            },
+            LocalSpk::key_spend(signing, BitcoinBip32Path::external(NormalIndex::ZERO)),
             Amount::from_sat(100_000),
         );
         tx_template.push_foreign_output(TxOut {
@@ -447,10 +435,7 @@ mod test {
 
         let mut tx_template = TransactionTemplate::new();
         tx_template.push_imaginary_owned_input(
-            LocalSpk {
-                master_appkey: other,
-                bip32_path: BitcoinBip32Path::external(NormalIndex::ZERO),
-            },
+            LocalSpk::key_spend(other, BitcoinBip32Path::external(NormalIndex::ZERO)),
             Amount::from_sat(100_000),
         );
         tx_template.push_foreign_output(bitcoin::TxOut {
@@ -477,10 +462,7 @@ mod test {
 
         let mut tx_template = TransactionTemplate::new();
         tx_template.push_imaginary_owned_input(
-            LocalSpk {
-                master_appkey: signing,
-                bip32_path: BitcoinBip32Path::external(NormalIndex::ZERO),
-            },
+            LocalSpk::key_spend(signing, BitcoinBip32Path::external(NormalIndex::ZERO)),
             Amount::from_sat(100_000),
         );
         tx_template.push_foreign_output(TxOut {
@@ -512,18 +494,12 @@ mod test {
         let spend_to_self = |input: BitcoinBip32Path, output: BitcoinBip32Path| {
             let mut tx = TransactionTemplate::new();
             tx.push_imaginary_owned_input(
-                LocalSpk {
-                    master_appkey: signing,
-                    bip32_path: input,
-                },
+                LocalSpk::key_spend(signing, input),
                 Amount::from_sat(100_000),
             );
             tx.push_owned_output(
                 Amount::from_sat(90_000),
-                LocalSpk {
-                    master_appkey: signing,
-                    bip32_path: output,
-                },
+                LocalSpk::key_spend(signing, output),
             );
             WireSignTask::BitcoinTransaction(tx)
                 .check(signing, KeyPurpose::Bitcoin(Network::Bitcoin))

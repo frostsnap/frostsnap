@@ -570,10 +570,7 @@ mod test {
     fn template_with_a_duplicate_payee_and_a_data_output() -> TransactionTemplate {
         let key = key();
         let path = BitcoinBip32Path::external(idx(0));
-        let owner = LocalSpk {
-            master_appkey: key,
-            bip32_path: path,
-        };
+        let owner = LocalSpk::key_spend(key, path);
         let mut template = TransactionTemplate::new();
         let ours = TxOut {
             value: Amount::from_sat(300_000),
@@ -642,10 +639,7 @@ mod test {
     fn single_owned_input_template() -> TransactionTemplate {
         let key = key();
         let path = BitcoinBip32Path::external(idx(0));
-        let owner = LocalSpk {
-            master_appkey: key,
-            bip32_path: path,
-        };
+        let owner = LocalSpk::key_spend(key, path);
         let mut template = TransactionTemplate::new();
         let ours = TxOut {
             value: Amount::from_sat(100_000),
@@ -676,19 +670,12 @@ mod test {
 
         let ours = TxOut {
             value: Amount::from_sat(100_000),
-            script_pubkey: LocalSpk {
-                master_appkey: key,
-                bip32_path: path,
-            }
-            .spk(),
+            script_pubkey: LocalSpk::key_spend(key, path).spk(),
         };
         template
             .push_owned_input(
                 PushInput::spend_outpoint(&ours, outpoint(1)),
-                LocalSpk {
-                    master_appkey: key,
-                    bip32_path: path,
-                },
+                LocalSpk::key_spend(key, path),
             )
             .unwrap();
         template.push_foreign_output(TxOut {
@@ -836,16 +823,9 @@ mod test {
             .push_owned_output_checked(
                 &TxOut {
                     value: Amount::from_sat(40_000),
-                    script_pubkey: LocalSpk {
-                        master_appkey: key,
-                        bip32_path: deep,
-                    }
-                    .spk(),
+                    script_pubkey: LocalSpk::key_spend(key, deep).spk(),
                 },
-                LocalSpk {
-                    master_appkey: key,
-                    bip32_path: deep,
-                },
+                LocalSpk::key_spend(key, deep),
             )
             .unwrap();
 
