@@ -120,11 +120,13 @@ fn feerate_weighs_a_script_path_witness() {
     template.push_imaginary_owned_input(
         LocalSpk::script_spend(
             master_appkey,
-            leaf_path,
             ScriptBuf::new_p2tr(&secp, internal_key, spend_info.merkle_root()),
-            leaf_script.clone(),
-            bitcoin::taproot::LeafVersion::TapScript,
-            control_block.serialize(),
+            vec![frostsnap_core::bitcoin_transaction::LeafSpend::new(
+                leaf_path,
+                leaf_script.clone(),
+                bitcoin::taproot::LeafVersion::TapScript,
+                control_block.serialize(),
+            )],
         ),
         Amount::from_sat(50_000),
     );
@@ -147,4 +149,83 @@ fn feerate_weighs_a_script_path_witness() {
     let expected = template.fee().unwrap() as f64 / witnessed.weight().to_vbytes_ceil() as f64;
 
     assert_eq!(template.as_seen_by(master_appkey).feerate(), Some(expected));
+}
+
+/// With our keys in two leaves, whichever leaf is finally satisfied is not ours to know, so the
+/// feerate assumes the larger witness — never overstating the rate the user pays.
+#[test]
+fn feerate_assumes_the_largest_of_several_leaves() {
+    let secp = bitcoin::secp256k1::Secp256k1::new();
+    let master_appkey = MasterAppkey::derive_from_rootkey(G.normalize());
+    let key_at = |index: u32| -> bitcoin::XOnlyPublicKey {
+        AppTweak::Bitcoin(BitcoinTweak {
+            bip32_path: BitcoinBip32Path::external(NormalIndex::new(index).unwrap()),
+            kind: BitcoinTweakKind::ScriptSpend,
+        })
+        .derive_xonly_key(&master_appkey.to_xpub())
+        .into()
+    };
+    let small_leaf = bitcoin::script::Builder::new()
+        .push_x_only_key(&key_at(1))
+        .push_opcode(bitcoin::opcodes::all::OP_CHECKSIG)
+        .into_script();
+    let large_leaf = bitcoin::script::Builder::new()
+        .push_x_only_key(&key_at(2))
+        .push_opcode(bitcoin::opcodes::all::OP_CHECKSIGVERIFY)
+        .push_int(52_560)
+        .push_opcode(bitcoin::opcodes::all::OP_CSV)
+        .into_script();
+    let internal_key = bitcoin::secp256k1::Keypair::from_seckey_slice(&secp, &[9u8; 32])
+        .unwrap()
+        .x_only_public_key()
+        .0;
+    let spend_info = bitcoin::taproot::TaprootBuilder::new()
+        .add_leaf(1, small_leaf.clone())
+        .unwrap()
+        .add_leaf(1, large_leaf.clone())
+        .unwrap()
+        .finalize(&secp, internal_key)
+        .unwrap();
+    let control_block = |leaf: &ScriptBuf| {
+        spend_info
+            .control_block(&(leaf.clone(), bitcoin::taproot::LeafVersion::TapScript))
+            .unwrap()
+            .serialize()
+    };
+    let leaf_spend = |index: u32, leaf: &ScriptBuf| {
+        frostsnap_core::bitcoin_transaction::LeafSpend::new(
+            BitcoinBip32Path::external(NormalIndex::new(index).unwrap()),
+            leaf.clone(),
+            bitcoin::taproot::LeafVersion::TapScript,
+            control_block(leaf),
+        )
+    };
+
+    let mut template = TransactionTemplate::new();
+    template.push_imaginary_owned_input(
+        LocalSpk::script_spend(
+            master_appkey,
+            ScriptBuf::new_p2tr(&secp, internal_key, spend_info.merkle_root()),
+            vec![leaf_spend(1, &small_leaf), leaf_spend(2, &large_leaf)],
+        ),
+        Amount::from_sat(50_000),
+    );
+    template.push_foreign_output(TxOut {
+        value: Amount::from_sat(49_000),
+        script_pubkey: ScriptBuf::from_hex(
+            "5120a62baa9e7c1aeda63492f2129cc8226a39db1bc05a9c11e45a61cb751a11061d",
+        )
+        .unwrap(),
+    });
+
+    let feerate_witnessed_with = |leaf: &ScriptBuf| {
+        let mut tx = template.to_rust_bitcoin_tx();
+        tx.input[0].witness =
+            bitcoin::Witness::from_slice(&[vec![7u8; 64], leaf.to_bytes(), control_block(leaf)]);
+        template.fee().unwrap() as f64 / tx.weight().to_vbytes_ceil() as f64
+    };
+    let feerate = template.as_seen_by(master_appkey).feerate();
+
+    assert_eq!(feerate, Some(feerate_witnessed_with(&large_leaf)));
+    assert_ne!(feerate, Some(feerate_witnessed_with(&small_leaf)));
 }

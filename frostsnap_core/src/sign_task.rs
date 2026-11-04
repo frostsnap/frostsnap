@@ -183,9 +183,9 @@ impl CheckedSignTask {
             }],
             SignTask::BitcoinTransaction { tx_template, .. } => tx_template
                 .iter_our_input_sighashes()
-                .map(|(owner, sighash)| SignItem {
+                .map(|(app_tweak, sighash)| SignItem {
                     message: sighash.as_raw_hash().to_byte_array().to_vec(),
-                    app_tweak: owner.app_tweak(),
+                    app_tweak,
                 })
                 .collect(),
         }
@@ -345,11 +345,13 @@ mod test {
         for disguised in [
             LocalSpk::script_spend(
                 signing,
-                change_path,
                 attacker_spk.clone(),
-                ScriptBuf::new(),
-                bitcoin::taproot::LeafVersion::TapScript,
-                alloc::vec![],
+                alloc::vec![crate::bitcoin_transaction::LeafSpend::new(
+                    change_path,
+                    ScriptBuf::new(),
+                    bitcoin::taproot::LeafVersion::TapScript,
+                    alloc::vec![],
+                )],
             ),
             LocalSpk::key_spend_with_merkle_root(
                 signing,
