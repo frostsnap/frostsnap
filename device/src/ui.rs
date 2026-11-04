@@ -116,6 +116,8 @@ pub enum Prompt {
     },
     ConfirmFirmwareUpgrade {
         firmware_digest: Sha256Digest,
+        /// `None` from a coordinator that doesn't name the version it installs.
+        version: Option<frostsnap_comms::firmware_version::VersionNumber>,
         size: u32,
     },
     EraseDevice,

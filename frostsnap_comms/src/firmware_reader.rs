@@ -4,7 +4,7 @@
 //! (flash partitions on devices, or in-memory buffers on coordinators) and parsing ESP32
 //! firmware image format.
 
-use crate::SIGNATURE_BLOCK_MAGIC;
+use crate::{firmware_version::VersionNumber, SIGNATURE_BLOCK_MAGIC};
 use alloc::boxed::Box;
 use alloc::string::String;
 
@@ -87,6 +87,43 @@ pub const HEADER_SIZE: usize = core::mem::size_of::<ImageHeader>();
 pub const SEGMENT_HEADER_SIZE: usize = core::mem::size_of::<SegmentHeader>();
 pub const MAX_SEGMENTS: u8 = 16;
 pub const MAX_SEGMENT_SIZE: u32 = 16 * 1024 * 1024; // 16MB
+
+/// `esp_app_desc_t::magic_word`.
+pub const APP_DESC_MAGIC: u32 = 0xABCD5432;
+/// The app descriptor opens the first segment, right after the image header and
+/// that segment's header.
+pub const APP_DESC_OFFSET: usize = HEADER_SIZE + SEGMENT_HEADER_SIZE;
+/// `version` follows `magic_word`, `secure_version` and `reserv1: [u32; 2]`.
+const APP_DESC_VERSION_OFFSET: usize = APP_DESC_OFFSET + 16;
+const APP_DESC_VERSION_LEN: usize = 32;
+
+/// The version embedded in the image's app descriptor.
+///
+/// `Ok(None)` for an ESP image with no descriptor, or one whose version isn't a
+/// [`VersionNumber`] — which is every image built before versions were embedded.
+pub fn embedded_version<R: FirmwareReader>(
+    reader: &R,
+) -> Result<Option<VersionNumber>, FirmwareSizeError> {
+    let sector = reader
+        .read_sector(0)
+        .map_err(|e| FirmwareSizeError::IoError(format!("Failed to read first sector: {:?}", e)))?;
+    if sector[0] != ESP_MAGIC {
+        return Err(FirmwareSizeError::InvalidMagic(sector[0]));
+    }
+    let magic = u32::from_le_bytes(
+        sector[APP_DESC_OFFSET..APP_DESC_OFFSET + 4]
+            .try_into()
+            .expect("4 bytes"),
+    );
+    if magic != APP_DESC_MAGIC {
+        return Ok(None);
+    }
+    let field = &sector[APP_DESC_VERSION_OFFSET..APP_DESC_VERSION_OFFSET + APP_DESC_VERSION_LEN];
+    let len = field.iter().position(|&b| b == 0).unwrap_or(field.len());
+    Ok(core::str::from_utf8(&field[..len])
+        .ok()
+        .and_then(VersionNumber::parse))
+}
 
 /// Find the signature sector in firmware
 pub fn find_signature_sector<R: FirmwareReader>(reader: &R) -> Option<u32> {
@@ -249,5 +286,42 @@ fn parse_segment_header(bytes: &[u8]) -> SegmentHeader {
     SegmentHeader {
         addr: u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]),
         length: u32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::firmware_version::VersionNumber;
+
+    struct OneSector(Box<[u8; SECTOR_SIZE]>);
+
+    impl FirmwareReader for OneSector {
+        type Error = ();
+
+        fn read_sector(&self, sector: u32) -> Result<Box<[u8; SECTOR_SIZE]>, Self::Error> {
+            match sector {
+                0 => Ok(self.0.clone()),
+                _ => Err(()),
+            }
+        }
+
+        fn n_sectors(&self) -> u32 {
+            1
+        }
+    }
+
+    /// The first sector of `frontier.bin` from `just build-firmware frontier` and
+    /// `just save-image frontier`, taken with `head -c 4096`.
+    const FRONTIER_FIRST_SECTOR: &[u8; SECTOR_SIZE] =
+        include_bytes!("fixtures/frontier-first-sector.bin");
+
+    #[test]
+    fn reads_the_version_a_real_build_embeds() {
+        let image = OneSector(Box::new(*FRONTIER_FIRST_SECTOR));
+        assert_eq!(
+            embedded_version(&image).unwrap(),
+            Some(VersionNumber::new(0, 5, 0))
+        );
     }
 }

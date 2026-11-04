@@ -1,4 +1,4 @@
-use crate::{Completion, DeviceMode, FirmwareVersion, Sink, UiProtocol};
+use crate::{Completion, DeviceFirmware, DeviceMode, Sink, UiProtocol};
 use frostsnap_comms::{CommsMisc, CoordinatorSendMessage};
 use frostsnap_core::schnorr_fun::frost::{ShareImage, ShareIndex};
 use frostsnap_core::{
@@ -40,7 +40,7 @@ impl CheckBackupProtocol {
         access_structure_ref: AccessStructureRef,
         share_index: ShareIndex,
         encryption_key: SymmetricKey,
-        firmware: FirmwareVersion,
+        firmware: DeviceFirmware,
         sink: impl Sink<CheckBackupState> + 'static,
     ) -> anyhow::Result<Self> {
         let (messages, kind) = if firmware.features().check_backup {

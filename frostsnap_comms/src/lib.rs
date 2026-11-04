@@ -259,7 +259,6 @@ impl From<CoordinatorSendBody> for WireCoordinatorSendBody {
         match value {
             AnnounceAck => WireCoordinatorSendBody::AnnounceAck,
             Cancel => WireCoordinatorSendBody::Cancel,
-            Upgrade(upgrade) => WireCoordinatorSendBody::Upgrade(upgrade),
             _ => WireCoordinatorSendBody::EncapsV0(EncapsBody(
                 bincode::encode_to_vec(value, BINCODE_CONFIG).expect("encoding is infallible"),
             )),
@@ -280,7 +279,7 @@ impl From<CoordinatorSendMessage> for CoordinatorSendMessage<WireCoordinatorSend
 ///
 /// ## Digest Variants
 ///
-/// There are two `PrepareUpgrade` variants that differ in which digest they send:
+/// The `PrepareUpgrade` variants differ in which digest they send:
 ///
 /// - [`Self::PrepareUpgrade`]: Legacy variant that sends digest of entire signed firmware
 ///   (including signature block and padding). Used by v0.0.1 and earlier devices.
@@ -288,6 +287,8 @@ impl From<CoordinatorSendMessage> for CoordinatorSendMessage<WireCoordinatorSend
 /// - [`Self::PrepareUpgrade2`]: New variant that sends digest of deterministic firmware only
 ///   (excluding signature block and padding). The device displays this digest on screen,
 ///   allowing users to verify it matches their locally-built reproducible firmware.
+///
+/// - [`Self::PrepareUpgrade3`]: [`Self::PrepareUpgrade2`] plus the version the image embeds.
 ///
 /// ## Device Verification Strategy
 ///
@@ -313,6 +314,13 @@ pub enum CoordinatorUpgradeMessage {
     PrepareUpgrade2 {
         size: u32,
         firmware_digest: Sha256Digest,
+    },
+    /// [`Self::PrepareUpgrade2`] plus the version the image embeds, which the device shows and
+    /// requires the downloaded image to embed.
+    PrepareUpgrade3 {
+        size: u32,
+        firmware_digest: Sha256Digest,
+        version: firmware_version::VersionNumber,
     },
 }
 
@@ -477,6 +485,12 @@ pub enum DeviceSendBody {
         certificate: Box<Certificate>,
     },
     GenuineCheck(genuine_check::DeviceMessage),
+    /// [`Self::Announce`] plus the version the running image embeds.
+    Announce2 {
+        firmware_digest: Sha256Digest,
+        version: firmware_version::VersionNumber,
+        environment: firmware_version::Environment,
+    },
 }
 
 #[derive(Encode, Decode, Debug, Clone)]
