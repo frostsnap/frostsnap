@@ -1,5 +1,5 @@
 use alloc::vec::Vec;
-use alloc::{boxed::Box, collections::BTreeMap};
+use alloc::{boxed::Box, collections::BTreeMap, string::String};
 use bitcoin::{
     consensus::Encodable,
     hashes::{sha256d, Hash},
@@ -10,6 +10,7 @@ use bitcoin::{
 
 use crate::{
     message::EncodedSignature,
+    silent_payments::{SignedSpContact, SilentPaymentRecipient},
     tweak::{AppTweak, BitcoinBip32Path, Keychain},
     MasterAppkey,
 };
@@ -62,7 +63,7 @@ pub struct TransactionTemplate<S = Unscoped> {
     #[bincode(with_serde)]
     lock_time: bitcoin::absolute::LockTime,
     inputs: Vec<Input>,
-    outputs: Vec<Output>,
+    pub(crate) outputs: Vec<Output>,
 }
 
 #[derive(Clone, Copy)]
@@ -427,7 +428,7 @@ impl TransactionTemplate<ScopedTo> {
     pub fn our_net_value(&self) -> i64 {
         let ours = |owner: &SpkOwner, value: u64| match owner {
             SpkOwner::Local(_) => i64::try_from(value).expect("value ridiculously large"),
-            SpkOwner::Foreign(_) => 0,
+            SpkOwner::Foreign(_) | SpkOwner::SilentPayment(_) => 0,
         };
 
         self.outputs
@@ -458,10 +459,12 @@ impl TransactionTemplate<ScopedTo> {
         // Calculate fee rate in sats/vB
         let fee_rate_sats_per_vbyte = self.feerate();
 
-        let any_foreign = self
-            .outputs
-            .iter()
-            .any(|output| matches!(output.owner, SpkOwner::Foreign(_)));
+        let any_foreign = self.outputs.iter().any(|output| {
+            matches!(
+                output.owner,
+                SpkOwner::Foreign(_) | SpkOwner::SilentPayment(_)
+            )
+        });
         let internal_count = self
             .iter_our_outputs()
             .filter(|(_, _, local)| {
@@ -479,7 +482,7 @@ impl TransactionTemplate<ScopedTo> {
             .iter()
             .filter_map(|output| {
                 let owned = match &output.owner {
-                    SpkOwner::Foreign(_) => None,
+                    SpkOwner::Foreign(_) | SpkOwner::SilentPayment(_) => None,
                     SpkOwner::Local(local) => {
                         if hide_single_change
                             && local.bip32_path.account_keychain.keychain == Keychain::Internal
@@ -489,8 +492,17 @@ impl TransactionTemplate<ScopedTo> {
                         Some(local.bip32_path)
                     }
                 };
+                let destination = match &output.owner {
+                    // Its script is derived from the signed contact, so the contact is what the
+                    // signer is shown. The sign task check has bound the address to its keys.
+                    SpkOwner::SilentPayment(sp) => PromptDestination::SilentPayment {
+                        name: sp.contact.contact.details.name.clone(),
+                        address: sp.address.clone(),
+                    },
+                    owner => PromptDestination::of(&owner.spk(), network),
+                };
                 Some(PromptRecipient {
-                    destination: PromptDestination::of(&output.owner.spk(), network),
+                    destination,
                     amount: bitcoin::Amount::from_sat(output.value),
                     owned,
                 })
@@ -513,6 +525,12 @@ pub enum PromptDestination {
     /// future segwit version. Says nothing about whether it can be spent — only that we
     /// cannot show it as an address, and a signing screen must not claim more than it knows.
     UnrecognizedScript(ScriptBuf),
+    /// A trusted silent payment contact. The output's script is derived from its signed record
+    /// and the inputs, so the contact is what the signer is shown.
+    SilentPayment {
+        name: String,
+        address: String,
+    },
 }
 
 impl PromptDestination {
@@ -717,6 +735,32 @@ impl Output {
 pub enum SpkOwner {
     Foreign(#[bincode(with_serde)] ScriptBuf),
     Local(LocalSpk),
+    SilentPayment(Box<SilentPaymentOutput>),
+}
+
+/// A silent payment output. Its script depends on the ECDH shares of the signing devices, so it
+/// is `None` until they are combined. A send with any output still missing its script cannot be
+/// signed.
+#[derive(bincode::Encode, bincode::Decode, Clone, Debug, PartialEq, Eq, Hash)]
+pub struct SilentPaymentOutput {
+    /// The trusted contact this pays, with the wallet's signature over it.
+    pub contact: SignedSpContact,
+    /// The contact's address, for display. Must encode the contact's keys on the signing network.
+    pub address: String,
+    #[bincode(with_serde)]
+    pub script: Option<ScriptBuf>,
+}
+
+impl SilentPaymentOutput {
+    pub fn recipient(&self) -> SilentPaymentRecipient {
+        self.contact.contact.details.recipient
+    }
+
+    /// A P2TR script with a zero key: the weight and dust limit of a silent payment output whose
+    /// script has yet to be derived.
+    pub fn placeholder_script() -> ScriptBuf {
+        ScriptBuf::from_bytes([&[0x51, 0x20][..], &[0u8; 32][..]].concat())
+    }
 }
 
 impl SpkOwner {
@@ -724,19 +768,28 @@ impl SpkOwner {
         match self {
             SpkOwner::Foreign(spk) => spk.clone(),
             SpkOwner::Local(owner) => owner.spk(),
+            // WireSignTask::check refuses a send whose silent payment scripts are not the ones
+            // its contacts derive. Until they are filled in, the placeholder keeps the weight, and
+            // so the fee rate, of the final send.
+            // TODO: size unfilled outputs from a constant P2TR weight and dust limit and make
+            // spk() return Option, so txid() and sighashes can't be taken from a placeholder.
+            SpkOwner::SilentPayment(sp) => sp
+                .script
+                .clone()
+                .unwrap_or_else(SilentPaymentOutput::placeholder_script),
         }
     }
 
     pub fn local_owner_key(&self) -> Option<MasterAppkey> {
         match self {
-            SpkOwner::Foreign(_) => None,
+            SpkOwner::Foreign(_) | SpkOwner::SilentPayment(_) => None,
             SpkOwner::Local(owner) => Some(owner.master_appkey),
         }
     }
 
     pub fn local_owner(&self) -> Option<&LocalSpk> {
         match self {
-            SpkOwner::Foreign(_) => None,
+            SpkOwner::Foreign(_) | SpkOwner::SilentPayment(_) => None,
             SpkOwner::Local(owner) => Some(owner),
         }
     }

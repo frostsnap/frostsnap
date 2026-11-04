@@ -144,6 +144,38 @@ impl WireSignTask {
                     return Err(SignTaskError::InvalidBitcoinTransaction);
                 }
 
+                if tx_template.has_silent_payment_outputs() {
+                    if tx_template.sp_ecdh_inputs().is_none() {
+                        return Err(SignTaskError::SilentPaymentInputs);
+                    }
+
+                    // The contact and address are what the signer shows, so the contact must be
+                    // one the wallet signed and the address must be the one for its keys.
+                    for sp in tx_template.silent_payment_outputs() {
+                        if !sp.contact.verify(master_appkey, network) {
+                            return Err(SignTaskError::SilentPaymentUntrustedContact);
+                        }
+                        if sp.recipient().address(network).as_deref() != Some(sp.address.as_str()) {
+                            return Err(SignTaskError::SilentPaymentAddressMismatch);
+                        }
+                    }
+
+                    if tx_template
+                        .silent_payment_outputs()
+                        .any(|sp| sp.script.is_none())
+                    {
+                        return Err(SignTaskError::SilentPaymentScriptMissing);
+                    }
+
+                    // The contacts and inputs decide the scripts, so nothing here is taken on trust.
+                    let derived = tx_template
+                        .sp_shared_secrets()
+                        .and_then(|secrets| tx_template.with_sp_scripts(&secrets));
+                    if derived.as_ref() != Some(&tx_template) {
+                        return Err(SignTaskError::SilentPaymentScriptMismatch);
+                    }
+                }
+
                 SignTask::BitcoinTransaction {
                     tx_template,
                     network,
@@ -239,12 +271,25 @@ pub enum SignTaskError {
     WrongPurpose,
     InvalidBitcoinTransaction,
     NothingToSign,
+    SilentPaymentInputs,
+    SilentPaymentAddressMismatch,
+    SilentPaymentScriptMissing,
+    SilentPaymentScriptMismatch,
+    SilentPaymentUntrustedContact,
     SilentPaymentInvalidContactName,
 }
 
 impl core::fmt::Display for SignTaskError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
+            SignTaskError::SilentPaymentScriptMismatch => write!(
+                f,
+                "A silent payment output's script is not the one its contact and the inputs derive"
+            ),
+            SignTaskError::SilentPaymentUntrustedContact => write!(
+                f,
+                "A silent payment output pays a contact this wallet has not signed"
+            ),
             SignTaskError::SilentPaymentInvalidContactName => write!(
                 f,
                 "A contact name must be 1 to 20 printable ASCII characters"
@@ -259,6 +304,17 @@ impl core::fmt::Display for SignTaskError {
             ),
             SignTaskError::InvalidBitcoinTransaction => {
                 write!(f, "Bitcoin transaction input value was less than outputs")
+            }
+            SignTaskError::SilentPaymentInputs => write!(
+                f,
+                "A silent payment send can only spend this wallet's own inputs in its default account"
+            ),
+            SignTaskError::SilentPaymentAddressMismatch => write!(
+                f,
+                "A silent payment address does not belong to the keys it is paid to"
+            ),
+            SignTaskError::SilentPaymentScriptMissing => {
+                write!(f, "A silent payment output has no script yet")
             }
             SignTaskError::NothingToSign => {
                 write!(f, "Transaction has no inputs that belong to this wallet")

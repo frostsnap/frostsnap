@@ -487,6 +487,16 @@ macro_rules! demo_widget {
                                 frostsnap_core::tweak::NormalIndex::new(3).unwrap(),
                             )),
                         },
+                        // BIP352's example address. Its script is derived on signing, so the
+                        // device shows the address the recipient gave.
+                        PromptRecipient {
+                            destination: PromptDestination::SilentPayment {
+                                name: "Alice".into(),
+                                address: "sp1qqgste7k9hx0qftg6qmwlkqtwuy6cycyavzmzj85c6qdfhjdpdjtdgqjuexzk6murw56suy3e0rd2cgqvycxttddwsvgxe2usfpxumr70xc9pkqwv".into(),
+                            },
+                            amount: bitcoin::Amount::from_sat(250_000),
+                            owned: None,
+                        },
                     ],
                     fee: bitcoin::Amount::from_sat(90_000), // >5% of the value moved, so the warning page shows
                     fee_rate_sats_per_vbyte: Some(12.5), // Example: 12.5 sats/vB fee rate

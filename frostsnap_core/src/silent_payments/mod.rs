@@ -10,6 +10,7 @@
 mod address;
 mod contact;
 mod dleq;
+mod template;
 
 pub use contact::*;
 pub use dleq::{dleq_prove, dleq_verify};

@@ -1,7 +1,9 @@
-//! Trusted silent payment contacts: adding one with a threshold of devices.
+//! Trusted silent payment contacts: adding one with a threshold of devices, and the checks a send
+//! to one must pass.
 
-use bitcoin::Network;
+use bitcoin::{hashes::Hash, Amount, Network, OutPoint, Txid};
 use frostsnap_core::{
+    bitcoin_transaction::{LocalSpk, PromptDestination, PushInput, TransactionTemplate},
     coordinator::StartSignError,
     device::KeyPurpose,
     message::{
@@ -11,11 +13,15 @@ use frostsnap_core::{
     silent_payments::{
         verify_contact_shares, SignedSpContact, SilentPaymentRecipient, SpContact, SpContactDetails,
     },
+    tweak::{BitcoinBip32Path, NormalIndex},
     AccessStructureRef, DeviceId, MasterAppkey, SignTaskError, WireSignTask,
 };
 use rand_chacha::{rand_core::SeedableRng, ChaCha20Rng};
-use schnorr_fun::fun::{g, marker::*, Point, Scalar, G};
-use std::collections::BTreeSet;
+use schnorr_fun::{
+    fun::{g, marker::*, Point, Scalar, G},
+    Schnorr,
+};
+use std::collections::{BTreeMap, BTreeSet};
 
 mod common;
 mod env;
@@ -134,6 +140,25 @@ impl Wallet {
             .unwrap()
     }
 
+    fn template_paying(&self, contact: &SignedSpContact) -> TransactionTemplate {
+        let mut template = TransactionTemplate::new();
+        template.push_imaginary_owned_input(
+            LocalSpk {
+                master_appkey: self.master,
+                bip32_path: BitcoinBip32Path::external(NormalIndex::new(0).unwrap()),
+            },
+            Amount::from_sat(100_000),
+        );
+        let address = contact
+            .contact
+            .details
+            .recipient
+            .address(NETWORK)
+            .expect("address");
+        template.push_silent_payment_output(Amount::from_sat(50_000), contact.clone(), address);
+        template
+    }
+
     /// The contact's sign request for `device`, ready to be tampered with.
     fn contact_sign_request(
         &mut self,
@@ -187,6 +212,195 @@ fn any_quorum_adds_the_same_contact_under_the_wallet_signature() {
     assert_eq!(by_first.contact.account_ecdh, by_last.contact.account_ecdh);
     assert!(by_first.verify(wallet.master, NETWORK));
     assert!(by_last.verify(wallet.master, NETWORK));
+}
+
+/// A send to a contact is an ordinary sign request, and a device that never confirmed the contact
+/// signs it. `a_bip352_receiver_finds_every_output_paid_to_a_contact` checks the scripts.
+#[test]
+fn a_device_that_never_confirmed_the_contact_signs_a_send() {
+    let mut wallet = Wallet::new();
+    let contact = wallet.add_contact(details("Bob", 0x21, 0x22), &[0, 1]);
+
+    let template = wallet
+        .template_paying(&contact)
+        .with_contact_sp_scripts(wallet.master)
+        .unwrap();
+    let task = WireSignTask::BitcoinTransaction(template);
+
+    let signers = wallet.signers(&[1, 2]);
+    let session = wallet
+        .run
+        .coordinator
+        .start_sign(
+            wallet.access_structure_ref,
+            task.clone(),
+            &signers,
+            &mut wallet.rng,
+        )
+        .unwrap();
+    for device in &signers {
+        let request =
+            wallet
+                .run
+                .coordinator
+                .request_device_sign(session, *device, TEST_ENCRYPTION_KEY);
+        assert_eq!(request.sp_contact_proofs, None);
+        wallet.run.extend(request);
+    }
+    wallet
+        .run
+        .run_until_finished(&mut wallet.env, &mut wallet.rng)
+        .unwrap();
+    let checked = task.check(wallet.master, purpose()).unwrap();
+    assert!(checked.verify_final_signatures(
+        &Schnorr::<sha2::Sha256>::verify_only(),
+        wallet.env.signatures.get(&session).unwrap()
+    ));
+}
+
+#[test]
+fn a_send_refuses_a_contact_the_wallet_did_not_sign() {
+    let mut wallet = Wallet::new();
+    let contact = wallet.add_contact(details("Carol", 0x31, 0x32), &[0, 1]);
+    let check = |contact: SignedSpContact, wallet: &Wallet| {
+        WireSignTask::BitcoinTransaction(wallet.template_paying(&contact))
+            .check(wallet.master, purpose())
+    };
+
+    let mut renamed = contact.clone();
+    renamed.contact.details.name = "Mallory".into();
+    assert!(matches!(
+        check(renamed, &wallet),
+        Err(SignTaskError::SilentPaymentUntrustedContact)
+    ));
+
+    let mut other_spend_key = contact.clone();
+    other_spend_key.contact.details.recipient.spend_key = public(scalar(0x33));
+    assert!(matches!(
+        check(other_spend_key, &wallet),
+        Err(SignTaskError::SilentPaymentUntrustedContact)
+    ));
+
+    let mut other_ecdh = contact.clone();
+    other_ecdh.contact.account_ecdh = public(scalar(0x34));
+    assert!(matches!(
+        check(other_ecdh, &wallet),
+        Err(SignTaskError::SilentPaymentUntrustedContact)
+    ));
+
+    // Valid for this wallet, not for another.
+    let other_wallet = MasterAppkey::derive_from_rootkey(G.normalize());
+    assert!(!contact.verify(other_wallet, NETWORK));
+}
+
+#[test]
+fn a_send_refuses_scripts_the_contact_does_not_derive() {
+    let mut wallet = Wallet::new();
+    let contact = wallet.add_contact(details("Dave", 0x41, 0x42), &[0, 1]);
+    let template = wallet.template_paying(&contact);
+
+    assert!(matches!(
+        WireSignTask::BitcoinTransaction(template.clone()).check(wallet.master, purpose()),
+        Err(SignTaskError::SilentPaymentScriptMissing)
+    ));
+
+    let scan_key = contact.contact.details.recipient.scan_key;
+    let wrong = template
+        .with_sp_scripts(&BTreeMap::from([(scan_key, public(scalar(0x43)))]))
+        .unwrap();
+    assert!(matches!(
+        WireSignTask::BitcoinTransaction(wrong).check(wallet.master, purpose()),
+        Err(SignTaskError::SilentPaymentScriptMismatch)
+    ));
+}
+
+#[test]
+fn a_send_refuses_an_address_that_is_not_the_contacts() {
+    let mut wallet = Wallet::new();
+    let contact = wallet.add_contact(details("Erin", 0x51, 0x52), &[0, 1]);
+    let other_address = details("Other", 0x53, 0x54)
+        .recipient
+        .address(NETWORK)
+        .unwrap();
+
+    let mut template = TransactionTemplate::new();
+    template.push_imaginary_owned_input(
+        LocalSpk {
+            master_appkey: wallet.master,
+            bip32_path: BitcoinBip32Path::external(NormalIndex::new(0).unwrap()),
+        },
+        Amount::from_sat(100_000),
+    );
+    template.push_silent_payment_output(Amount::from_sat(50_000), contact, other_address);
+    assert!(matches!(
+        WireSignTask::BitcoinTransaction(template).check(wallet.master, purpose()),
+        Err(SignTaskError::SilentPaymentAddressMismatch)
+    ));
+}
+
+#[test]
+fn a_send_refuses_foreign_inputs() {
+    let mut wallet = Wallet::new();
+    let contact = wallet.add_contact(details("Frank", 0x61, 0x62), &[0, 1]);
+    let mut template = wallet.template_paying(&contact);
+    let foreign = bitcoin::TxOut {
+        value: Amount::from_sat(100_000),
+        script_pubkey: bitcoin::ScriptBuf::from_bytes(
+            [&[0x51u8, 0x20][..], &[0xee; 32][..]].concat(),
+        ),
+    };
+    template.push_foreign_input(PushInput::spend_outpoint(
+        &foreign,
+        OutPoint {
+            txid: Txid::from_byte_array([9u8; 32]),
+            vout: 0,
+        },
+    ));
+    assert!(matches!(
+        WireSignTask::BitcoinTransaction(template).check(wallet.master, purpose()),
+        Err(SignTaskError::SilentPaymentInputs)
+    ));
+}
+
+/// Before its script is derived, a silent payment output is sized as the P2TR output it will
+/// become, so the fee rate is the same as the final send's.
+#[test]
+fn an_unfilled_output_has_the_fee_rate_of_the_final_send() {
+    let mut wallet = Wallet::new();
+    let contact = wallet.add_contact(details("Grace", 0x71, 0x72), &[0, 1]);
+    let pending = wallet.template_paying(&contact);
+    let filled = pending.with_contact_sp_scripts(wallet.master).unwrap();
+    assert_eq!(
+        pending.as_seen_by(wallet.master).feerate(),
+        filled.as_seen_by(wallet.master).feerate()
+    );
+}
+
+/// The signer is shown the contact, and a send with one change output keeps the change hidden.
+#[test]
+fn the_prompt_shows_the_contact_and_hides_single_change() {
+    let mut wallet = Wallet::new();
+    let contact = wallet.add_contact(details("Heidi", 0x81, 0x82), &[0, 1]);
+    let address = contact.contact.details.recipient.address(NETWORK).unwrap();
+    let mut template = wallet.template_paying(&contact);
+    template.push_owned_output(
+        Amount::from_sat(40_000),
+        LocalSpk {
+            master_appkey: wallet.master,
+            bip32_path: BitcoinBip32Path::internal(NormalIndex::new(0).unwrap()),
+        },
+    );
+
+    let prompt = template.as_seen_by(wallet.master).user_prompt(NETWORK);
+    assert_eq!(prompt.recipients.len(), 1);
+    assert_eq!(
+        prompt.recipients[0].destination,
+        PromptDestination::SilentPayment {
+            name: "Heidi".into(),
+            address,
+        }
+    );
+    assert_eq!(prompt.recipients[0].owned, None);
 }
 
 #[test]
@@ -614,4 +828,108 @@ fn a_restart_settles_contact_sessions() {
         .collect::<Vec<_>>();
     assert_eq!(names, ["Noor"]);
     assert_eq!(wallet.run.coordinator.finished_signing_sessions().len(), 0);
+}
+
+/// A BIP352 receiver written from the BIP, sharing no code with the sender. It sees only the
+/// transaction's prevout scripts and outpoints, and its own keys, and returns the output keys it
+/// would look for, for k = 0 to `count - 1`.
+fn bip352_receiver_output_keys(
+    prevouts: &[(OutPoint, bitcoin::ScriptBuf)],
+    scan_secret: &Scalar,
+    spend_key: Point,
+    count: u32,
+) -> Vec<[u8; 32]> {
+    use sha2::{Digest, Sha256};
+    let tagged = |tag: &str, data: &[u8]| -> Scalar<Public> {
+        let tag = Sha256::digest(tag.as_bytes());
+        let hash = Sha256::new()
+            .chain_update(tag)
+            .chain_update(tag)
+            .chain_update(data)
+            .finalize();
+        Scalar::from_bytes(hash.into()).unwrap().non_zero().unwrap()
+    };
+
+    // A is the sum of the taproot output keys of the inputs, each lifted to even y.
+    let a = prevouts
+        .iter()
+        .map(|(_, spk)| {
+            assert!(spk.is_p2tr());
+            Point::<EvenY>::from_xonly_bytes(spk.as_bytes()[2..34].try_into().unwrap()).unwrap()
+        })
+        .fold(Point::<Normal, Public, Zero>::zero(), |sum, p| {
+            g!(sum + p).normalize()
+        })
+        .non_zero()
+        .unwrap();
+    // The smallest outpoint, compared as it is serialized: txid then vout, little endian.
+    let smallest = prevouts
+        .iter()
+        .map(|(outpoint, _)| {
+            let mut bytes = outpoint.txid.to_byte_array().to_vec();
+            bytes.extend(outpoint.vout.to_le_bytes());
+            bytes
+        })
+        .min()
+        .unwrap();
+    let input_hash = tagged("BIP0352/Inputs", &[&smallest[..], &a.to_bytes()].concat());
+    let ecdh = g!(input_hash * scan_secret * a).normalize();
+    (0..count)
+        .map(|k| {
+            let t_k = tagged(
+                "BIP0352/SharedSecret",
+                &[&ecdh.to_bytes()[..], &k.to_be_bytes()].concat(),
+            );
+            g!(spend_key + t_k * G)
+                .normalize()
+                .non_zero()
+                .unwrap()
+                .to_xonly_bytes()
+        })
+        .collect()
+}
+
+/// A receiver that knows only the BIP finds both outputs a send pays to one contact, from a
+/// transaction with inputs at several derivation paths.
+#[test]
+fn a_bip352_receiver_finds_every_output_paid_to_a_contact() {
+    let mut wallet = Wallet::new();
+    let (scan, spend) = (0x41, 0x42);
+    let contact = wallet.add_contact(details("Dave", scan, spend), &[0, 1]);
+    let address = contact.contact.details.recipient.address(NETWORK).unwrap();
+
+    let mut template = TransactionTemplate::new();
+    for index in [0, 1, 7] {
+        template.push_imaginary_owned_input(
+            LocalSpk {
+                master_appkey: wallet.master,
+                bip32_path: BitcoinBip32Path::external(NormalIndex::new(index).unwrap()),
+            },
+            Amount::from_sat(100_000),
+        );
+    }
+    template.push_silent_payment_output(Amount::from_sat(50_000), contact.clone(), address.clone());
+    template.push_silent_payment_output(Amount::from_sat(60_000), contact.clone(), address);
+    let template = template.with_contact_sp_scripts(wallet.master).unwrap();
+
+    let prevouts = template
+        .inputs()
+        .iter()
+        .map(|input| (input.outpoint(), input.txout().script_pubkey))
+        .collect::<Vec<_>>();
+    let found = bip352_receiver_output_keys(
+        &prevouts,
+        &scalar(scan),
+        contact.contact.details.recipient.spend_key,
+        2,
+    );
+    let paid = template
+        .as_seen_by(wallet.master)
+        .silent_payment_outputs()
+        .map(|output| output.script.as_ref().unwrap().as_bytes()[2..].to_vec())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        paid,
+        found.iter().map(|key| key.to_vec()).collect::<Vec<_>>()
+    );
 }

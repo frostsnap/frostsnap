@@ -540,6 +540,15 @@ impl WidgetList for SignPromptPageList {
                         SignPromptPage::new(UnrecognizedScriptPage::new(recipient_idx)),
                         true,
                     ),
+                    PromptDestination::SilentPayment { name, address } => (
+                        SignPromptPage::new(SilentPaymentAddressPage::new_with_seed(
+                            recipient_idx,
+                            format!("To {name}"),
+                            address,
+                            self.rand_seed,
+                        )),
+                        true,
+                    ),
                 }
             }
         } else if Some(index) == warning_page {
