@@ -1,7 +1,8 @@
+use super::signer_selection::SignerSelection;
 use super::super_wallet::SuperWallet;
 use super::{
     bitcoin::{Psbt, RTransaction, Transaction, TxOutInfo},
-    coordinator::Coordinator,
+    coordinator::{AccessStructure, Coordinator},
 };
 use crate::{
     frb_generated::StreamSink,
@@ -292,6 +293,11 @@ impl Coordinator {
     #[frb(sync)]
     pub fn nonces_available(&self, id: DeviceId) -> u32 {
         self.0.nonces_available(id)
+    }
+
+    #[frb(sync)]
+    pub fn signer_selection(&self, access_structure: AccessStructure) -> SignerSelection {
+        SignerSelection::new(self.0.signers(&access_structure))
     }
 
     pub fn try_restore_signing_session(
