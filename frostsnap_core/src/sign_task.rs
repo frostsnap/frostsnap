@@ -108,10 +108,14 @@ impl WireSignTask {
                 // while the wallet's account and address-issuance model is still implicit. Not a
                 // considered final model.
                 //
-                // Outputs only. An input path is self-certifying: `Input::txout` builds the
+                // Outputs only. A key-path input is self-certifying: `Input::txout` builds the
                 // prevout from the claimed path's own spk, so the sighash commits to it and a
-                // forged path signs against a prevout that is not on chain. Policing inputs would
-                // buy nothing and would strand coins a PSBT legitimately imports.
+                // forged path signs against a prevout that is not on chain. A script-path input
+                // is not: its prevout spk is the coordinator's word. What binds it is the leaf
+                // sighash, which commits to every prevout's spk and amount and to the leaf hash,
+                // so a signature over a prevout or leaf that is not the real one is valid for
+                // nothing. Policing inputs would buy nothing and would strand coins a PSBT
+                // legitimately imports.
                 //
                 // The known cost is that only this side is bounded: an honest coordinator that
                 // allocated change or revealed an address past the ceiling would have its own task
@@ -327,6 +331,73 @@ mod test {
             "their output is disclosed at their address, and not as ours"
         );
         assert_eq!(prompt.fee, Amount::from_sat(10_000));
+    }
+
+    /// Only a plain BIP86 output is ours. A coordinator could otherwise claim an output it
+    /// controls as our change — by naming any script as a script-path owner, or a script tree
+    /// as a key-spend's merkle root — and the device would hide the payment.
+    #[test]
+    fn a_scripted_output_claimed_as_ours_is_shown_as_leaving() {
+        let signing = signing_key();
+        let change_path = BitcoinBip32Path::internal(NormalIndex::new(1).unwrap());
+        let attacker_spk = ScriptBuf::from_bytes([&[0x51u8, 0x20][..], &[0xee; 32][..]].concat());
+
+        for disguised in [
+            LocalSpk::script_spend(
+                signing,
+                change_path,
+                attacker_spk.clone(),
+                ScriptBuf::new(),
+                bitcoin::taproot::LeafVersion::TapScript,
+                alloc::vec![],
+            ),
+            LocalSpk::key_spend_with_merkle_root(
+                signing,
+                change_path,
+                Some(bitcoin::taproot::TapNodeHash::from_byte_array([0xee; 32])),
+            ),
+        ] {
+            let mut tx_template = TransactionTemplate::new();
+            tx_template.push_imaginary_owned_input(
+                LocalSpk::key_spend(signing, BitcoinBip32Path::external(NormalIndex::ZERO)),
+                Amount::from_sat(100_000),
+            );
+            tx_template.push_foreign_output(TxOut {
+                value: Amount::from_sat(50_000),
+                script_pubkey: ScriptBuf::from_bytes(
+                    [&[0x51u8, 0x20][..], &[0xcc; 32][..]].concat(),
+                ),
+            });
+            // The shape of an ordinary send's single change output, which the prompt hides.
+            tx_template.push_owned_output(Amount::from_sat(49_000), disguised.clone());
+
+            let checked = WireSignTask::BitcoinTransaction(tx_template)
+                .check(signing, KeyPurpose::Bitcoin(Network::Bitcoin))
+                .expect("the task is signable; it just isn't change");
+            let SignTask::BitcoinTransaction { tx_template, .. } = &checked.inner else {
+                panic!("expected a bitcoin task")
+            };
+            assert_eq!(
+                tx_template.to_rust_bitcoin_tx().output[1].script_pubkey,
+                disguised.spk(),
+                "the signed transaction pays the disguised script"
+            );
+            assert_eq!(tx_template.iter_our_outputs().count(), 0);
+
+            let prompt = tx_template.user_prompt(Network::Bitcoin);
+            let address =
+                bitcoin::Address::from_script(&disguised.spk(), bitcoin::params::Params::MAINNET)
+                    .expect("p2tr has an address");
+            assert_eq!(
+                prompt.recipients.get(1),
+                Some(&PromptRecipient {
+                    destination: PromptDestination::Address(address),
+                    amount: Amount::from_sat(49_000),
+                    owned: None,
+                }),
+                "the disguised output is shown, as a recipient and not as ours"
+            );
+        }
     }
 
     /// An OP_RETURN output is legal and a PSBT can carry one. `Address::from_script` has no

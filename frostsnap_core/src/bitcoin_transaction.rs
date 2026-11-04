@@ -285,12 +285,23 @@ impl TransactionTemplate<Unscoped> {
 
     /// This transaction as `master_appkey` sees it: another key's scripts become foreign,
     /// because they are not ours to sign and its outputs are money leaving.
+    ///
+    /// So does any output of ours that is not a plain BIP86 key-spend. Its script is whatever
+    /// the coordinator says — a script-path owner carries it verbatim, a merkle root commits to
+    /// scripts we never see — so claiming it as ours would let the coordinator hide a payment
+    /// to anyone as change.
     pub fn as_seen_by(&self, master_appkey: MasterAppkey) -> TransactionTemplate<ScopedTo> {
         let foreign_to_us = |owner: &SpkOwner| match owner {
             SpkOwner::Local(local) if local.master_appkey != master_appkey => {
                 SpkOwner::Foreign(local.spk())
             }
             owner => owner.clone(),
+        };
+        let output_foreign_to_us = |owner: &SpkOwner| match owner {
+            SpkOwner::Local(local) if local.spends_extra_conditions() => {
+                SpkOwner::Foreign(local.spk())
+            }
+            owner => foreign_to_us(owner),
         };
 
         TransactionTemplate {
@@ -309,7 +320,7 @@ impl TransactionTemplate<Unscoped> {
                 .outputs
                 .iter()
                 .map(|output| Output {
-                    owner: foreign_to_us(&output.owner),
+                    owner: output_foreign_to_us(&output.owner),
                     value: output.value,
                 })
                 .collect(),
