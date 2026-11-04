@@ -135,16 +135,17 @@ impl WireSignTask {
                     }
                 }
 
-                // The one thing about a script-path input the sighash does not bind: its control
-                // block, which only sizes the witness, and so the feerate we show. One that does
-                // not commit its leaf to the prevout could be padded to make any fee look modest.
+                // The sighash binds a script-path input's leaf but not which leaves we are given
+                // or their control blocks, and both size the witness and so the feerate we show.
+                // A padded control block, or a big leaf of the coin that holds no key of ours,
+                // could make any fee look modest; each leaf must be one we can sign.
                 for (input, _, owner) in tx_template.iter_our_inputs() {
                     if !owner
                         .leaves()
                         .iter()
-                        .all(|leaf| leaf.is_committed_to(&owner.spk()))
+                        .all(|leaf| leaf.is_ours_in(owner.master_appkey, &owner.spk()))
                     {
-                        return Err(SignTaskError::UncommittedLeaf { input });
+                        return Err(SignTaskError::UnprovenLeaf { input });
                     }
                 }
 
@@ -239,7 +240,7 @@ pub enum SignTaskError {
     WrongPurpose,
     InvalidBitcoinTransaction,
     NothingToSign,
-    UncommittedLeaf { input: usize },
+    UnprovenLeaf { input: usize },
 }
 
 impl core::fmt::Display for SignTaskError {
@@ -259,9 +260,9 @@ impl core::fmt::Display for SignTaskError {
             SignTaskError::NothingToSign => {
                 write!(f, "Transaction has no inputs that belong to this wallet")
             }
-            SignTaskError::UncommittedLeaf { input } => write!(
+            SignTaskError::UnprovenLeaf { input } => write!(
                 f,
-                "input {input} has a control block that does not commit its leaf to the coin it spends"
+                "input {input} has a leaf that holds no key of ours or is not committed to the coin it spends"
             ),
             SignTaskError::WrongPurpose => {
                 write!(
@@ -420,12 +421,13 @@ mod test {
         }
     }
 
-    /// The sighash does not cover a script-path input's control block, yet its size sets the
-    /// feerate shown. A coordinator padding one, or forging one that commits to nothing, must
-    /// be refused rather than shown a flattering rate. Spliced into the encoding, because
-    /// pushing such an input is already refused on this side.
+    /// The sighash does not cover a script-path input's control block, or whether its leaf holds
+    /// our key, yet both size the witness behind the feerate shown. A coordinator padding a
+    /// control block, forging one that commits to nothing, or handing over a real leaf that is
+    /// not ours, must be refused rather than shown a flattering rate. Spliced into the
+    /// encoding, because pushing such an input is already refused on this side.
     #[test]
-    fn an_uncommitted_control_block_is_refused() {
+    fn a_leaf_we_cannot_sign_is_refused() {
         use bitcoin::taproot::{LeafVersion, TaprootBuilder};
         let signing = signing_key();
         let secp = bitcoin::secp256k1::Secp256k1::new();
@@ -445,11 +447,22 @@ mod test {
             .unwrap()
             .x_only_public_key()
             .0;
+        // A real leaf of the same coin, the same size as ours, that holds someone else's key.
+        let stranger_leaf = bitcoin::script::Builder::new()
+            .push_x_only_key(&internal_key)
+            .push_opcode(bitcoin::opcodes::all::OP_CHECKSIG)
+            .into_script();
         let spend_info = TaprootBuilder::new()
-            .add_leaf(0, leaf_script.clone())
+            .add_leaf(1, leaf_script.clone())
+            .unwrap()
+            .add_leaf(1, stranger_leaf.clone())
             .unwrap()
             .finalize(&secp, internal_key)
             .unwrap();
+        let stranger_control_block = spend_info
+            .control_block(&(stranger_leaf.clone(), LeafVersion::TapScript))
+            .unwrap()
+            .serialize();
         let control_block = spend_info
             .control_block(&(leaf_script.clone(), LeafVersion::TapScript))
             .unwrap()
@@ -462,7 +475,7 @@ mod test {
                 ScriptBuf::new_p2tr(&secp, internal_key, spend_info.merkle_root()),
                 alloc::vec![crate::bitcoin_transaction::LeafSpend::new(
                     leaf_path,
-                    leaf_script,
+                    leaf_script.clone(),
                     LeafVersion::TapScript,
                     control_block.clone(),
                 )],
@@ -511,9 +524,28 @@ mod test {
         ] {
             assert!(matches!(
                 splice(forged),
-                Err(SignTaskError::UncommittedLeaf { input: 0 })
+                Err(SignTaskError::UnprovenLeaf { input: 0 })
             ));
         }
+
+        // The stranger's leaf with its own, honest control block: committed to the coin, but
+        // not ours to sign, so it must not be signed or weighed into the feerate.
+        assert_eq!(stranger_leaf.len(), leaf_script.len());
+        assert_eq!(stranger_control_block.len(), control_block.len());
+        let swap = |bytes: &[u8], from: &[u8], to: &[u8]| {
+            let at = bytes
+                .windows(from.len())
+                .position(|w| w == from)
+                .expect("present in the encoding");
+            [&bytes[..at], to, &bytes[at + from.len()..]].concat()
+        };
+        let patched = swap(&bytes, leaf_script.as_bytes(), stranger_leaf.as_bytes());
+        let patched = swap(&patched, &control_block, &stranger_control_block);
+        let (task, _): (WireSignTask, _) = bincode::decode_from_slice(&patched, cfg).unwrap();
+        assert!(matches!(
+            task.check(signing, KeyPurpose::Bitcoin(Network::Bitcoin)),
+            Err(SignTaskError::UnprovenLeaf { input: 0 })
+        ));
     }
 
     /// An OP_RETURN output is legal and a PSBT can carry one. `Address::from_script` has no

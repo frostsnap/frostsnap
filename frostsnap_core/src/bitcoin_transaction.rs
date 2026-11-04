@@ -832,6 +832,20 @@ impl LeafSpend {
             .derive_xonly_key(&master_appkey.to_xpub())
             .into()
     }
+
+    /// Whether this is a leaf of `spk` that we can actually sign: it pushes the key we sign it
+    /// with, and its control block commits it to `spk`. A committed leaf without our key would
+    /// only waste a nonce, but its witness would still count towards the feerate we show.
+    pub fn is_ours_in(&self, master_appkey: MasterAppkey, spk: &Script) -> bool {
+        let key = self.signing_xonly(master_appkey).serialize();
+        let key_in_leaf = self.leaf_script.instructions().any(|instruction| {
+            matches!(
+                instruction,
+                Ok(bitcoin::script::Instruction::PushBytes(bytes)) if bytes.as_bytes() == key
+            )
+        });
+        key_in_leaf && self.is_committed_to(spk)
+    }
 }
 
 impl LocalSpk {
@@ -936,16 +950,10 @@ impl LocalSpk {
     /// `spk`'s output key.
     fn check_spk(&self, spk: &ScriptBuf) -> Result<(), Box<SpkDoesntMatchPathError>> {
         let expected = self.spk();
-        let leaves_proven = self.leaves().iter().all(|leaf| {
-            let key = leaf.signing_xonly(self.master_appkey).serialize();
-            let key_in_leaf = leaf.leaf_script.instructions().any(|instruction| {
-                matches!(
-                    instruction,
-                    Ok(bitcoin::script::Instruction::PushBytes(bytes)) if bytes.as_bytes() == key
-                )
-            });
-            key_in_leaf && leaf.is_committed_to(spk)
-        });
+        let leaves_proven = self
+            .leaves()
+            .iter()
+            .all(|leaf| leaf.is_ours_in(self.master_appkey, spk));
         if *spk != expected || !leaves_proven {
             return Err(Box::new(SpkDoesntMatchPathError {
                 got: spk.clone(),
