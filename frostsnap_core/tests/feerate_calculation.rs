@@ -1,6 +1,8 @@
 use bitcoin::{Amount, ScriptBuf, TxOut};
 use frostsnap_core::bitcoin_transaction::{LocalSpk, TransactionTemplate};
-use frostsnap_core::tweak::{BitcoinBip32Path, NormalIndex};
+use frostsnap_core::tweak::{
+    AppTweak, BitcoinBip32Path, BitcoinTweak, BitcoinTweakKind, NormalIndex,
+};
 use frostsnap_core::MasterAppkey;
 use schnorr_fun::fun::G;
 
@@ -68,4 +70,81 @@ fn test_feerate_estimation_accuracy() {
         EXPECTED_FEERATE,
         template_feerate
     );
+}
+
+/// A script-path input's witness is its signature, leaf script and control block. The feerate
+/// must weigh all three, and agree with rust-bitcoin's weight for the transaction witnessed that
+/// way independently of our own witness code.
+#[test]
+fn feerate_weighs_a_script_path_witness() {
+    let secp = bitcoin::secp256k1::Secp256k1::new();
+    let master_appkey = MasterAppkey::derive_from_rootkey(G.normalize());
+    let leaf_path = BitcoinBip32Path::external(NormalIndex::new(1).unwrap());
+    let leaf_key = AppTweak::Bitcoin(BitcoinTweak {
+        bip32_path: leaf_path,
+        kind: BitcoinTweakKind::ScriptSpend,
+    })
+    .derive_xonly_key(&master_appkey.to_xpub());
+    let leaf_script = bitcoin::script::Builder::new()
+        .push_x_only_key(&leaf_key.into())
+        .push_opcode(bitcoin::opcodes::all::OP_CHECKSIG)
+        .into_script();
+    // A second leaf so the control block carries a merkle path, not just the internal key.
+    let other_leaf = bitcoin::script::Builder::new()
+        .push_int(144)
+        .push_opcode(bitcoin::opcodes::all::OP_CSV)
+        .into_script();
+    let internal_key = bitcoin::secp256k1::Keypair::from_seckey_slice(&secp, &[9u8; 32])
+        .unwrap()
+        .x_only_public_key()
+        .0;
+    let spend_info = bitcoin::taproot::TaprootBuilder::new()
+        .add_leaf(1, leaf_script.clone())
+        .unwrap()
+        .add_leaf(1, other_leaf)
+        .unwrap()
+        .finalize(&secp, internal_key)
+        .unwrap();
+    let control_block = spend_info
+        .control_block(&(
+            leaf_script.clone(),
+            bitcoin::taproot::LeafVersion::TapScript,
+        ))
+        .unwrap();
+
+    let mut template = TransactionTemplate::new();
+    template.push_imaginary_owned_input(
+        LocalSpk::key_spend(master_appkey, BitcoinBip32Path::external(NormalIndex::ZERO)),
+        Amount::from_sat(50_000),
+    );
+    template.push_imaginary_owned_input(
+        LocalSpk::script_spend(
+            master_appkey,
+            leaf_path,
+            ScriptBuf::new_p2tr(&secp, internal_key, spend_info.merkle_root()),
+            leaf_script.clone(),
+            bitcoin::taproot::LeafVersion::TapScript,
+            control_block.serialize(),
+        ),
+        Amount::from_sat(50_000),
+    );
+    template.push_foreign_output(TxOut {
+        value: Amount::from_sat(99_000),
+        script_pubkey: ScriptBuf::from_hex(
+            "5120a62baa9e7c1aeda63492f2129cc8226a39db1bc05a9c11e45a61cb751a11061d",
+        )
+        .unwrap(),
+    });
+
+    let mut witnessed = template.to_rust_bitcoin_tx();
+    let signature = [7u8; 64];
+    witnessed.input[0].witness = bitcoin::Witness::from_slice(&[signature]);
+    witnessed.input[1].witness = bitcoin::Witness::from_slice(&[
+        signature.to_vec(),
+        leaf_script.to_bytes(),
+        control_block.serialize(),
+    ]);
+    let expected = template.fee().unwrap() as f64 / witnessed.weight().to_vbytes_ceil() as f64;
+
+    assert_eq!(template.as_seen_by(master_appkey).feerate(), Some(expected));
 }

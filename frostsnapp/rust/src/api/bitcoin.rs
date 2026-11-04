@@ -194,8 +194,9 @@ impl Transaction {
             prevouts,
             is_mine,
             // `raw_tx` has no witnesses yet, so its own size is not the size this will be
-            // broadcast at. The template knows: every input it can sign is a taproot keyspend
-            // witnessed by exactly 64 bytes.
+            // broadcast at. The template knows: every input it can sign is a taproot spend
+            // witnessed by a 64-byte signature, plus the leaf script and control block on the
+            // script path.
             feerate: tx_temp.feerate(),
         }
     }

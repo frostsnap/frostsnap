@@ -337,12 +337,13 @@ impl TransactionTemplate<ScopedTo> {
     pub fn feerate(&self) -> Option<f64> {
         let mut tx = self.to_rust_bitcoin_tx();
 
+        // Witnessed with a placeholder signature, which is the same 64 bytes as a real one, so
+        // a script-path input weighs its leaf script and control block as well.
         for (i, input) in self.inputs.iter().enumerate() {
-            if input.owner().local_owner().is_some() {
-                tx.input[i].witness.push([0u8; 64]);
-            } else {
-                return None;
-            }
+            tx.input[i].witness = input
+                .owner()
+                .local_owner()?
+                .witness(&EncodedSignature([0u8; 64]));
         }
 
         let vbytes = tx.weight().to_vbytes_ceil() as f64;
