@@ -124,6 +124,17 @@ impl TransactionTemplate {
                 },
             };
 
+            // BIP174: a signer must only sign with the sighash type the PSBT specifies. We sign
+            // with DEFAULT, which commits to exactly what ALL does, so either is honoured.
+            if let Some(sighash_type) = input.sighash_type {
+                if !matches!(sighash_type.to_u32(), 0 | 1) {
+                    return Err(PsbtValidationError::Other(format!(
+                        "PSBT input {i} asks for sighash type {sighash_type}, but this wallet only \
+                         signs with SIGHASH_DEFAULT or SIGHASH_ALL"
+                    )));
+                }
+            }
+
             push_owned(candidates, bip32_path, &spend, |owner| {
                 template.push_owned_input(input_push, owner)
             })?;
@@ -1487,5 +1498,33 @@ mod test {
             template.outputs()[0].owner(),
             &SpkOwner::Foreign(scripted_change.script_pubkey)
         );
+    }
+
+    /// We sign with SIGHASH_DEFAULT. A PSBT asking for DEFAULT or ALL gets what it asked for,
+    /// since the two commit to the same data; any other type is refused, not quietly
+    /// substituted.
+    #[test]
+    fn only_default_and_all_sighash_types_are_signed() {
+        use bitcoin::{psbt::PsbtSighashType, sighash::TapSighashType};
+        let key = our_key();
+        let path = BitcoinBip32Path::external(idx(4));
+
+        for (sighash_type, signs) in [
+            (None, true),
+            (Some(TapSighashType::Default), true),
+            (Some(TapSighashType::All), true),
+            (Some(TapSighashType::Single), false),
+            (Some(TapSighashType::AllPlusAnyoneCanPay), false),
+        ] {
+            let mut input = owned_input(key, path, 100_000);
+            input.sighash_type = sighash_type.map(PsbtSighashType::from);
+            let psbt = psbt_of(vec![input], vec![foreign_txout(90_000)]);
+
+            let result = TransactionTemplate::from_psbt(&psbt, &[key]);
+            assert_eq!(result.is_ok(), signs, "{sighash_type:?}");
+            if let Err(e) = result {
+                assert!(err_string(e).contains("sighash type"));
+            }
+        }
     }
 }
