@@ -32,9 +32,21 @@ impl TransactionTemplate {
     /// to whichever is signing. Anything none of the keys owns is recorded as foreign rather
     /// than rejected — a PSBT is only refused outright when it is malformed, or when nothing
     /// in it is ours to sign.
+    ///
+    /// Refuses any input of ours that spends a scripted output; see [`Self::from_psbt_with`].
     pub fn from_psbt(
         psbt: &Psbt,
         master_appkeys: &[MasterAppkey],
+    ) -> Result<TransactionTemplate, PsbtValidationError> {
+        Self::from_psbt_with(psbt, master_appkeys, ScriptedSpends::Refuse)
+    }
+
+    /// [`Self::from_psbt`], saying whether inputs of ours that spend a scripted output may be
+    /// signed.
+    pub fn from_psbt_with(
+        psbt: &Psbt,
+        master_appkeys: &[MasterAppkey],
+        scripted_spends: ScriptedSpends,
     ) -> Result<TransactionTemplate, PsbtValidationError> {
         // A fingerprint is four bytes, so two of our own keys can share one. Holding every
         // candidate and letting the script decide means a collision cannot hide the real owner.
@@ -133,6 +145,12 @@ impl TransactionTemplate {
                          signs with SIGHASH_DEFAULT or SIGHASH_ALL"
                     )));
                 }
+            }
+
+            if scripted_spends == ScriptedSpends::Refuse
+                && spend != (LocalSpend::KeySpend { merkle_root: None })
+            {
+                return Err(PsbtValidationError::ScriptedSpend { input: i });
             }
 
             push_owned(candidates, bip32_path, &spend, |owner| {
@@ -411,12 +429,27 @@ fn push_owned(
     Err(last_mismatch.expect("a fingerprint is only in the map because a key produced it"))
 }
 
+/// Whether a PSBT import may sign inputs that spend a scripted output: a key-path spend of an
+/// output committing to a script tree, or a script-path spend of a leaf.
+///
+/// Experimental, so refused unless asked for: the keys alone are not enough to find and spend
+/// such coins again, which is a burden plain BIP86 coins never put on the user.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScriptedSpends {
+    Refuse,
+    Allow,
+}
+
 #[derive(Debug, Clone)]
 pub enum PsbtValidationError {
     NothingToSign {
         total_inputs: usize,
         foreign_count: usize,
         already_signed_count: usize,
+    },
+    /// An input of ours spends a scripted output and [`ScriptedSpends::Refuse`] was asked for.
+    ScriptedSpend {
+        input: usize,
     },
     Other(String),
 }
@@ -460,6 +493,11 @@ impl core::fmt::Display for PsbtValidationError {
 
                 write!(f, ".")
             }
+            PsbtValidationError::ScriptedSpend { input } => write!(
+                f,
+                "PSBT input {input} spends a scripted output (a taproot output with script \
+                 conditions). Signing these is experimental and needs developer mode."
+            ),
             PsbtValidationError::Other(msg) => write!(f, "{msg}"),
         }
     }
@@ -1356,7 +1394,7 @@ mod test {
         };
         let psbt = psbt_of(vec![input], vec![foreign_txout(90_000)]);
 
-        let template = TransactionTemplate::from_psbt(&psbt, &[key])
+        let template = TransactionTemplate::from_psbt_with(&psbt, &[key], ScriptedSpends::Allow)
             .unwrap()
             .as_seen_by(key);
         assert_eq!(
@@ -1397,7 +1435,7 @@ mod test {
         );
         let psbt = psbt_of(vec![input], vec![foreign_txout(90_000)]);
 
-        let template = TransactionTemplate::from_psbt(&psbt, &[key])
+        let template = TransactionTemplate::from_psbt_with(&psbt, &[key], ScriptedSpends::Allow)
             .unwrap()
             .as_seen_by(key);
         assert_eq!(template.inputs()[0].owner().local_owner(), Some(&expected));
@@ -1439,7 +1477,8 @@ mod test {
             vec![foreign_txout(90_000)],
         );
 
-        let err = TransactionTemplate::from_psbt(&psbt, &[key]).unwrap_err();
+        let err =
+            TransactionTemplate::from_psbt_with(&psbt, &[key], ScriptedSpends::Allow).unwrap_err();
         assert!(
             err_string(err).contains("more than one leaf"),
             "expected the multi-leaf refusal"
@@ -1525,6 +1564,54 @@ mod test {
             if let Err(e) = result {
                 assert!(err_string(e).contains("sighash type"));
             }
+        }
+    }
+
+    /// Plain BIP86 imports are untouched by the gate; both kinds of scripted spend are refused
+    /// by default, with a message that names what is needed.
+    #[test]
+    fn scripted_spends_are_refused_unless_allowed() {
+        let key = our_key();
+        let path = BitcoinBip32Path::external(idx(4));
+        let internal_key = raw_key_of(key, path);
+        let merkle_root =
+            tree_of(&[checksig_leaf(stranger_internal_key())], internal_key).merkle_root();
+        let mut key_path = owned_input(key, path, 100_000);
+        key_path.witness_utxo = Some(TxOut {
+            value: Amount::from_sat(100_000),
+            script_pubkey: ScriptBuf::new_p2tr(
+                &bitcoin::secp256k1::Secp256k1::verification_only(),
+                internal_key,
+                merkle_root,
+            ),
+        });
+        key_path.tap_internal_key = Some(internal_key);
+        key_path.tap_merkle_root = merkle_root;
+        key_path.tap_key_origins = [(
+            internal_key,
+            (vec![], (fingerprint_of(key), derivation_of(path))),
+        )]
+        .into_iter()
+        .collect();
+        let script_path = leaf_input(key, path, &[checksig_leaf(internal_key)], 100_000);
+
+        for scripted in [key_path, script_path] {
+            let psbt = psbt_of(
+                vec![
+                    owned_input(key, BitcoinBip32Path::external(idx(5)), 100_000),
+                    scripted,
+                ],
+                vec![foreign_txout(190_000)],
+            );
+            let err = TransactionTemplate::from_psbt(&psbt, &[key]).unwrap_err();
+            assert!(matches!(
+                err,
+                PsbtValidationError::ScriptedSpend { input: 1 }
+            ));
+            assert!(err_string(err).contains("developer mode"));
+            assert!(
+                TransactionTemplate::from_psbt_with(&psbt, &[key], ScriptedSpends::Allow).is_ok()
+            );
         }
     }
 }
