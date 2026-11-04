@@ -69,6 +69,8 @@ impl TransactionTemplate {
         let mut already_signed_count = 0;
         let mut foreign_count = 0;
         let mut owned_count = 0;
+        // The first input left foreign only because scripted spends are refused.
+        let mut refused_scripted_input = None;
 
         for (i, input) in psbt.inputs.iter().enumerate() {
             let txin = unsigned_tx.input.get(i).ok_or_else(|| {
@@ -112,29 +114,44 @@ impl TransactionTemplate {
             }
 
             // The key path is preferred: it is cheaper and reveals nothing of the script tree.
-            let (bip32_path, candidates, spend) = match claimed_path(
-                input.tap_internal_key.as_ref(),
-                &input.tap_key_origins,
-                &ours_by_fingerprint,
-            ) {
-                Ok((bip32_path, candidates)) => (
-                    bip32_path,
-                    candidates,
-                    LocalSpend::KeySpend {
-                        merkle_root: input.tap_merkle_root,
-                    },
-                ),
-                // Refusing outright rather than skipping: an input claiming our fingerprint at a
-                // path we cannot derive is a PSBT we do not understand, not someone else's coin.
-                Err(NotOurs::Hardened) => return Err(hardened_error()),
-                Err(reason) => match claimed_leaf(input, txout, &ours_by_fingerprint)? {
-                    Some(claim) => claim,
-                    None => bail!(
-                        foreign_count,
-                        format!("{reason}, and no leaf it provides holds one of our keys")
+            let (bip32_path, candidates, spend) =
+                match claimed_path(
+                    input.tap_internal_key.as_ref(),
+                    &input.tap_key_origins,
+                    &ours_by_fingerprint,
+                ) {
+                    Ok((bip32_path, candidates)) => (
+                        bip32_path,
+                        candidates,
+                        LocalSpend::KeySpend {
+                            merkle_root: input.tap_merkle_root,
+                        },
                     ),
-                },
-            };
+                    // Refusing outright rather than skipping: an input claiming our fingerprint at a
+                    // path we cannot derive is a PSBT we do not understand, not someone else's coin.
+                    Err(NotOurs::Hardened) => return Err(hardened_error()),
+                    // Refusing scripted spends reads the input exactly as before they existed, so a
+                    // PSBT mixing them with plain inputs still signs those.
+                    Err(reason) if scripted_spends == ScriptedSpends::Refuse => {
+                        let names_our_leaf = input.tap_key_origins.values().any(
+                            |(leaf_hashes, (fingerprint, _))| {
+                                !leaf_hashes.is_empty()
+                                    && ours_by_fingerprint.contains_key(fingerprint)
+                            },
+                        );
+                        if names_our_leaf {
+                            refused_scripted_input.get_or_insert(i);
+                        }
+                        bail!(foreign_count, reason.to_string())
+                    }
+                    Err(reason) => match claimed_leaf(input, txout, &ours_by_fingerprint)? {
+                        Some(claim) => claim,
+                        None => bail!(
+                            foreign_count,
+                            format!("{reason}, and no leaf it provides holds one of our keys")
+                        ),
+                    },
+                };
 
             // BIP174: a signer must only sign with the sighash type the PSBT specifies. We sign
             // with DEFAULT, which commits to exactly what ALL does, so either is honoured.
@@ -147,6 +164,7 @@ impl TransactionTemplate {
                 }
             }
 
+            // Our internal key under a script tree; master refused this too, as a mismatch.
             if scripted_spends == ScriptedSpends::Refuse
                 && spend != (LocalSpend::KeySpend { merkle_root: None })
             {
@@ -187,6 +205,9 @@ impl TransactionTemplate {
         }
 
         if owned_count == 0 {
+            if let Some(input) = refused_scripted_input {
+                return Err(PsbtValidationError::ScriptedSpend { input });
+            }
             return Err(PsbtValidationError::NothingToSign {
                 total_inputs: psbt.inputs.len(),
                 foreign_count,
@@ -449,7 +470,9 @@ pub enum PsbtValidationError {
         foreign_count: usize,
         already_signed_count: usize,
     },
-    /// An input of ours spends a scripted output and [`ScriptedSpends::Refuse`] was asked for.
+    /// An input of ours spends a scripted output and [`ScriptedSpends::Refuse`] was asked for:
+    /// our internal key under a script tree, or our key only in a leaf when nothing else in the
+    /// PSBT is ours to sign.
     ScriptedSpend {
         input: usize,
     },
@@ -1662,8 +1685,8 @@ mod test {
         }
     }
 
-    /// Plain BIP86 imports are untouched by the gate; both kinds of scripted spend are refused
-    /// by default, with a message that names what is needed.
+    /// Our internal key under a script tree is refused by default, and so is a PSBT whose only
+    /// input of ours is a leaf; both with a message that names what is needed.
     #[test]
     fn scripted_spends_are_refused_unless_allowed() {
         let key = our_key();
@@ -1688,25 +1711,73 @@ mod test {
         )]
         .into_iter()
         .collect();
-        let script_path = leaf_input(key, path, &[checksig_leaf(internal_key)], 100_000);
+        let with_a_plain_input = psbt_of(
+            vec![
+                owned_input(key, BitcoinBip32Path::external(idx(5)), 100_000),
+                key_path,
+            ],
+            vec![foreign_txout(190_000)],
+        );
+        let leaf_only = psbt_of(
+            vec![leaf_input(
+                key,
+                path,
+                &[checksig_leaf(internal_key)],
+                100_000,
+            )],
+            vec![foreign_txout(90_000)],
+        );
 
-        for scripted in [key_path, script_path] {
-            let psbt = psbt_of(
-                vec![
-                    owned_input(key, BitcoinBip32Path::external(idx(5)), 100_000),
-                    scripted,
-                ],
-                vec![foreign_txout(190_000)],
-            );
+        for (psbt, input) in [(with_a_plain_input, 1), (leaf_only, 0)] {
             let err = TransactionTemplate::from_psbt(&psbt, &[key]).unwrap_err();
-            assert!(matches!(
-                err,
-                PsbtValidationError::ScriptedSpend { input: 1 }
-            ));
+            assert!(
+                matches!(err, PsbtValidationError::ScriptedSpend { input: got } if got == input)
+            );
             assert!(err_string(err).contains("developer mode"));
             assert!(
                 TransactionTemplate::from_psbt_with(&psbt, &[key], ScriptedSpends::Allow).is_ok()
             );
         }
+    }
+
+    /// With scripted spends refused, a leaf-only input of ours is read exactly as before they
+    /// existed — foreign, even with a hardened path or our key in two leaves — so the plain
+    /// input beside it is still signed.
+    #[test]
+    fn refusing_scripted_spends_still_signs_the_plain_inputs() {
+        let key = our_key();
+        let plain = BitcoinBip32Path::external(idx(5));
+        let path = BitcoinBip32Path::external(idx(4));
+        let leaf = checksig_leaf(raw_key_of(key, path));
+        let mut hardened_leaf = leaf_input(key, path, core::slice::from_ref(&leaf), 100_000);
+        for (_, (_, derivation)) in hardened_leaf.tap_key_origins.values_mut() {
+            *derivation = [ChildNumber::from_hardened_idx(4).unwrap()]
+                .into_iter()
+                .collect();
+        }
+        let psbt = psbt_of(
+            vec![
+                owned_input(key, plain, 100_000),
+                leaf_input(
+                    key,
+                    path,
+                    &[leaf.clone(), checksig_leaf(stranger_internal_key())],
+                    100_000,
+                ),
+                hardened_leaf,
+            ],
+            vec![foreign_txout(290_000)],
+        );
+
+        let template = TransactionTemplate::from_psbt(&psbt, &[key])
+            .unwrap()
+            .as_seen_by(key);
+        assert_eq!(
+            template
+                .iter_our_inputs()
+                .map(|(i, _, owner)| (i, owner.clone()))
+                .collect::<Vec<_>>(),
+            vec![(0, LocalSpk::key_spend(key, plain))]
+        );
     }
 }
