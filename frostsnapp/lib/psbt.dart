@@ -7,8 +7,9 @@ import 'package:flutter/material.dart';
 import 'package:frostsnap/camera/camera.dart';
 import 'package:frostsnap/contexts.dart';
 import 'package:frostsnap/copy_feedback.dart';
+import 'package:frostsnap/device_selector.dart';
+import 'package:frostsnap/global.dart';
 import 'package:frostsnap/maybe_fullscreen_dialog.dart';
-import 'package:frostsnap/sign_message.dart';
 import 'package:frostsnap/snackbar.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/qr.dart';
@@ -31,18 +32,20 @@ class LoadPsbtPage extends StatefulWidget {
 
 class LoadPsbtPageState extends State<LoadPsbtPage> {
   String? fileContents;
-  Set<DeviceId> selectedDevices = <DeviceId>{};
+  late final accessStructure = widget.wallet.frostKey()!.accessStructures()[0];
+  late final selection = coord.signerSelection(
+    accessStructure: accessStructure,
+  );
   SignedTx? signedTx;
-  final selectorKey = Key('key-selector');
+
+  /// A PSBT that the chosen devices turned out not to have the nonces for, waiting on a new choice.
+  /// Signers are picked before loading, because how many nonces are needed isn't known until then.
+  ({Psbt psbt, UnsignedTx unsignedTx})? awaitingSigners;
 
   Future<bool> tryStartSigningPsbt(
     BuildContext context,
     Uint8List psbtBytes,
   ) async {
-    final fsCtx = FrostsnapContext.of(context)!;
-    final psbtMan = fsCtx.psbtManager;
-
-    final walletCtx = WalletContext.of(context)!;
     final wallet = widget.wallet;
 
     final Psbt psbt;
@@ -65,6 +68,7 @@ class LoadPsbtPageState extends State<LoadPsbtPage> {
       unsignedTx = await wallet.superWallet.psbtToUnsignedTx(
         psbt: psbt,
         masterAppkey: wallet.masterAppkey,
+        signers: selection,
       );
     } on PsbtValidationError catch (e) {
       if (context.mounted) {
@@ -77,45 +81,54 @@ class LoadPsbtPageState extends State<LoadPsbtPage> {
       return false;
     }
 
-    final txDetails = TxDetailsModel(
-      tx: unsignedTx.details(),
-      now: DateTime.now(),
-    );
-
-    if (context.mounted) {
-      Navigator.popUntil(context, (r) => r.isFirst);
-      await showBottomSheetOrDialog(
-        context,
-        title: Text('Transaction Details'),
-        builder: (context, scrollController) => walletCtx.wrap(
-          TxDetailsPage(
-            txStates: walletCtx.txStream,
-            txDetails: txDetails,
-            psbtMan: psbtMan,
-            psbt: psbt,
-            signingParams: StartSigning(
-              accessStructureRef: wallet
-                  .frostKey()!
-                  .accessStructures()[0]
-                  .accessStructureRef(),
-              unsignedTx: unsignedTx,
-              devices: selectedDevices.toList(),
-            ),
-          ),
-        ),
-      );
+    if (!mounted) return true;
+    if (selection.remaining() == 0) {
+      if (context.mounted) await showDetails(context, psbt, unsignedTx);
+    } else {
+      setState(() => awaitingSigners = (psbt: psbt, unsignedTx: unsignedTx));
     }
 
     return true;
   }
 
+  Future<void> showDetails(
+    BuildContext context,
+    Psbt psbt,
+    UnsignedTx unsignedTx,
+  ) async {
+    final fsCtx = FrostsnapContext.of(context)!;
+    final psbtMan = fsCtx.psbtManager;
+    final walletCtx = WalletContext.of(context)!;
+
+    final txDetails = TxDetailsModel(
+      tx: unsignedTx.details(),
+      now: DateTime.now(),
+    );
+
+    Navigator.popUntil(context, (r) => r.isFirst);
+    await showBottomSheetOrDialog(
+      context,
+      title: Text('Transaction Details'),
+      builder: (context, scrollController) => walletCtx.wrap(
+        TxDetailsPage(
+          txStates: walletCtx.txStream,
+          txDetails: txDetails,
+          psbtMan: psbtMan,
+          psbt: psbt,
+          signingParams: StartSigning(
+            accessStructureRef: accessStructure.accessStructureRef(),
+            unsignedTx: unsignedTx,
+            devices: selection.selected(),
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final frostKey = widget.wallet.frostKey()!;
-    final accessStructure = frostKey.accessStructures()[0];
-    final enoughSelected =
-        selectedDevices.length == accessStructure.threshold();
-    final scanPsbtButton = TextButton.icon(
+    final threshold = selection.threshold();
+    Widget scanPsbtButton(bool enoughSelected) => TextButton.icon(
       onPressed: !enoughSelected
           ? null
           : () async {
@@ -135,7 +148,7 @@ class LoadPsbtPageState extends State<LoadPsbtPage> {
     );
     // ...
 
-    final loadPsbtFileButton = TextButton.icon(
+    Widget loadPsbtFileButton(bool enoughSelected) => TextButton.icon(
       onPressed: !enoughSelected
           ? null
           : () async {
@@ -154,6 +167,7 @@ class LoadPsbtPageState extends State<LoadPsbtPage> {
       icon: Icon(Icons.file_open),
     );
 
+    final awaitingSigners = this.awaitingSigners;
     final column = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
@@ -162,19 +176,12 @@ class LoadPsbtPageState extends State<LoadPsbtPage> {
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
           child: Text(
-            'Select ${accessStructure.threshold()} device${accessStructure.threshold() > 1 ? "s" : ""} to sign with.',
+            awaitingSigners == null
+                ? 'Select $threshold device${threshold > 1 ? "s" : ""} to sign with.'
+                : 'Signing this PSBT needs $threshold device${threshold > 1 ? "s" : ""} with a nonce for each of its ${awaitingSigners.unsignedTx.ownedInputCount()} inputs.',
           ),
         ),
-        SigningDeviceSelector(
-          key: selectorKey,
-          initialSet: selectedDevices,
-          frostKey: frostKey,
-          onChanged: (selected) {
-            setState(() {
-              selectedDevices = selected;
-            });
-          },
-        ),
+        DeviceSelectorList(selection: selection),
       ],
     );
 
@@ -205,10 +212,32 @@ class LoadPsbtPageState extends State<LoadPsbtPage> {
           Divider(height: 1),
           Padding(
             padding: const EdgeInsets.all(16.0),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              spacing: 8,
-              children: [scanPsbtButton, loadPsbtFileButton],
+            child: SignerSelectionBuilder(
+              selection: selection,
+              builder: (context) {
+                final enoughSelected = selection.remaining() == 0;
+                return Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  spacing: 8,
+                  children: awaitingSigners == null
+                      ? [
+                          scanPsbtButton(enoughSelected),
+                          loadPsbtFileButton(enoughSelected),
+                        ]
+                      : [
+                          FilledButton(
+                            onPressed: !enoughSelected
+                                ? null
+                                : () => showDetails(
+                                    context,
+                                    awaitingSigners.psbt,
+                                    awaitingSigners.unsignedTx,
+                                  ),
+                            child: Text('Continue'),
+                          ),
+                        ],
+                );
+              },
             ),
           ),
         ],

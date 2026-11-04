@@ -1,5 +1,6 @@
 use super::bitcoin::BitcoinNetworkExt as _;
 use super::coordinator::Coordinator;
+use super::signer_selection::SignerSelection;
 use super::transaction::BuildTxState;
 use super::{bitcoin::Transaction, signing::UnsignedTx};
 use crate::api::broadcast::Broadcast;
@@ -15,9 +16,7 @@ pub use frostsnap_coordinator::bitcoin::wallet::PsbtValidationError;
 pub use frostsnap_coordinator::bitcoin::{chain_sync::ChainClient, wallet::CoordSuperWallet};
 pub use frostsnap_coordinator::verify_address::VerifyAddressProtocolState;
 
-use frostsnap_core::bitcoin_transaction::TransactionTemplate;
 use frostsnap_core::{DeviceId, KeyId, MasterAppkey};
-use std::collections::HashSet;
 use std::str::FromStr;
 use std::sync::atomic::AtomicBool;
 use std::sync::RwLock;
@@ -244,7 +243,6 @@ impl SuperWallet {
             .blocking_read()
             .get_frost_key(master_appkey.key_id())?;
         let state = BuildTxState {
-            coord,
             super_wallet: self.clone(),
             frost_key,
             broadcast: Broadcast::default(),
@@ -254,7 +252,6 @@ impl SuperWallet {
                 confirmation_target: super::transaction::ConfirmationTarget::default(),
                 recipients: Vec::new(),
                 access_id: None,
-                signers: HashSet::new(),
             })),
         };
         Some(state)
@@ -314,18 +311,14 @@ impl SuperWallet {
             .gap_stranded_value(master_appkey, feerate)
     }
 
+    /// Also requires each of `signers` to have a nonce for every input the wallet signs.
     pub fn psbt_to_unsigned_tx(
         &self,
         psbt: &Psbt,
         master_appkey: MasterAppkey,
+        signers: &mut SignerSelection,
     ) -> Result<UnsignedTx, PsbtValidationError> {
-        let template = TransactionTemplate::from_psbt(psbt, &[master_appkey])?;
-
-        // Unreachable while one key goes in: `from_psbt` returning `Ok` already means that key
-        // owns an input. It is the guard for the day more than one does.
-        UnsignedTx::new(template, master_appkey).ok_or_else(|| {
-            PsbtValidationError::Other("no input in this PSBT belongs to this key".into())
-        })
+        UnsignedTx::from_psbt(psbt, master_appkey, signers)
     }
 }
 

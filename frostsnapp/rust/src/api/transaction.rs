@@ -1,10 +1,9 @@
-use std::collections::HashSet;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, RwLock};
 
 use bitcoin::Address;
 use flutter_rust_bridge::frb;
-use frostsnap_core::{AccessStructureId, DeviceId, MasterAppkey};
+use frostsnap_core::{AccessStructureId, MasterAppkey};
 
 use crate::api::bitcoin::BitcoinNetworkExt;
 use crate::api::broadcast::Broadcast;
@@ -13,7 +12,7 @@ use crate::frb_generated::RustAutoOpaque;
 use frostsnapp_macros::broadcast_handle;
 
 use super::{
-    coordinator::{AccessStructure, Coordinator, FrostKey},
+    coordinator::{AccessStructure, FrostKey},
     super_wallet::SuperWallet,
 };
 
@@ -123,8 +122,6 @@ pub(crate) struct BuildTxInner {
     pub(crate) recipients: Vec<Recipient>,
     /// The selected access structure.
     pub(crate) access_id: Option<AccessStructureId>,
-    /// Selected devices to sign the transaction.
-    pub(crate) signers: HashSet<DeviceId>,
 }
 
 impl BuildTxInner {
@@ -167,7 +164,6 @@ impl BuildTxInner {
 broadcast_handle! { pub struct UnitBcast(pub Broadcast<()>); }
 
 pub struct BuildTxState {
-    pub(crate) coord: RustAutoOpaque<Coordinator>,
     pub(crate) super_wallet: SuperWallet,
     pub(crate) frost_key: FrostKey,
     pub(crate) broadcast: Broadcast<()>,
@@ -278,28 +274,6 @@ impl BuildTxState {
     }
 
     #[frb(sync)]
-    pub fn available_signers(&self) -> Vec<(DeviceId, Option<String>)> {
-        let access_id_opt = self.inner.read().unwrap().access_id;
-        let coord_lock = self.coord.blocking_read();
-        access_id_opt
-            .and_then(|a_id| self.frost_key.get_access_structure(a_id))
-            .map_or(Vec::new(), |access| {
-                access
-                    .devices()
-                    .map(move |d_id| {
-                        let name = coord_lock.get_device_name(d_id);
-                        (d_id, name)
-                    })
-                    .collect::<Vec<_>>()
-            })
-    }
-
-    #[frb(sync)]
-    pub fn selected_signers(&self) -> Vec<DeviceId> {
-        self.inner.read().unwrap().signers.iter().copied().collect()
-    }
-
-    #[frb(sync)]
     pub fn access_struct(&self) -> Option<AccessStructure> {
         let inner = self.inner.read().unwrap();
         let access_id = inner.access_id?;
@@ -316,31 +290,8 @@ impl BuildTxState {
         let mut inner = self.inner.write().unwrap();
         if inner.access_id.as_ref() != Some(access_id) {
             inner.access_id = Some(*access_id);
-            inner.signers.clear();
             self._trigger_changed();
         }
-    }
-
-    #[frb(sync)]
-    pub fn select_signer(&self, d_id: DeviceId) {
-        let mut inner = self.inner.write().unwrap();
-        if inner.signers.insert(d_id) {
-            self._trigger_changed();
-        }
-    }
-
-    #[frb(sync)]
-    pub fn deselect_signer(&self, d_id: DeviceId) {
-        let mut inner = self.inner.write().unwrap();
-        if inner.signers.remove(&d_id) {
-            self._trigger_changed();
-        }
-    }
-
-    #[frb(sync)]
-    pub fn is_signer_selected(&self, d_id: DeviceId) -> bool {
-        let inner = self.inner.read().unwrap();
-        inner.signers.contains(&d_id)
     }
 
     #[frb(sync)]
