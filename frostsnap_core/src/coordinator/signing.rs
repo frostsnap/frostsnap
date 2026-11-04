@@ -1,4 +1,7 @@
-use crate::{nonce_stream::NonceStreamSegment, DeviceId, KeyId, Kind, SignSessionId};
+use crate::{
+    nonce_stream::{NonceStreamId, NonceStreamSegment},
+    DeviceId, KeyId, Kind, SignSessionId,
+};
 use alloc::vec::Vec;
 use frostsnap_macros::Kind as KindDerive;
 use schnorr_fun::frost::SignatureShare;
@@ -12,6 +15,8 @@ pub enum SigningMutation {
         nonce_segment: NonceStreamSegment,
     },
     NewSigningSession(super::ActiveSignSession),
+    /// Also consumes the nonces the session assigned to the device, so logs written before
+    /// `ConsumeNonces` existed replay to the right nonce positions.
     SentSignReq {
         session_id: SignSessionId,
         device_id: DeviceId,
@@ -28,12 +33,18 @@ pub enum SigningMutation {
     ForgetFinishedSignSession {
         session_id: SignSessionId,
     },
+    ConsumeNonces {
+        device_id: DeviceId,
+        stream_id: NonceStreamId,
+        up_to_but_not_including: u32,
+    },
 }
 
 impl SigningMutation {
-    pub fn tied_to_key(&self, coord: &FrostCoordinator) -> Option<KeyId> {
+    pub(super) fn tied_to_key(&self, coord: &FrostCoordinator) -> Option<KeyId> {
         match self {
-            SigningMutation::NewNonces { .. } => None,
+            // Nonce usage must outlive the key or devices would be asked to sign with used nonces.
+            SigningMutation::NewNonces { .. } | SigningMutation::ConsumeNonces { .. } => None,
             SigningMutation::NewSigningSession(active_sign_session) => {
                 Some(active_sign_session.key_id)
             }

@@ -96,6 +96,14 @@ impl RefState {
         }
     }
 
+    fn is_signer_in_open_session(&self, key_index: usize, device_id: DeviceId) -> bool {
+        self.sign_sessions.iter().any(|session| {
+            session.key_index == key_index
+                && session.active()
+                && session.devices.contains(&device_id)
+        })
+    }
+
     pub fn available_signing_devices(&self) -> BTreeSet<DeviceId> {
         // A device is available if it has at least one unlocked stream with at least 1 nonce
         self.device_nonce_streams
@@ -141,6 +149,17 @@ struct RefKeygen {
 struct RefFinishedKey {
     do_keygen: BeginKeygen,
     deleted: bool,
+    deleted_shares: BTreeSet<DeviceId>,
+}
+
+impl RefFinishedKey {
+    fn signers(&self) -> BTreeSet<DeviceId> {
+        self.do_keygen
+            .devices()
+            .difference(&self.deleted_shares)
+            .cloned()
+            .collect()
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -179,6 +198,10 @@ enum Transition {
     },
     CDeleteKey {
         key_index: usize,
+    },
+    CDeleteShare {
+        key_index: usize,
+        device_id: DeviceId,
     },
 }
 
@@ -281,8 +304,7 @@ impl ReferenceStateMachine for RefState {
                 .enumerate()
                 .filter_map(|(key_index, key)| {
                     let available = key
-                        .do_keygen
-                        .devices()
+                        .signers()
                         .intersection(&state.available_signing_devices())
                         .cloned()
                         .map(|device_id| {
@@ -404,6 +426,29 @@ impl ReferenceStateMachine for RefState {
             trans.push((1, to_delete));
         }
 
+        {
+            let share_deletion_candidates = state
+                .finished_keygens
+                .iter()
+                .enumerate()
+                .filter(|(_, key)| !key.deleted)
+                .flat_map(|(key_index, key)| {
+                    key.signers()
+                        .into_iter()
+                        .map(move |device_id| (key_index, device_id))
+                })
+                .collect::<Vec<_>>();
+            if !share_deletion_candidates.is_empty() {
+                let to_delete = sample::select(share_deletion_candidates)
+                    .prop_map(|(key_index, device_id)| Transition::CDeleteShare {
+                        key_index,
+                        device_id,
+                    })
+                    .boxed();
+                trans.push((1, to_delete));
+            }
+        }
+
         proptest::strategy::Union::new_weighted(trans).boxed()
     }
 
@@ -445,7 +490,7 @@ impl ReferenceStateMachine for RefState {
             } => match state.finished_keygens.get(*key_index) {
                 Some(keygen)
                     if !keygen.deleted
-                        && keygen.do_keygen.devices().is_superset(devices)
+                        && keygen.signers().is_superset(devices)
                         && state.available_signing_devices().is_superset(devices) =>
                 {
                     // Check that all devices have enough nonces available for n_inputs
@@ -491,6 +536,13 @@ impl ReferenceStateMachine for RefState {
                 None => false,
             },
             &Transition::CDeleteKey { key_index } => key_index < state.finished_keygens.len(),
+            Transition::CDeleteShare {
+                key_index,
+                device_id,
+            } => state
+                .finished_keygens
+                .get(*key_index)
+                .is_some_and(|key| !key.deleted && key.signers().contains(device_id)),
         }
     }
 
@@ -518,6 +570,7 @@ impl ReferenceStateMachine for RefState {
                     state.finished_keygens.push(RefFinishedKey {
                         do_keygen: keygen.do_keygen,
                         deleted: false,
+                        deleted_shares: Default::default(),
                     });
                 }
             }
@@ -605,6 +658,16 @@ impl ReferenceStateMachine for RefState {
                     state.cancel_session_and_consume_nonces(session_idx);
                 }
                 state.finished_keygens[key_index].deleted = true;
+            }
+            Transition::CDeleteShare {
+                key_index,
+                device_id,
+            } => {
+                if !state.is_signer_in_open_session(key_index, device_id) {
+                    state.finished_keygens[key_index]
+                        .deleted_shares
+                        .insert(device_id);
+                }
             }
         }
 
@@ -861,9 +924,23 @@ impl StateMachineTest for HappyPathTest {
                 let as_ref = finished_keygens[key_index];
                 run.coordinator.delete_key(as_ref.key_id);
             }
+            Transition::CDeleteShare {
+                key_index,
+                device_id,
+            } => {
+                let result = run
+                    .coordinator
+                    .delete_share(finished_keygens[key_index], device_id);
+                assert_eq!(
+                    result.is_err(),
+                    ref_state.is_signer_in_open_session(key_index, device_id),
+                    "delete_share's refusal must match whether the device signs in an open session"
+                );
+            }
         }
 
         run.run_until_finished(env, rng).unwrap();
+        run.check_mutations();
         state
     }
 
