@@ -487,7 +487,7 @@ impl CoordSuperWallet {
     pub fn calculate_avaliable_value(
         &mut self,
         master_appkey: MasterAppkey,
-        target_addresses: impl IntoIterator<Item = bitcoin::Address>,
+        target_recipients: impl IntoIterator<Item = impl Into<super::send::SendRecipient>>,
         feerate: f32,
         effective_only: bool,
     ) -> i64 {
@@ -500,9 +500,9 @@ impl CoordSuperWallet {
         let feerate = FeeRate::from_sat_per_vb(feerate);
         let target = Target {
             fee: TargetFee::from_feerate(feerate),
-            outputs: TargetOutputs::fund_outputs(target_addresses.into_iter().map(|addr| {
+            outputs: TargetOutputs::fund_outputs(target_recipients.into_iter().map(|recipient| {
                 let txo = bitcoin::TxOut {
-                    script_pubkey: addr.script_pubkey(),
+                    script_pubkey: recipient.into().script_for_weight(),
                     value: Amount::ZERO,
                 };
                 (txo.weight().to_wu(), 0)
