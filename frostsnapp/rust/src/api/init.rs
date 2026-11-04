@@ -90,17 +90,16 @@ impl super::Api {
     }
 }
 
-#[cfg(genuine_cert_key)]
 fn load_genuine_cert_key() -> Option<Point<EvenY>> {
-    const HEX: &str = include_str!(concat!(env!("OUT_DIR"), "/genuine_cert_key.hex"));
-    let bytes = frostsnap_core::hex::decode(HEX.trim()).ok()?;
-    let array: [u8; 32] = bytes.try_into().ok()?;
-    Point::<EvenY>::from_xonly_bytes(array)
-}
-
-#[cfg(not(genuine_cert_key))]
-fn load_genuine_cert_key() -> Option<Point<EvenY>> {
-    None
+    use frostsnap_coordinator::frostsnap_comms::genuine_certificate;
+    use frostsnap_coordinator::Environment;
+    if cfg!(genuine_cert_key = "prod") {
+        Some(genuine_certificate::factory_key(Environment::Production))
+    } else if cfg!(genuine_cert_key = "dev") {
+        Some(genuine_certificate::factory_key(Environment::Dev))
+    } else {
+        None
+    }
 }
 
 fn load_internal(

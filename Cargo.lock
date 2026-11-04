@@ -1943,7 +1943,6 @@ version = "0.1.0"
 dependencies = [
  "bincode",
  "frostsnap_core",
- "frostsnap_macros",
  "rand_chacha 0.3.1",
  "rand_core 0.6.4",
  "rsa",
@@ -1963,6 +1962,7 @@ dependencies = [
  "frostsnap_comms",
  "frostsnap_core",
  "frostsnap_macros",
+ "frostsnap_secure_boot",
  "futures",
  "nusb",
  "rand 0.8.6",
@@ -2026,7 +2026,7 @@ dependencies = [
 
 [[package]]
 name = "frostsnap_device"
-version = "0.1.0"
+version = "0.5.0"
 dependencies = [
  "bincode",
  "bitcoin",

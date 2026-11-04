@@ -1,7 +1,10 @@
 use alloc::boxed::Box;
 use bitcoin::Address;
 use frost_backup::ShareBackup;
-use frostsnap_comms::Sha256Digest;
+use frostsnap_comms::{
+    firmware_version::{Environment, FirmwareLabel, VersionNumber},
+    Sha256Digest,
+};
 use frostsnap_core::{
     device::{restoration::EnterBackupPhase, KeyGenPhase3, SignPhase1},
     schnorr_fun::frost::ShareIndex,
@@ -14,7 +17,7 @@ use frostsnap_widgets::{
     layout::*,
     sign_prompt::SignTxPrompt,
     AddressWithIndex, DeviceNameScreen, EraseDevice, EraseProgress, FirmwareUpgradeConfirm,
-    FirmwareUpgradeProgress, SignMessageConfirm, Standby,
+    FirmwareUpgradeProgress, SignMessageConfirm, Standby, UpgradeTarget,
 };
 
 use crate::ui::FirmwareUpgradeStatus;
@@ -110,8 +113,17 @@ impl WidgetTree {
     }
 
     #[inline(never)]
-    pub(crate) fn build_confirm_firmware_upgrade(firmware_digest: Sha256Digest, size: u32) -> Self {
-        let widget = Box::new(FirmwareUpgradeConfirm::new(firmware_digest.0, size));
+    pub(crate) fn build_confirm_firmware_upgrade(
+        firmware_digest: Sha256Digest,
+        version: Option<VersionNumber>,
+        size: u32,
+        environment: Environment,
+    ) -> Self {
+        let target = version.map(|version| UpgradeTarget {
+            version: format!("v{version}"),
+            dev: environment == Environment::Dev,
+        });
+        let widget = Box::new(FirmwareUpgradeConfirm::new(firmware_digest.0, target));
         Self::FirmwareUpgradeConfirm {
             widget,
             firmware_hash: firmware_digest.0,
@@ -129,7 +141,11 @@ impl WidgetTree {
     }
 
     #[inline(never)]
-    pub(crate) fn build_signing_prompt(phase: Box<SignPhase1>, rand_seed: u32) -> Self {
+    pub(crate) fn build_signing_prompt(
+        phase: Box<SignPhase1>,
+        rand_seed: u32,
+        firmware: FirmwareLabel,
+    ) -> Self {
         let sign_task = phase.sign_task();
 
         match &sign_task.inner {
@@ -152,7 +168,7 @@ impl WidgetTree {
                 }
             }
             SignTask::Nostr { .. } => {
-                let mut standby = Standby::new(crate::FIRMWARE_VERSION);
+                let mut standby = Standby::new(firmware);
                 standby.set_welcome();
                 Self::Standby(Box::new(standby))
             }
@@ -214,11 +230,5 @@ impl WidgetTree {
         let address_display =
             AddressWithIndex::new_with_seed(address, bip32_path.index.to_u32() as usize, rand_seed);
         Self::AddressDisplay(Box::new(Center::new(address_display)))
-    }
-}
-
-impl Default for WidgetTree {
-    fn default() -> Self {
-        WidgetTree::Standby(Box::new(Standby::new(crate::FIRMWARE_VERSION)))
     }
 }
