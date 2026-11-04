@@ -783,6 +783,49 @@ impl LeafSpend {
         })
     }
 
+    /// Whether the control block parses and commits this leaf to the P2TR `spk`'s output key.
+    ///
+    /// The sighash does not cover the control block, so this is what stops a coordinator
+    /// padding one to make a fee look like a lower rate.
+    ///
+    /// Done with schnorr_fun rather than rust-bitcoin's `verify_taproot_commitment`, which needs
+    /// a libsecp verification context and its precomputed tables that firmware otherwise does
+    /// without.
+    pub fn is_committed_to(&self, spk: &Script) -> bool {
+        let (Ok(control_block), Some(output_key)) = (
+            ControlBlock::decode(&self.control_block),
+            tweaked_output_key(spk),
+        ) else {
+            return false;
+        };
+        if control_block.leaf_version != self.leaf_version() {
+            return false;
+        }
+        let merkle_root = control_block
+            .merkle_branch
+            .iter()
+            .fold(TapNodeHash::from(self.leaf_hash()), |node, sibling| {
+                TapNodeHash::from_node_hashes(node, *sibling)
+            });
+        let tweak = bitcoin::taproot::TapTweakHash::from_key_and_tweak(
+            control_block.internal_key,
+            Some(merkle_root),
+        );
+        use schnorr_fun::fun::{g, marker::*, Point, Scalar, G};
+        let Some(internal_key) =
+            Point::<EvenY>::from_xonly_bytes(control_block.internal_key.serialize())
+        else {
+            return false;
+        };
+        let tweak = Scalar::<Public, _>::from_bytes_mod_order(tweak.to_byte_array());
+        let Some(tweaked) = g!(internal_key + tweak * G).normalize().non_zero() else {
+            return false;
+        };
+        tweaked.to_xonly_bytes() == output_key.serialize()
+            && tweaked.is_y_even()
+                == (control_block.output_key_parity == bitcoin::key::Parity::Even)
+    }
+
     /// The x-only key this leaf is signed with, as it appears in the leaf.
     pub fn signing_xonly(&self, master_appkey: MasterAppkey) -> XOnlyPublicKey {
         self.app_tweak()
@@ -901,18 +944,7 @@ impl LocalSpk {
                     Ok(bitcoin::script::Instruction::PushBytes(bytes)) if bytes.as_bytes() == key
                 )
             });
-            let committed = match (
-                ControlBlock::decode(&leaf.control_block),
-                tweaked_output_key(spk),
-            ) {
-                (Ok(control_block), Some(output_key)) => control_block.verify_taproot_commitment(
-                    &bitcoin::secp256k1::Secp256k1::verification_only(),
-                    output_key,
-                    &leaf.leaf_script,
-                ),
-                _ => false,
-            };
-            key_in_leaf && committed
+            key_in_leaf && leaf.is_committed_to(spk)
         });
         if *spk != expected || !leaves_proven {
             return Err(Box::new(SpkDoesntMatchPathError {

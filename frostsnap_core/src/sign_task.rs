@@ -135,6 +135,19 @@ impl WireSignTask {
                     }
                 }
 
+                // The one thing about a script-path input the sighash does not bind: its control
+                // block, which only sizes the witness, and so the feerate we show. One that does
+                // not commit its leaf to the prevout could be padded to make any fee look modest.
+                for (input, _, owner) in tx_template.iter_our_inputs() {
+                    if !owner
+                        .leaves()
+                        .iter()
+                        .all(|leaf| leaf.is_committed_to(&owner.spk()))
+                    {
+                        return Err(SignTaskError::UncommittedLeaf { input });
+                    }
+                }
+
                 if !tx_template.has_any_inputs_to_sign() {
                     return Err(SignTaskError::NothingToSign);
                 }
@@ -226,6 +239,7 @@ pub enum SignTaskError {
     WrongPurpose,
     InvalidBitcoinTransaction,
     NothingToSign,
+    UncommittedLeaf { input: usize },
 }
 
 impl core::fmt::Display for SignTaskError {
@@ -245,6 +259,10 @@ impl core::fmt::Display for SignTaskError {
             SignTaskError::NothingToSign => {
                 write!(f, "Transaction has no inputs that belong to this wallet")
             }
+            SignTaskError::UncommittedLeaf { input } => write!(
+                f,
+                "input {input} has a control block that does not commit its leaf to the coin it spends"
+            ),
             SignTaskError::WrongPurpose => {
                 write!(
                     f,
@@ -399,6 +417,102 @@ mod test {
                 }),
                 "the disguised output is shown, as a recipient and not as ours"
             );
+        }
+    }
+
+    /// The sighash does not cover a script-path input's control block, yet its size sets the
+    /// feerate shown. A coordinator padding one, or forging one that commits to nothing, must
+    /// be refused rather than shown a flattering rate. Spliced into the encoding, because
+    /// pushing such an input is already refused on this side.
+    #[test]
+    fn an_uncommitted_control_block_is_refused() {
+        use bitcoin::taproot::{LeafVersion, TaprootBuilder};
+        let signing = signing_key();
+        let secp = bitcoin::secp256k1::Secp256k1::new();
+        let leaf_path = BitcoinBip32Path::external(NormalIndex::new(3).unwrap());
+        let leaf_key: bitcoin::XOnlyPublicKey =
+            crate::tweak::AppTweak::Bitcoin(crate::tweak::BitcoinTweak {
+                bip32_path: leaf_path,
+                kind: crate::tweak::BitcoinTweakKind::ScriptSpend,
+            })
+            .derive_xonly_key(&signing.to_xpub())
+            .into();
+        let leaf_script = bitcoin::script::Builder::new()
+            .push_x_only_key(&leaf_key)
+            .push_opcode(bitcoin::opcodes::all::OP_CHECKSIG)
+            .into_script();
+        let internal_key = bitcoin::secp256k1::Keypair::from_seckey_slice(&secp, &[9u8; 32])
+            .unwrap()
+            .x_only_public_key()
+            .0;
+        let spend_info = TaprootBuilder::new()
+            .add_leaf(0, leaf_script.clone())
+            .unwrap()
+            .finalize(&secp, internal_key)
+            .unwrap();
+        let control_block = spend_info
+            .control_block(&(leaf_script.clone(), LeafVersion::TapScript))
+            .unwrap()
+            .serialize();
+
+        let mut tx_template = TransactionTemplate::new();
+        tx_template.push_imaginary_owned_input(
+            LocalSpk::script_spend(
+                signing,
+                ScriptBuf::new_p2tr(&secp, internal_key, spend_info.merkle_root()),
+                alloc::vec![crate::bitcoin_transaction::LeafSpend::new(
+                    leaf_path,
+                    leaf_script,
+                    LeafVersion::TapScript,
+                    control_block.clone(),
+                )],
+            ),
+            Amount::from_sat(100_000),
+        );
+        tx_template.push_foreign_output(TxOut {
+            value: Amount::from_sat(10_000),
+            script_pubkey: ScriptBuf::from_bytes([&[0x51u8, 0x20][..], &[0xcc; 32][..]].concat()),
+        });
+        let cfg = bincode::config::standard();
+        let bytes =
+            bincode::encode_to_vec(WireSignTask::BitcoinTransaction(tx_template), cfg).unwrap();
+        let encoded_control_block = bincode::encode_to_vec(&control_block, cfg).unwrap();
+        let at = bytes
+            .windows(encoded_control_block.len())
+            .position(|w| w == encoded_control_block)
+            .expect("the control block is in the encoding");
+
+        let splice = |replacement: Vec<u8>| {
+            let replacement = bincode::encode_to_vec(&replacement, cfg).unwrap();
+            let patched = [
+                &bytes[..at],
+                &replacement[..],
+                &bytes[at + encoded_control_block.len()..],
+            ]
+            .concat();
+            let (task, _): (WireSignTask, _) = bincode::decode_from_slice(&patched, cfg).unwrap();
+            task.check(signing, KeyPurpose::Bitcoin(Network::Bitcoin))
+        };
+
+        assert!(
+            splice(control_block.clone()).is_ok(),
+            "the honest one is signed"
+        );
+        let padded = [&control_block[..], &[0xab; 32 * 8]].concat();
+        let mut wrong_parity = control_block.clone();
+        wrong_parity[0] ^= 1;
+        let mut other_internal_key = control_block.clone();
+        other_internal_key[1..33].copy_from_slice(&leaf_key.serialize());
+        for forged in [
+            padded,
+            wrong_parity,
+            other_internal_key,
+            alloc::vec![0xc0; 40],
+        ] {
+            assert!(matches!(
+                splice(forged),
+                Err(SignTaskError::UncommittedLeaf { input: 0 })
+            ));
         }
     }
 
