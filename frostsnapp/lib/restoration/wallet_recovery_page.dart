@@ -36,8 +36,12 @@ class WalletRecoveryPage extends StatelessWidget {
         shareCount.needed != null && shareCount.got != null && !isRecovered
         ? shareCount.needed! - shareCount.got!
         : null;
-    final isReady = isRecovered && !hasIncompatibleShares;
-    final isBlockedByIncompatibleShares = isRecovered && hasIncompatibleShares;
+    final existingWallet = coord.restoredWalletAlreadyExists(
+      restorationId: restorationState.restorationId,
+    );
+    final isReady =
+        isRecovered && !hasIncompatibleShares && existingWallet == null;
+    final isBlocked = isRecovered && !isReady;
 
     void openAddKeyDialog() {
       continueWalletRecoveryFlowDialog(
@@ -52,7 +56,14 @@ class WalletRecoveryPage extends StatelessWidget {
     final Color cardBackgroundColor;
     final Color cardTextColor;
 
-    if (isReady) {
+    if (existingWallet != null) {
+      cardIcon = Icons.error_outline_rounded;
+      cardTitle = 'Wallet already in the app';
+      cardMessage =
+          "These keys restore '$existingWallet', which is already in the app. Cancel this restoration.";
+      cardBackgroundColor = theme.colorScheme.errorContainer;
+      cardTextColor = theme.colorScheme.onErrorContainer;
+    } else if (isReady) {
       cardIcon = Icons.check_circle_outline_rounded;
       cardTitle = 'Ready to restore';
       cardMessage =
@@ -195,7 +206,7 @@ class WalletRecoveryPage extends StatelessWidget {
                               }
                             },
                           )
-                        : isBlockedByIncompatibleShares
+                        : isBlocked
                         ? FilledButton.icon(
                             icon: const Icon(Icons.check_rounded),
                             label: const Text('Restore'),
