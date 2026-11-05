@@ -107,26 +107,50 @@ impl BitcoinNetworkExt for BitcoinNetwork {
     fn validate_destination_address(&self, uri: &str) -> Result<SendToRecipient, String> {
         let uri = uri.trim();
 
-        // Try parsing as BIP21 URI first
-        if let Ok(parsed) = uri.parse::<bip21::Uri<bitcoin::address::NetworkUnchecked>>() {
+        // BIP21 says the "bitcoin:" scheme is case-insensitive, and QR codes
+        // often use "BITCOIN:" (uppercase packs into a smaller QR). `get(..8)`
+        // returns None instead of panicking if the input is shorter than 8
+        // bytes or byte 8 falls inside a multi-byte character.
+        let is_bip21_uri = uri
+            .get(..8)
+            .is_some_and(|scheme| scheme.eq_ignore_ascii_case("bitcoin:"));
+
+        if is_bip21_uri {
+            // It's a URI, so any parse failure is a URI problem.
+            let parsed = uri
+                .parse::<bip21::Uri<bitcoin::address::NetworkUnchecked>>()
+                .map_err(|e| {
+                    // The crate's outer error only displays "invalid BIP21
+                    // URI"; the useful detail is in the inner `UriError`.
+                    let detail = match e {
+                        bip21::de::Error::Uri(uri_err) => uri_err.to_string(),
+                        bip21::de::Error::Extras(never) => match never {},
+                    };
+                    format!("Invalid BIP21 URI: {}", detail)
+                })?;
+
+            // BIP21 amounts are in BTC; the crate gives us a bitcoin::Amount.
             let amount = parsed.amount.map(|amt| amt.to_sat());
+
+            // The parsed address is NetworkUnchecked: make sure it belongs to
+            // this wallet's network before we let anyone pay it.
             let address = parsed
                 .address
                 .require_network(*self)
                 .map_err(|e| format!("Wrong network: {}", e))?;
-            Ok(SendToRecipient { address, amount })
-        } else {
-            // Not a URI -- try as plain address
-            let address = bitcoin::Address::from_str(uri)
-                // Rust-bitcoin ParseError is generally inappropriate "legacy address base58 string"
-                .map_err(|_| "Invalid address".to_string())?
-                .require_network(*self)
-                .map_err(|e| format!("Wrong network: {}", e))?;
-            Ok(SendToRecipient {
-                address,
-                amount: None,
-            })
+            return Ok(SendToRecipient { address, amount });
         }
+
+        // No "bitcoin:" scheme just treat the input as a plain address.
+        let address = bitcoin::Address::from_str(uri)
+            // Rust-bitcoin ParseError is generally inappropriate "legacy address base58 string"
+            .map_err(|_| "Invalid address".to_string())?
+            .require_network(*self)
+            .map_err(|e| format!("Wrong network: {}", e))?;
+        Ok(SendToRecipient {
+            address,
+            amount: None,
+        })
     }
 
     #[frb(sync)]
@@ -935,5 +959,101 @@ mod test {
     fn parse_imported_psbt_rejects_a_file_that_is_not_a_psbt() {
         assert!(parse_imported_psbt(b"not a PSBT").is_err());
         assert!(parse_imported_psbt(&[0xFFu8; 1024]).is_err());
+    }
+}
+
+#[cfg(test)]
+mod bip21_tests {
+    use super::*;
+    const MAINNET_ADDR: &str = "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4";
+    const TESTNET_ADDR: &str = "tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx";
+    #[test]
+    fn plain_address() {
+        let r = BitcoinNetwork::Bitcoin
+            .validate_destination_address(MAINNET_ADDR)
+            .unwrap();
+        assert_eq!(r.address.to_string(), MAINNET_ADDR);
+        assert_eq!(r.amount, None);
+    }
+    #[test]
+    fn uri_without_params() {
+        let uri = format!("bitcoin:{MAINNET_ADDR}");
+        let r = BitcoinNetwork::Bitcoin
+            .validate_destination_address(&uri)
+            .unwrap();
+        assert_eq!(r.address.to_string(), MAINNET_ADDR);
+        assert_eq!(r.amount, None);
+    }
+    #[test]
+    fn plain_address_uppercase_and_whitespace() {
+        let input = format!(" {} \n", MAINNET_ADDR.to_uppercase());
+        let r = BitcoinNetwork::Bitcoin
+            .validate_destination_address(&input)
+            .unwrap();
+        assert_eq!(r.address.to_string(), MAINNET_ADDR);
+    }
+    #[test]
+    fn uri_with_amount() {
+        let uri = format!("bitcoin:{MAINNET_ADDR}?amount=0.001");
+        let r = BitcoinNetwork::Bitcoin
+            .validate_destination_address(&uri)
+            .unwrap();
+        assert_eq!(r.amount, Some(100_000));
+    }
+    #[test]
+    fn uri_all_uppercase() {
+        let uri = format!("BITCOIN:{}", MAINNET_ADDR.to_uppercase());
+        let r = BitcoinNetwork::Bitcoin
+            .validate_destination_address(&uri)
+            .unwrap();
+        assert_eq!(r.address.to_string(), MAINNET_ADDR);
+    }
+    #[test]
+    fn uri_with_unknown_optional_param_is_ok() {
+        let uri = format!("bitcoin:{MAINNET_ADDR}?somethingnew=hello");
+        assert!(BitcoinNetwork::Bitcoin
+            .validate_destination_address(&uri)
+            .is_ok());
+    }
+    #[test]
+    fn plain_address_wrong_network() {
+        let err = BitcoinNetwork::Bitcoin
+            .validate_destination_address(TESTNET_ADDR)
+            .unwrap_err();
+        assert!(err.contains("Wrong network"), "got: {err}");
+    }
+
+    #[test]
+    fn uri_address_wrong_network() {
+        let uri = format!("bitcoin:{TESTNET_ADDR}");
+        let err = BitcoinNetwork::Bitcoin
+            .validate_destination_address(&uri)
+            .unwrap_err();
+        assert!(err.contains("Wrong network"), "got: {err}");
+    }
+    #[test]
+    fn garbage() {
+        assert!(BitcoinNetwork::Bitcoin
+            .validate_destination_address("hello")
+            .is_err());
+        assert!(BitcoinNetwork::Bitcoin
+            .validate_destination_address("")
+            .is_err());
+    }
+    #[test]
+    fn unknown_required_param_rejected_with_clear_error() {
+        let uri = format!("bitcoin:{MAINNET_ADDR}?req-somethingnew=1");
+        let err = BitcoinNetwork::Bitcoin
+            .validate_destination_address(&uri)
+            .unwrap_err();
+        assert!(err.contains("req-somethingnew"), "got: {err}");
+    }
+    #[test]
+    fn bad_amount_gives_clear_error() {
+        let uri = format!("bitcoin:{MAINNET_ADDR}?amount=lots");
+        let err = BitcoinNetwork::Bitcoin
+            .validate_destination_address(&uri)
+            .unwrap_err();
+        assert!(err.to_lowercase().contains("amount"), "got: {err}");
     }
 }
