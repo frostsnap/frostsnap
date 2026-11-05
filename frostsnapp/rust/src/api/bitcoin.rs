@@ -175,10 +175,16 @@ impl Transaction {
     pub(crate) fn from_template(tx_temp: &TransactionTemplate<ScopedTo>) -> Self {
         let raw_tx = tx_temp.to_rust_bitcoin_tx();
         let txid = tx_temp.txid();
+        // A script-path input has no wallet path, so `our_spks` leaves it out, but we are
+        // spending it: without it here a Liana recovery spend would show as nothing leaving.
+        let script_path_inputs = tx_temp.iter_our_inputs().filter_map(|(_, _, owner)| {
+            Some((owner.spk(), owner.leaves().first()?.path.index.to_u32()))
+        });
         let is_mine = tx_temp
             .our_spks()
             .into_iter()
             .map(|(spk, path)| (spk, path.index.to_u32()))
+            .chain(script_path_inputs)
             .collect::<HashMap<_, _>>();
         let prevouts = tx_temp
             .inputs()
@@ -837,6 +843,58 @@ mod test {
         assert!(ours.is_mine, "an owned output is ours at any depth");
         assert_eq!(ours.derivation_index, Some(400_000));
         assert!(!recipients[0].is_mine, "the foreign output is not ours");
+    }
+
+    /// A script-path coin has no wallet path, yet spending it is still money leaving: the
+    /// review screen must show a send, as the device does.
+    #[test]
+    fn a_script_path_spend_shows_as_a_send() {
+        use bitcoin::taproot::{LeafVersion, TaprootBuilder};
+        use frostsnap_core::bitcoin_transaction::LeafSpend;
+
+        let key = key();
+        let secp = bitcoin::secp256k1::Secp256k1::new();
+        let path = BitcoinBip32Path::external(idx(3));
+        let leaf_key = LeafSpend::new(path, ScriptBuf::new(), LeafVersion::TapScript, vec![])
+            .signing_xonly(key);
+        let leaf_script = bitcoin::script::Builder::new()
+            .push_x_only_key(&leaf_key)
+            .push_opcode(bitcoin::opcodes::all::OP_CHECKSIG)
+            .into_script();
+        let internal_key = bitcoin::secp256k1::Keypair::from_seckey_slice(&secp, &[9u8; 32])
+            .unwrap()
+            .x_only_public_key()
+            .0;
+        let spend_info = TaprootBuilder::new()
+            .add_leaf(0, leaf_script.clone())
+            .unwrap()
+            .finalize(&secp, internal_key)
+            .unwrap();
+        let control_block = spend_info
+            .control_block(&(leaf_script.clone(), LeafVersion::TapScript))
+            .unwrap()
+            .serialize();
+        let owner = LocalSpk::script_spend(
+            key,
+            ScriptBuf::new_p2tr(&secp, internal_key, spend_info.merkle_root()),
+            vec![LeafSpend::new(
+                path,
+                leaf_script,
+                LeafVersion::TapScript,
+                control_block,
+            )],
+        );
+
+        let mut template = TransactionTemplate::new();
+        template.push_imaginary_owned_input(owner, Amount::from_sat(100_000));
+        template.push_foreign_output(TxOut {
+            value: Amount::from_sat(90_000),
+            script_pubkey: ScriptBuf::from_bytes([&[0x51u8, 0x20][..], &[0xdd; 32][..]].concat()),
+        });
+
+        let tx = Transaction::from_template(&template.as_seen_by(key));
+        assert_eq!(tx.balance_delta(), Some(-100_000));
+        assert!(!tx.recipients()[0].is_mine);
     }
 
     /// The old `details()` looked prevouts up in the wallet's graph, which does not contain a
