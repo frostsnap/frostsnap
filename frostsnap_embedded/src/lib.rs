@@ -7,6 +7,8 @@ extern crate std;
 extern crate alloc;
 
 mod ab_write;
+mod erase;
+pub use erase::*;
 #[cfg(test)]
 pub mod test;
 pub use ab_write::*;
