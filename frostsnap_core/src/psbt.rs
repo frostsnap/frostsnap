@@ -1,10 +1,10 @@
 use crate::{
     bitcoin_transaction::{
-        LocalSpk, PushInput, ScopedTo, SignatureCountMismatch, SpkDoesntMatchPathError,
-        TransactionTemplate,
+        LeafSpend, LocalSpend, LocalSpk, PushInput, ScopedTo, SignatureCountMismatch,
+        SpkDoesntMatchPathError, TransactionTemplate,
     },
     message::EncodedSignature,
-    tweak::{AppTweakKind, BitcoinBip32Path},
+    tweak::{AppTweakKind, BitcoinBip32Path, LeafPath},
     MasterAppkey,
 };
 use alloc::{
@@ -32,9 +32,21 @@ impl TransactionTemplate {
     /// to whichever is signing. Anything none of the keys owns is recorded as foreign rather
     /// than rejected — a PSBT is only refused outright when it is malformed, or when nothing
     /// in it is ours to sign.
+    ///
+    /// Refuses any input of ours that spends a scripted output; see [`Self::from_psbt_with`].
     pub fn from_psbt(
         psbt: &Psbt,
         master_appkeys: &[MasterAppkey],
+    ) -> Result<TransactionTemplate, PsbtValidationError> {
+        Self::from_psbt_with(psbt, master_appkeys, ScriptedSpends::Refuse)
+    }
+
+    /// [`Self::from_psbt`], saying whether inputs of ours that spend a scripted output may be
+    /// signed.
+    pub fn from_psbt_with(
+        psbt: &Psbt,
+        master_appkeys: &[MasterAppkey],
+        scripted_spends: ScriptedSpends,
     ) -> Result<TransactionTemplate, PsbtValidationError> {
         // A fingerprint is four bytes, so two of our own keys can share one. Holding every
         // candidate and letting the script decide means a collision cannot hide the real owner.
@@ -57,6 +69,8 @@ impl TransactionTemplate {
         let mut already_signed_count = 0;
         let mut foreign_count = 0;
         let mut owned_count = 0;
+        // The first input left foreign only because scripted spends are refused.
+        let mut refused_scripted_input = None;
 
         for (i, input) in psbt.inputs.iter().enumerate() {
             let txin = unsigned_tx.input.get(i).ok_or_else(|| {
@@ -99,23 +113,71 @@ impl TransactionTemplate {
                 );
             }
 
-            let (bip32_path, candidates) = match claimed_path(
-                input.tap_internal_key.as_ref(),
-                &input.tap_key_origins,
-                &ours_by_fingerprint,
-            ) {
-                Ok(claim) => claim,
-                // Refusing outright rather than skipping: an input claiming our fingerprint at a
-                // path we cannot derive is a PSBT we do not understand, not someone else's coin.
-                Err(NotOurs::Hardened) => {
-                    return Err(PsbtValidationError::Other(
-                        "can't sign with hardened derivation".to_string(),
-                    ))
-                }
-                Err(reason) => bail!(foreign_count, reason.to_string()),
-            };
+            // The key path is preferred: it is cheaper and reveals nothing of the script tree.
+            let (candidates, spend) =
+                match claimed_path(
+                    input.tap_internal_key.as_ref(),
+                    &input.tap_key_origins,
+                    &ours_by_fingerprint,
+                ) {
+                    Ok((bip32_path, candidates)) => (
+                        candidates,
+                        LocalSpend::KeySpend {
+                            bip32_path,
+                            merkle_root: input.tap_merkle_root,
+                        },
+                    ),
+                    // Refusing outright rather than skipping: an input claiming our fingerprint at a
+                    // path we cannot derive is a PSBT we do not understand, not someone else's coin.
+                    Err(NotOurs::Hardened) => return Err(hardened_error()),
+                    // Refusing scripted spends reads the input exactly as before they existed, so a
+                    // PSBT mixing them with plain inputs still signs those.
+                    Err(reason) if scripted_spends == ScriptedSpends::Refuse => {
+                        let names_our_leaf = input.tap_key_origins.values().any(
+                            |(leaf_hashes, (fingerprint, _))| {
+                                !leaf_hashes.is_empty()
+                                    && ours_by_fingerprint.contains_key(fingerprint)
+                            },
+                        );
+                        if names_our_leaf {
+                            refused_scripted_input.get_or_insert(i);
+                        }
+                        bail!(foreign_count, reason.to_string())
+                    }
+                    Err(reason) => match claimed_leaf(input, txout, &ours_by_fingerprint)? {
+                        Some(claim) => claim,
+                        None => bail!(
+                            foreign_count,
+                            format!("{reason}, and no leaf it provides holds one of our keys")
+                        ),
+                    },
+                };
 
-            push_owned(candidates, bip32_path, |owner| {
+            // BIP174: a signer must only sign with the sighash type the PSBT specifies. We sign
+            // with DEFAULT, which commits to exactly what ALL does, so either is honoured.
+            if let Some(sighash_type) = input.sighash_type {
+                if !matches!(sighash_type.to_u32(), 0 | 1) {
+                    return Err(PsbtValidationError::Other(format!(
+                        "PSBT input {i} asks for sighash type {sighash_type}, but this wallet only \
+                         signs with SIGHASH_DEFAULT or SIGHASH_ALL"
+                    )));
+                }
+            }
+
+            // Our internal key under a script tree; master refused this too, as a mismatch.
+            if scripted_spends == ScriptedSpends::Refuse
+                && !matches!(
+                    spend,
+                    LocalSpend::KeySpend {
+                        merkle_root: None,
+                        ..
+                    }
+                )
+            {
+                return Err(PsbtValidationError::ScriptedSpend { input: i });
+            }
+
+            push_owned(candidates, &spend, |owner| {
                 template.push_owned_input(input_push, owner)
             })?;
             owned_count += 1;
@@ -123,6 +185,9 @@ impl TransactionTemplate {
 
         for (i, txout) in unsigned_tx.output.iter().enumerate() {
             let claim = match psbt.outputs.get(i) {
+                // Only a plain BIP86 output counts as ours, so one committing to a script tree is
+                // money going where those scripts say, and is shown as such.
+                Some(output) if output.tap_tree.is_some() => Err(NotOurs::ScriptTree),
                 Some(output) => claimed_path(
                     output.tap_internal_key.as_ref(),
                     &output.tap_key_origins,
@@ -132,9 +197,14 @@ impl TransactionTemplate {
             };
 
             match claim {
-                Ok((bip32_path, candidates)) => push_owned(candidates, bip32_path, |owner| {
-                    template.push_owned_output_checked(txout, owner)
-                })?,
+                Ok((bip32_path, candidates)) => push_owned(
+                    candidates,
+                    &LocalSpend::KeySpend {
+                        bip32_path,
+                        merkle_root: None,
+                    },
+                    |owner| template.push_owned_output_checked(txout, owner),
+                )?,
                 Err(reason) => {
                     event!(Level::INFO, "PSBT output {i} isn't ours because {reason}");
                     template.push_foreign_output(txout.clone());
@@ -143,6 +213,9 @@ impl TransactionTemplate {
         }
 
         if owned_count == 0 {
+            if let Some(input) = refused_scripted_input {
+                return Err(PsbtValidationError::ScriptedSpend { input });
+            }
             return Err(PsbtValidationError::NothingToSign {
                 total_inputs: psbt.inputs.len(),
                 foreign_count,
@@ -165,19 +238,28 @@ impl TransactionTemplate<ScopedTo> {
         signatures: &[EncodedSignature],
         psbt: &Psbt,
     ) -> Result<Psbt, AttachSignaturesError> {
-        let pairs = self.signatures_by_input_index(signatures)?;
+        let slots = self.signatures_by_sign_slot(signatures)?;
 
         let mut psbt = psbt.clone();
-        for (i, signature) in pairs {
+        for (i, owner, slot, signature) in slots {
             let input = psbt
                 .inputs
                 .get_mut(i)
                 .ok_or(AttachSignaturesError::NoSuchInput(i))?;
-            input.tap_key_sig = Some(bitcoin::taproot::Signature {
+            let signature = bitcoin::taproot::Signature {
                 signature: bitcoin::secp256k1::schnorr::Signature::from_slice(&signature.0)
                     .map_err(|_| AttachSignaturesError::MalformedSignature(i))?,
                 sighash_type: bitcoin::sighash::TapSighashType::Default,
-            });
+            };
+            match slot {
+                None => input.tap_key_sig = Some(signature),
+                Some(leaf) => {
+                    input.tap_script_sigs.insert(
+                        (leaf.signing_xonly(owner.master_appkey), leaf.leaf_hash()),
+                        signature,
+                    );
+                }
+            }
         }
 
         Ok(psbt)
@@ -221,6 +303,7 @@ enum NotOurs {
     ForeignFingerprint,
     Hardened,
     UnusualPath(String),
+    ScriptTree,
 }
 
 impl core::fmt::Display for NotOurs {
@@ -233,6 +316,7 @@ impl core::fmt::Display for NotOurs {
             }
             NotOurs::Hardened => write!(f, "its derivation path is hardened"),
             NotOurs::UnusualPath(path) => write!(f, "it has an unusual derivation path {path:?}"),
+            NotOurs::ScriptTree => write!(f, "it commits to a script tree"),
         }
     }
 }
@@ -250,11 +334,24 @@ fn claimed_path<'a>(
     ours_by_fingerprint: &'a BTreeMap<Fingerprint, Vec<MasterAppkey>>,
 ) -> Result<(BitcoinBip32Path, &'a [MasterAppkey]), NotOurs> {
     let tap_internal_key = tap_internal_key.ok_or(NotOurs::NoInternalKey)?;
-    let (fingerprint, derivation_path) = tap_key_origins
+    let key_source = tap_key_origins
         .get(tap_internal_key)
         .map(|(_, key_source)| key_source)
         .ok_or(NotOurs::NoOrigin)?;
+    our_path(
+        key_source,
+        ours_by_fingerprint,
+        BitcoinBip32Path::from_u32_slice,
+    )
+}
 
+/// The path `key_source` names, as `fits` reads it, and every key of ours whose fingerprint
+/// it names. A hardened path is never ours, whatever `fits` accepts.
+fn our_path<'a, P>(
+    (fingerprint, derivation_path): &bip32::KeySource,
+    ours_by_fingerprint: &'a BTreeMap<Fingerprint, Vec<MasterAppkey>>,
+    fits: impl FnOnce(&[u32]) -> Option<P>,
+) -> Result<(P, &'a [MasterAppkey]), NotOurs> {
     let candidates = ours_by_fingerprint
         .get(fingerprint)
         .ok_or(NotOurs::ForeignFingerprint)?;
@@ -267,7 +364,7 @@ fn claimed_path<'a>(
         })
         .collect::<Result<Vec<_>, _>>()?;
 
-    let bip32_path = BitcoinBip32Path::from_u32_slice(&path).ok_or_else(|| {
+    let fitted = fits(&path).ok_or_else(|| {
         NotOurs::UnusualPath(
             path.iter()
                 .map(|n| n.to_string())
@@ -276,7 +373,75 @@ fn claimed_path<'a>(
         )
     })?;
 
-    Ok((bip32_path, candidates))
+    Ok((fitted, candidates))
+}
+
+type LeafClaim<'a> = (&'a [MasterAppkey], LocalSpend);
+
+/// Every tapscript leaf of `input` that one of our keys is in, as a script-path spend.
+///
+/// The only place that decides which leaves we sign. Every key origin naming our fingerprint
+/// and some leaves is matched against the leaves `tap_scripts` provides, and all of them are
+/// signed, as Bitcoin Core and BDK do: which spending path is finally taken is the finaliser's
+/// choice, and our keys may sit at different paths in different leaves. As with the key path,
+/// which candidate key it is, and whether each leaf really holds that key under this prevout,
+/// is [`push_owned`]'s to settle, and one leaf failing fails the PSBT.
+///
+/// A leaf key may sit on any normal keychain, not only receive or change: liana-gui derives a
+/// signer reused in a recovery path on keychains 2, 3 and so on. Any other shape of path is
+/// skipped, as for a key-path spend.
+///
+/// Leaves are gathered under the first of our fingerprints found: one owner signs an input, and
+/// a leaf under another of our keys is that key's to sign.
+fn claimed_leaf<'a>(
+    input: &bitcoin::psbt::Input,
+    txout: &bitcoin::TxOut,
+    ours_by_fingerprint: &'a BTreeMap<Fingerprint, Vec<MasterAppkey>>,
+) -> Result<Option<LeafClaim<'a>>, PsbtValidationError> {
+    let mut owner_candidates: Option<&[MasterAppkey]> = None;
+    let mut leaves = Vec::new();
+    for (leaf_hashes, key_source) in input.tap_key_origins.values() {
+        if leaf_hashes.is_empty() {
+            continue;
+        }
+        let (path, candidates) =
+            match our_path(key_source, ours_by_fingerprint, LeafPath::from_u32_slice) {
+                Ok(claim) => claim,
+                Err(NotOurs::Hardened) => return Err(hardened_error()),
+                Err(_) => continue,
+            };
+        if !core::ptr::eq(*owner_candidates.get_or_insert(candidates), candidates) {
+            continue;
+        }
+        for (control_block, (leaf_script, leaf_version)) in &input.tap_scripts {
+            if leaf_hashes.contains(&taproot::TapLeafHash::from_script(
+                leaf_script,
+                *leaf_version,
+            )) {
+                leaves.push(LeafSpend::new(
+                    path,
+                    leaf_script.clone(),
+                    *leaf_version,
+                    control_block.serialize(),
+                ));
+            }
+        }
+    }
+
+    Ok(match owner_candidates {
+        Some(candidates) if !leaves.is_empty() => Some((
+            candidates,
+            LocalSpend::ScriptSpend {
+                script_pubkey: txout.script_pubkey.clone(),
+                leaves,
+            },
+        )),
+        _ => None,
+    })
+}
+
+fn hardened_error() -> PsbtValidationError {
+    PsbtValidationError::Other("can't sign with hardened derivation".to_string())
 }
 
 /// Pushes the script under whichever candidate key actually derives it.
@@ -286,14 +451,14 @@ fn claimed_path<'a>(
 /// recorded as foreign — silently demoting it would let a PSBT lie about us without saying so.
 fn push_owned(
     candidates: &[MasterAppkey],
-    bip32_path: BitcoinBip32Path,
+    spend: &LocalSpend,
     mut push: impl FnMut(LocalSpk) -> Result<(), Box<SpkDoesntMatchPathError>>,
 ) -> Result<(), Box<SpkDoesntMatchPathError>> {
     let mut last_mismatch = None;
     for &master_appkey in candidates {
         match push(LocalSpk {
             master_appkey,
-            bip32_path,
+            spend: spend.clone(),
         }) {
             Ok(()) => return Ok(()),
             Err(mismatch) => last_mismatch = Some(mismatch),
@@ -303,12 +468,29 @@ fn push_owned(
     Err(last_mismatch.expect("a fingerprint is only in the map because a key produced it"))
 }
 
+/// Whether a PSBT import may sign inputs that spend a scripted output: a key-path spend of an
+/// output committing to a script tree, or a script-path spend of a leaf.
+///
+/// Experimental, so refused unless asked for: the keys alone are not enough to find and spend
+/// such coins again, which is a burden plain BIP86 coins never put on the user.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScriptedSpends {
+    Refuse,
+    Allow,
+}
+
 #[derive(Debug, Clone)]
 pub enum PsbtValidationError {
     NothingToSign {
         total_inputs: usize,
         foreign_count: usize,
         already_signed_count: usize,
+    },
+    /// An input of ours spends a scripted output and [`ScriptedSpends::Refuse`] was asked for:
+    /// our internal key under a script tree, or our key only in a leaf when nothing else in the
+    /// PSBT is ours to sign.
+    ScriptedSpend {
+        input: usize,
     },
     Other(String),
 }
@@ -352,6 +534,11 @@ impl core::fmt::Display for PsbtValidationError {
 
                 write!(f, ".")
             }
+            PsbtValidationError::ScriptedSpend { input } => write!(
+                f,
+                "PSBT input {input} spends a scripted output (a taproot output with script \
+                 conditions). Signing these is experimental and needs developer mode."
+            ),
             PsbtValidationError::Other(msg) => write!(f, "{msg}"),
         }
     }
@@ -365,7 +552,7 @@ mod test {
     use crate::{
         bitcoin_transaction::SpkOwner,
         schnorr_fun::fun::{g, G},
-        tweak::{AppTweak, NormalIndex},
+        tweak::{AppTweak, BitcoinTweak, NormalIndex},
     };
     use bitcoin::{
         absolute::LockTime,
@@ -390,15 +577,11 @@ mod test {
     }
 
     fn spk_of(key: MasterAppkey, path: BitcoinBip32Path) -> ScriptBuf {
-        LocalSpk {
-            master_appkey: key,
-            bip32_path: path,
-        }
-        .spk()
+        LocalSpk::key_spend(key, path).spk()
     }
 
     fn internal_key_of(key: MasterAppkey, path: BitcoinBip32Path) -> XOnlyPublicKey {
-        AppTweak::Bitcoin(path)
+        AppTweak::Bitcoin(BitcoinTweak::key_spend(path))
             .derive_xonly_key(&key.to_xpub())
             .into()
     }
@@ -407,8 +590,9 @@ mod test {
         key.derive_appkey(AppTweakKind::Bitcoin).fingerprint()
     }
 
-    fn derivation_of(path: BitcoinBip32Path) -> DerivationPath {
-        path.path_segments_from_bitcoin_appkey()
+    fn derivation_of(path: impl Into<LeafPath>) -> DerivationPath {
+        path.into()
+            .path_segments_from_bitcoin_appkey()
             .map(|i| ChildNumber::from_normal_idx(i).expect("test path is unhardened"))
             .collect()
     }
@@ -514,10 +698,7 @@ mod test {
 
         assert_eq!(
             template.inputs()[0].owner().local_owner(),
-            Some(&LocalSpk {
-                master_appkey: key,
-                bip32_path: path
-            })
+            Some(&LocalSpk::key_spend(key, path))
         );
     }
 
@@ -786,10 +967,7 @@ mod test {
 
         assert_eq!(
             template.outputs()[0].owner().local_owner(),
-            Some(&LocalSpk {
-                master_appkey: key,
-                bip32_path: change_path
-            })
+            Some(&LocalSpk::key_spend(key, change_path))
         );
         assert_eq!(
             template.outputs()[1].owner(),
@@ -986,10 +1164,7 @@ mod test {
 
         assert_eq!(
             template.outputs()[0].owner().local_owner(),
-            Some(&LocalSpk {
-                master_appkey: key,
-                bip32_path: deep
-            })
+            Some(&LocalSpk::key_spend(key, deep))
         );
     }
 
@@ -1139,5 +1314,541 @@ mod test {
         assert!(template
             .attach_signatures_to_psbt(&[signature(1), signature(2)], &psbt)
             .is_err());
+    }
+
+    /// The untweaked key at `path`: a taproot internal key, or the key that goes in a leaf.
+    fn raw_key_of(key: MasterAppkey, path: impl Into<LeafPath>) -> XOnlyPublicKey {
+        AppTweak::Bitcoin(BitcoinTweak::ScriptSpend {
+            leaf_path: path.into(),
+        })
+        .derive_xonly_key(&key.to_xpub())
+        .into()
+    }
+
+    fn checksig_leaf(key: XOnlyPublicKey) -> ScriptBuf {
+        bitcoin::script::Builder::new()
+            .push_x_only_key(&key)
+            .push_opcode(bitcoin::opcodes::all::OP_CHECKSIG)
+            .into_script()
+    }
+
+    /// A key that is nobody's here: the internal key of an output only its leaves can spend.
+    fn stranger_internal_key() -> XOnlyPublicKey {
+        bitcoin::secp256k1::Keypair::from_seckey_slice(
+            &bitcoin::secp256k1::Secp256k1::new(),
+            &[9u8; 32],
+        )
+        .unwrap()
+        .x_only_public_key()
+        .0
+    }
+
+    fn tree_of(leaves: &[ScriptBuf], internal_key: XOnlyPublicKey) -> taproot::TaprootSpendInfo {
+        let depth = if leaves.len() == 1 { 0 } else { 1 };
+        leaves
+            .iter()
+            .fold(taproot::TaprootBuilder::new(), |builder, leaf| {
+                builder.add_leaf(depth, leaf.clone()).unwrap()
+            })
+            .finalize(
+                &bitcoin::secp256k1::Secp256k1::verification_only(),
+                internal_key,
+            )
+            .unwrap()
+    }
+
+    /// A PSBT input for an output whose leaves hold our key at `path`, annotated the way a
+    /// producer such as Liana annotates one: a key origin naming the leaves our key is in, and
+    /// a script and control block for each leaf.
+    fn leaf_input(
+        key: MasterAppkey,
+        path: impl Into<LeafPath>,
+        leaves: &[ScriptBuf],
+        value: u64,
+    ) -> psbt::Input {
+        let path = path.into();
+        let secp = bitcoin::secp256k1::Secp256k1::verification_only();
+        let spend_info = tree_of(leaves, stranger_internal_key());
+        let tap_scripts = leaves
+            .iter()
+            .map(|leaf| {
+                let leaf_version = taproot::LeafVersion::TapScript;
+                let control_block = spend_info
+                    .control_block(&(leaf.clone(), leaf_version))
+                    .unwrap();
+                (control_block, (leaf.clone(), leaf_version))
+            })
+            .collect();
+        let leaf_hashes = leaves
+            .iter()
+            .map(|leaf| taproot::TapLeafHash::from_script(leaf, taproot::LeafVersion::TapScript))
+            .collect();
+        psbt::Input {
+            witness_utxo: Some(TxOut {
+                value: Amount::from_sat(value),
+                script_pubkey: ScriptBuf::new_p2tr(
+                    &secp,
+                    stranger_internal_key(),
+                    spend_info.merkle_root(),
+                ),
+            }),
+            tap_internal_key: Some(stranger_internal_key()),
+            tap_merkle_root: spend_info.merkle_root(),
+            tap_key_origins: [(
+                raw_key_of(key, path),
+                (leaf_hashes, (fingerprint_of(key), derivation_of(path))),
+            )]
+            .into_iter()
+            .collect(),
+            tap_scripts,
+            ..Default::default()
+        }
+    }
+
+    /// We are the internal key of an output that also commits to a script tree: a key-path
+    /// spend, tweaked by the tree's root, and the signature goes in `tap_key_sig`.
+    #[test]
+    fn our_internal_key_under_a_script_tree_is_a_key_path_spend() {
+        let key = our_key();
+        let path = BitcoinBip32Path::external(idx(4));
+        let internal_key = raw_key_of(key, path);
+        let recovery_leaf = checksig_leaf(stranger_internal_key());
+        let merkle_root = tree_of(&[recovery_leaf], internal_key).merkle_root();
+
+        let input = psbt::Input {
+            witness_utxo: Some(TxOut {
+                value: Amount::from_sat(100_000),
+                script_pubkey: ScriptBuf::new_p2tr(
+                    &bitcoin::secp256k1::Secp256k1::verification_only(),
+                    internal_key,
+                    merkle_root,
+                ),
+            }),
+            tap_internal_key: Some(internal_key),
+            tap_merkle_root: merkle_root,
+            tap_key_origins: [(
+                internal_key,
+                (vec![], (fingerprint_of(key), derivation_of(path))),
+            )]
+            .into_iter()
+            .collect(),
+            ..Default::default()
+        };
+        let psbt = psbt_of(vec![input], vec![foreign_txout(90_000)]);
+
+        let template = TransactionTemplate::from_psbt_with(&psbt, &[key], ScriptedSpends::Allow)
+            .unwrap()
+            .as_seen_by(key);
+        assert_eq!(
+            template.inputs()[0].owner().local_owner(),
+            Some(&LocalSpk::key_spend_with_merkle_root(
+                key,
+                path,
+                merkle_root
+            ))
+        );
+
+        let signed = template
+            .attach_signatures_to_psbt(&[signature(7)], &psbt)
+            .unwrap();
+        assert_eq!(
+            signed.inputs[0].tap_key_sig.unwrap().signature.serialize()[0],
+            7
+        );
+        assert!(signed.inputs[0].tap_script_sigs.is_empty());
+    }
+
+    /// Our key is in a leaf, not the internal key: a script-path spend of that leaf, and the
+    /// signature goes in `tap_script_sigs` under our key and the leaf's hash.
+    #[test]
+    fn our_key_in_a_leaf_is_a_script_path_spend() {
+        let key = our_key();
+        let path = BitcoinBip32Path::external(idx(4));
+        let our_leaf = checksig_leaf(raw_key_of(key, path));
+        let input = leaf_input(key, path, core::slice::from_ref(&our_leaf), 100_000);
+        let (control_block, _) = input.tap_scripts.iter().next().unwrap();
+        let expected = LocalSpk::script_spend(
+            key,
+            input.witness_utxo.as_ref().unwrap().script_pubkey.clone(),
+            vec![LeafSpend::new(
+                path,
+                our_leaf.clone(),
+                taproot::LeafVersion::TapScript,
+                control_block.serialize(),
+            )],
+        );
+        let psbt = psbt_of(vec![input], vec![foreign_txout(90_000)]);
+
+        let template = TransactionTemplate::from_psbt_with(&psbt, &[key], ScriptedSpends::Allow)
+            .unwrap()
+            .as_seen_by(key);
+        assert_eq!(template.inputs()[0].owner().local_owner(), Some(&expected));
+
+        let signed = template
+            .attach_signatures_to_psbt(&[signature(7)], &psbt)
+            .unwrap();
+        let leaf_hash =
+            taproot::TapLeafHash::from_script(&our_leaf, taproot::LeafVersion::TapScript);
+        assert_eq!(
+            signed.inputs[0].tap_script_sigs[&(raw_key_of(key, path), leaf_hash)]
+                .signature
+                .serialize()[0],
+            7
+        );
+        assert!(signed.inputs[0].tap_key_sig.is_none());
+    }
+
+    fn leaf_path(segments: &[u32]) -> LeafPath {
+        LeafPath::from_u32_slice(segments).expect("test leaf path fits")
+    }
+
+    /// One Frostsnap in both a Liana primary path and its recovery path. liana-gui derives a
+    /// reused signer at multipath `<2n;2n+1>`, so the recovery key sits on keychain 2, a path
+    /// no wallet address uses. Both leaves are signed, each signature in the slot for its own
+    /// key and leaf.
+    #[test]
+    fn a_signer_in_liana_primary_and_recovery_paths_signs_both() {
+        let key = our_key();
+        let primary = leaf_path(&[0, 0, 0, 4]);
+        let recovery = leaf_path(&[0, 0, 2, 4]);
+        let primary_leaf = checksig_leaf(raw_key_of(key, primary));
+        let recovery_leaf = bitcoin::script::Builder::new()
+            .push_x_only_key(&raw_key_of(key, recovery))
+            .push_opcode(bitcoin::opcodes::all::OP_CHECKSIGVERIFY)
+            .push_int(144)
+            .push_opcode(bitcoin::opcodes::all::OP_CSV)
+            .into_script();
+        let leaves = [primary_leaf.clone(), recovery_leaf.clone()];
+        let mut input = leaf_input(key, primary, &leaves, 100_000);
+        let hash_of = |leaf: &ScriptBuf| {
+            taproot::TapLeafHash::from_script(leaf, taproot::LeafVersion::TapScript)
+        };
+        input.tap_key_origins = [(primary, &primary_leaf), (recovery, &recovery_leaf)]
+            .into_iter()
+            .map(|(path, leaf)| {
+                (
+                    raw_key_of(key, path),
+                    (
+                        vec![hash_of(leaf)],
+                        (fingerprint_of(key), derivation_of(path)),
+                    ),
+                )
+            })
+            .collect();
+        let psbt = psbt_of(vec![input], vec![foreign_txout(90_000)]);
+
+        let template = TransactionTemplate::from_psbt_with(&psbt, &[key], ScriptedSpends::Allow)
+            .unwrap()
+            .as_seen_by(key);
+        let owner = template.inputs()[0].owner().local_owner().unwrap();
+        let paths = owner
+            .leaves()
+            .iter()
+            .map(|leaf| (leaf.path, leaf.leaf_hash()))
+            .collect::<BTreeMap<_, _>>();
+        assert_eq!(
+            paths,
+            [
+                (primary, hash_of(&primary_leaf)),
+                (recovery, hash_of(&recovery_leaf))
+            ]
+            .into_iter()
+            .collect()
+        );
+        assert!(
+            !template.owns_every_input(),
+            "which of two leaves to satisfy is the finaliser's choice"
+        );
+
+        let tags = owner
+            .leaves()
+            .iter()
+            .map(|leaf| (leaf.path, if leaf.path == primary { 1 } else { 2 }))
+            .collect::<Vec<_>>();
+        let signatures = tags
+            .iter()
+            .map(|(_, tag)| signature(*tag))
+            .collect::<Vec<_>>();
+        let signed = template
+            .attach_signatures_to_psbt(&signatures, &psbt)
+            .unwrap();
+        for (path, tag) in tags {
+            let leaf = if path == primary {
+                &primary_leaf
+            } else {
+                &recovery_leaf
+            };
+            assert_eq!(
+                signed.inputs[0].tap_script_sigs[&(raw_key_of(key, path), hash_of(leaf))]
+                    .signature
+                    .serialize()[0],
+                tag
+            );
+        }
+        assert_eq!(signed.inputs[0].tap_script_sigs.len(), 2);
+        assert!(signed.inputs[0].tap_key_sig.is_none());
+    }
+
+    /// A leaf origin one segment deeper than a wallet path, such as the `xpub/1/<0;1>/*` form
+    /// in Liana's descriptor tests, is an unusual path and not signed. Keys at mixed depths are
+    /// the collision BIP388 warns about, and no Liana or BIP388 wallet produces one.
+    #[test]
+    fn a_leaf_origin_deeper_than_a_wallet_path_is_not_signed() {
+        let key = our_key();
+        let segments = [0, 0, 1, 0, 7];
+        use crate::tweak::TweakableKey;
+        let leaf_key: XOnlyPublicKey = key
+            .to_xpub()
+            .derive_bip32([AppTweakKind::Bitcoin as u32].into_iter().chain(segments))
+            .into_key()
+            .into_xonly()
+            .into();
+        let leaf = checksig_leaf(leaf_key);
+        let mut input = leaf_input(
+            key,
+            leaf_path(&[0, 0, 0, 0]),
+            core::slice::from_ref(&leaf),
+            100_000,
+        );
+        input.tap_key_origins = [(
+            leaf_key,
+            (
+                vec![taproot::TapLeafHash::from_script(
+                    &leaf,
+                    taproot::LeafVersion::TapScript,
+                )],
+                (
+                    fingerprint_of(key),
+                    segments
+                        .iter()
+                        .map(|&i| ChildNumber::from_normal_idx(i).unwrap())
+                        .collect(),
+                ),
+            ),
+        )]
+        .into_iter()
+        .collect();
+        let psbt = psbt_of(vec![input], vec![foreign_txout(90_000)]);
+
+        assert!(matches!(
+            TransactionTemplate::from_psbt_with(&psbt, &[key], ScriptedSpends::Allow),
+            Err(PsbtValidationError::NothingToSign { .. })
+        ));
+    }
+
+    /// When our key is the internal key too, only the key path is signed, as Bitcoin Core does.
+    #[test]
+    fn our_internal_key_is_signed_rather_than_our_leaves() {
+        let key = our_key();
+        let path = BitcoinBip32Path::external(idx(4));
+        let internal_key = raw_key_of(key, path);
+        let leaf = checksig_leaf(raw_key_of(key, BitcoinBip32Path::external(idx(5))));
+        let spend_info = tree_of(core::slice::from_ref(&leaf), internal_key);
+        let mut input = leaf_input(key, BitcoinBip32Path::external(idx(5)), &[leaf], 100_000);
+        input.witness_utxo = Some(TxOut {
+            value: Amount::from_sat(100_000),
+            script_pubkey: ScriptBuf::new_p2tr(
+                &bitcoin::secp256k1::Secp256k1::verification_only(),
+                internal_key,
+                spend_info.merkle_root(),
+            ),
+        });
+        input.tap_internal_key = Some(internal_key);
+        input.tap_merkle_root = spend_info.merkle_root();
+        input.tap_key_origins.insert(
+            internal_key,
+            (vec![], (fingerprint_of(key), derivation_of(path))),
+        );
+        let psbt = psbt_of(vec![input], vec![foreign_txout(90_000)]);
+
+        let template = TransactionTemplate::from_psbt_with(&psbt, &[key], ScriptedSpends::Allow)
+            .unwrap()
+            .as_seen_by(key);
+        assert_eq!(
+            template.inputs()[0].owner().local_owner(),
+            Some(&LocalSpk::key_spend_with_merkle_root(
+                key,
+                path,
+                spend_info.merkle_root()
+            ))
+        );
+    }
+
+    /// An output of ours that commits to a script tree can be spent by those scripts as well,
+    /// so it is not plain change and is shown as a recipient.
+    #[test]
+    fn our_output_under_a_script_tree_is_foreign() {
+        let key = our_key();
+        let path = BitcoinBip32Path::internal(idx(1));
+        let internal_key = raw_key_of(key, path);
+        let recovery_leaf = checksig_leaf(stranger_internal_key());
+        let spend_info = tree_of(core::slice::from_ref(&recovery_leaf), internal_key);
+        let scripted_change = TxOut {
+            value: Amount::from_sat(50_000),
+            script_pubkey: ScriptBuf::new_p2tr(
+                &bitcoin::secp256k1::Secp256k1::verification_only(),
+                internal_key,
+                spend_info.merkle_root(),
+            ),
+        };
+        let annotation = psbt::Output {
+            tap_internal_key: Some(internal_key),
+            tap_tree: Some(
+                taproot::TapTree::try_from(
+                    taproot::TaprootBuilder::new()
+                        .add_leaf(0, recovery_leaf)
+                        .unwrap(),
+                )
+                .unwrap(),
+            ),
+            tap_key_origins: [(
+                internal_key,
+                (vec![], (fingerprint_of(key), derivation_of(path))),
+            )]
+            .into_iter()
+            .collect(),
+            ..Default::default()
+        };
+        let psbt = annotated_psbt_of(
+            vec![owned_input(
+                key,
+                BitcoinBip32Path::external(idx(4)),
+                100_000,
+            )],
+            vec![scripted_change.clone()],
+            vec![annotation],
+        );
+
+        let template = TransactionTemplate::from_psbt(&psbt, &[key])
+            .unwrap()
+            .as_seen_by(key);
+        assert_eq!(
+            template.outputs()[0].owner(),
+            &SpkOwner::Foreign(scripted_change.script_pubkey)
+        );
+    }
+
+    /// We sign with SIGHASH_DEFAULT. A PSBT asking for DEFAULT or ALL gets what it asked for,
+    /// since the two commit to the same data; any other type is refused, not quietly
+    /// substituted.
+    #[test]
+    fn only_default_and_all_sighash_types_are_signed() {
+        use bitcoin::{psbt::PsbtSighashType, sighash::TapSighashType};
+        let key = our_key();
+        let path = BitcoinBip32Path::external(idx(4));
+
+        for (sighash_type, signs) in [
+            (None, true),
+            (Some(TapSighashType::Default), true),
+            (Some(TapSighashType::All), true),
+            (Some(TapSighashType::Single), false),
+            (Some(TapSighashType::AllPlusAnyoneCanPay), false),
+        ] {
+            let mut input = owned_input(key, path, 100_000);
+            input.sighash_type = sighash_type.map(PsbtSighashType::from);
+            let psbt = psbt_of(vec![input], vec![foreign_txout(90_000)]);
+
+            let result = TransactionTemplate::from_psbt(&psbt, &[key]);
+            assert_eq!(result.is_ok(), signs, "{sighash_type:?}");
+            if let Err(e) = result {
+                assert!(err_string(e).contains("sighash type"));
+            }
+        }
+    }
+
+    /// Our internal key under a script tree is refused by default, and so is a PSBT whose only
+    /// input of ours is a leaf; both with a message that names what is needed.
+    #[test]
+    fn scripted_spends_are_refused_unless_allowed() {
+        let key = our_key();
+        let path = BitcoinBip32Path::external(idx(4));
+        let internal_key = raw_key_of(key, path);
+        let merkle_root =
+            tree_of(&[checksig_leaf(stranger_internal_key())], internal_key).merkle_root();
+        let mut key_path = owned_input(key, path, 100_000);
+        key_path.witness_utxo = Some(TxOut {
+            value: Amount::from_sat(100_000),
+            script_pubkey: ScriptBuf::new_p2tr(
+                &bitcoin::secp256k1::Secp256k1::verification_only(),
+                internal_key,
+                merkle_root,
+            ),
+        });
+        key_path.tap_internal_key = Some(internal_key);
+        key_path.tap_merkle_root = merkle_root;
+        key_path.tap_key_origins = [(
+            internal_key,
+            (vec![], (fingerprint_of(key), derivation_of(path))),
+        )]
+        .into_iter()
+        .collect();
+        let with_a_plain_input = psbt_of(
+            vec![
+                owned_input(key, BitcoinBip32Path::external(idx(5)), 100_000),
+                key_path,
+            ],
+            vec![foreign_txout(190_000)],
+        );
+        let leaf_only = psbt_of(
+            vec![leaf_input(
+                key,
+                path,
+                &[checksig_leaf(internal_key)],
+                100_000,
+            )],
+            vec![foreign_txout(90_000)],
+        );
+
+        for (psbt, input) in [(with_a_plain_input, 1), (leaf_only, 0)] {
+            let err = TransactionTemplate::from_psbt(&psbt, &[key]).unwrap_err();
+            assert!(
+                matches!(err, PsbtValidationError::ScriptedSpend { input: got } if got == input)
+            );
+            assert!(err_string(err).contains("developer mode"));
+            assert!(
+                TransactionTemplate::from_psbt_with(&psbt, &[key], ScriptedSpends::Allow).is_ok()
+            );
+        }
+    }
+
+    /// With scripted spends refused, a leaf-only input of ours is read exactly as before they
+    /// existed — foreign, even with a hardened path or our key in two leaves — so the plain
+    /// input beside it is still signed.
+    #[test]
+    fn refusing_scripted_spends_still_signs_the_plain_inputs() {
+        let key = our_key();
+        let plain = BitcoinBip32Path::external(idx(5));
+        let path = BitcoinBip32Path::external(idx(4));
+        let leaf = checksig_leaf(raw_key_of(key, path));
+        let mut hardened_leaf = leaf_input(key, path, core::slice::from_ref(&leaf), 100_000);
+        for (_, (_, derivation)) in hardened_leaf.tap_key_origins.values_mut() {
+            *derivation = [ChildNumber::from_hardened_idx(4).unwrap()]
+                .into_iter()
+                .collect();
+        }
+        let psbt = psbt_of(
+            vec![
+                owned_input(key, plain, 100_000),
+                leaf_input(
+                    key,
+                    path,
+                    &[leaf.clone(), checksig_leaf(stranger_internal_key())],
+                    100_000,
+                ),
+                hardened_leaf,
+            ],
+            vec![foreign_txout(290_000)],
+        );
+
+        let template = TransactionTemplate::from_psbt(&psbt, &[key])
+            .unwrap()
+            .as_seen_by(key);
+        assert_eq!(
+            template
+                .iter_our_inputs()
+                .map(|(i, _, owner)| (i, owner.clone()))
+                .collect::<Vec<_>>(),
+            vec![(0, LocalSpk::key_spend(key, plain))]
+        );
     }
 }

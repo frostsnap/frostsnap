@@ -16,6 +16,7 @@ pub use frostsnap_coordinator::bitcoin::{chain_sync::ChainClient, wallet::CoordS
 pub use frostsnap_coordinator::verify_address::VerifyAddressProtocolState;
 
 use frostsnap_core::bitcoin_transaction::TransactionTemplate;
+use frostsnap_core::psbt::ScriptedSpends;
 use frostsnap_core::{DeviceId, KeyId, MasterAppkey};
 use std::collections::HashSet;
 use std::str::FromStr;
@@ -314,12 +315,21 @@ impl SuperWallet {
             .gap_stranded_value(master_appkey, feerate)
     }
 
+    /// `allow_scripted_spends` is developer mode: without it a PSBT spending a scripted output
+    /// of ours is refused.
     pub fn psbt_to_unsigned_tx(
         &self,
         psbt: &Psbt,
         master_appkey: MasterAppkey,
+        allow_scripted_spends: bool,
     ) -> Result<UnsignedTx, PsbtValidationError> {
-        let template = TransactionTemplate::from_psbt(psbt, &[master_appkey])?;
+        let scripted_spends = if allow_scripted_spends {
+            ScriptedSpends::Allow
+        } else {
+            ScriptedSpends::Refuse
+        };
+        let template =
+            TransactionTemplate::from_psbt_with(psbt, &[master_appkey], scripted_spends)?;
 
         // Unreachable while one key goes in: `from_psbt` returning `Ok` already means that key
         // owns an input. It is the guard for the day more than one does.

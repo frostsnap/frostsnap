@@ -48,19 +48,12 @@ fn template_with(owned: &[usize], total_inputs: usize) -> TransactionTemplate {
             let path = BitcoinBip32Path::external(idx(nth as u32));
             let txout = TxOut {
                 value,
-                script_pubkey: LocalSpk {
-                    master_appkey: key,
-                    bip32_path: path,
-                }
-                .spk(),
+                script_pubkey: LocalSpk::key_spend(key, path).spk(),
             };
             template
                 .push_owned_input(
                     PushInput::spend_outpoint(&txout, outpoint(i as u32)),
-                    LocalSpk {
-                        master_appkey: key,
-                        bip32_path: path,
-                    },
+                    LocalSpk::key_spend(key, path),
                 )
                 .unwrap();
         } else {
@@ -185,11 +178,7 @@ fn too_many_signatures_is_rejected() {
 fn a_foreign_input_at_one_of_our_own_output_scripts_is_still_foreign() {
     let key = key();
     let our_path = BitcoinBip32Path::internal(idx(3));
-    let our_spk = LocalSpk {
-        master_appkey: key,
-        bip32_path: our_path,
-    }
-    .spk();
+    let our_spk = LocalSpk::key_spend(key, our_path).spk();
 
     let mut template = TransactionTemplate::new();
 
@@ -201,19 +190,12 @@ fn a_foreign_input_at_one_of_our_own_output_scripts_is_still_foreign() {
 
     let ours = TxOut {
         value: Amount::from_sat(100_000),
-        script_pubkey: LocalSpk {
-            master_appkey: key,
-            bip32_path: BitcoinBip32Path::external(idx(0)),
-        }
-        .spk(),
+        script_pubkey: LocalSpk::key_spend(key, BitcoinBip32Path::external(idx(0))).spk(),
     };
     template
         .push_owned_input(
             PushInput::spend_outpoint(&ours, outpoint(1)),
-            LocalSpk {
-                master_appkey: key,
-                bip32_path: BitcoinBip32Path::external(idx(0)),
-            },
+            LocalSpk::key_spend(key, BitcoinBip32Path::external(idx(0))),
         )
         .unwrap();
 
@@ -223,10 +205,7 @@ fn a_foreign_input_at_one_of_our_own_output_scripts_is_still_foreign() {
                 value: Amount::from_sat(150_000),
                 script_pubkey: our_spk,
             },
-            LocalSpk {
-                master_appkey: key,
-                bip32_path: our_path,
-            },
+            LocalSpk::key_spend(key, our_path),
         )
         .unwrap();
 
@@ -260,19 +239,12 @@ fn our_spks_covers_both_sides_at_any_depth() {
 
     let ours = TxOut {
         value: Amount::from_sat(100_000),
-        script_pubkey: LocalSpk {
-            master_appkey: key,
-            bip32_path: deep_input,
-        }
-        .spk(),
+        script_pubkey: LocalSpk::key_spend(key, deep_input).spk(),
     };
     template
         .push_owned_input(
             PushInput::spend_outpoint(&ours, outpoint(1)),
-            LocalSpk {
-                master_appkey: key,
-                bip32_path: deep_input,
-            },
+            LocalSpk::key_spend(key, deep_input),
         )
         .unwrap();
 
@@ -280,16 +252,9 @@ fn our_spks_covers_both_sides_at_any_depth() {
         .push_owned_output_checked(
             &TxOut {
                 value: Amount::from_sat(150_000),
-                script_pubkey: LocalSpk {
-                    master_appkey: key,
-                    bip32_path: deep_output,
-                }
-                .spk(),
+                script_pubkey: LocalSpk::key_spend(key, deep_output).spk(),
             },
-            LocalSpk {
-                master_appkey: key,
-                bip32_path: deep_output,
-            },
+            LocalSpk::key_spend(key, deep_output),
         )
         .unwrap();
     template.push_foreign_output(TxOut {
@@ -311,13 +276,7 @@ fn our_spks_covers_both_sides_at_any_depth() {
     );
     assert_eq!(
         owned
-            .get(
-                &LocalSpk {
-                    master_appkey: key,
-                    bip32_path: deep_output
-                }
-                .spk()
-            )
+            .get(&LocalSpk::key_spend(key, deep_output).spk())
             .copied(),
         Some(deep_output),
         "an output far past any lookahead is still ours"
@@ -336,14 +295,8 @@ fn another_keys_scripts_become_foreign() {
     let our_path = BitcoinBip32Path::external(idx(1));
     let their_path = BitcoinBip32Path::external(idx(1));
 
-    let our_spk = LocalSpk {
-        master_appkey: ours,
-        bip32_path: our_path,
-    };
-    let their_spk = LocalSpk {
-        master_appkey: sibling,
-        bip32_path: their_path,
-    };
+    let our_spk = LocalSpk::key_spend(ours, our_path);
+    let their_spk = LocalSpk::key_spend(sibling, their_path);
 
     let mut template = TransactionTemplate::new();
     let our_input = TxOut {

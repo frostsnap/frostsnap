@@ -1,7 +1,9 @@
 use bitcoin::{
     bip32::*,
     hashes::{sha512, Hash, HashEngine, Hmac, HmacEngine},
-    secp256k1, NetworkKind,
+    secp256k1,
+    taproot::TapNodeHash,
+    NetworkKind,
 };
 use schnorr_fun::{
     frost::{PairedSecretShare, SharedKey},
@@ -129,11 +131,161 @@ pub enum Keychain {
     Internal = 1,
 }
 
-#[derive(Clone, Debug, PartialEq, bincode::Encode, bincode::Decode, Eq, PartialOrd, Ord)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum AppTweak {
     TestMessage,
-    Bitcoin(BitcoinBip32Path),
+    Bitcoin(BitcoinTweak),
     Nostr,
+}
+
+/// `AppTweak` is persisted (inside signing session mutations) and its encoding must stay
+/// stable. Plain BIP86 key-spends keep the pre-scripted-taproot layout
+/// (`Bitcoin(BitcoinBip32Path)` at variant 1) so old databases still decode and old firmware
+/// still understands plain spends; scripted spends use an appended variant 3. Each value has
+/// exactly one encoding: a plain key-spend is never written as variant 3.
+impl bincode::Encode for AppTweak {
+    fn encode<E: bincode::enc::Encoder>(
+        &self,
+        encoder: &mut E,
+    ) -> Result<(), bincode::error::EncodeError> {
+        match self {
+            AppTweak::TestMessage => 0u32.encode(encoder),
+            AppTweak::Bitcoin(BitcoinTweak::KeySpend {
+                bip32_path,
+                merkle_root: None,
+            }) => {
+                1u32.encode(encoder)?;
+                bip32_path.encode(encoder)
+            }
+            AppTweak::Nostr => 2u32.encode(encoder),
+            AppTweak::Bitcoin(tweak) => {
+                3u32.encode(encoder)?;
+                tweak.encode(encoder)
+            }
+        }
+    }
+}
+
+impl<Context> bincode::Decode<Context> for AppTweak {
+    fn decode<D: bincode::de::Decoder>(
+        decoder: &mut D,
+    ) -> Result<Self, bincode::error::DecodeError> {
+        Ok(match u32::decode(decoder)? {
+            0 => AppTweak::TestMessage,
+            1 => AppTweak::Bitcoin(BitcoinTweak::key_spend(bincode::Decode::decode(decoder)?)),
+            2 => AppTweak::Nostr,
+            3 => {
+                let tweak: BitcoinTweak = bincode::Decode::decode(decoder)?;
+                if matches!(
+                    tweak,
+                    BitcoinTweak::KeySpend {
+                        merkle_root: None,
+                        ..
+                    }
+                ) {
+                    return Err(bincode::error::DecodeError::Other(
+                        "a plain key-spend tweak must be encoded as variant 1",
+                    ));
+                }
+                AppTweak::Bitcoin(tweak)
+            }
+            variant => {
+                return Err(bincode::error::DecodeError::OtherString(alloc::format!(
+                    "unknown AppTweak variant {variant}"
+                )))
+            }
+        })
+    }
+}
+
+impl<'de, Context> bincode::BorrowDecode<'de, Context> for AppTweak {
+    fn borrow_decode<D: bincode::de::BorrowDecoder<'de>>(
+        decoder: &mut D,
+    ) -> Result<Self, bincode::error::DecodeError> {
+        bincode::Decode::decode(decoder)
+    }
+}
+
+/// How to derive the key we sign with for a bitcoin taproot input.
+#[derive(Clone, Copy, Debug, PartialEq, bincode::Encode, bincode::Decode, Eq, PartialOrd, Ord)]
+pub enum BitcoinTweak {
+    /// Key-path spend: apply the BIP341 taproot tweak. `merkle_root` is `None` for a plain
+    /// BIP86 `tr(KEY)` output and `Some` when the output also commits to a script tree,
+    /// in which case the tweak must commit to that root.
+    KeySpend {
+        bip32_path: BitcoinBip32Path,
+        #[bincode(with_serde)]
+        merkle_root: Option<TapNodeHash>,
+    },
+    /// Script-path spend: sign as the raw BIP32-derived key that appears inside a tapscript
+    /// leaf. The taproot tweak only applies to the internal key, so no tweak is applied.
+    ScriptSpend { leaf_path: LeafPath },
+}
+
+impl BitcoinTweak {
+    /// The BIP86 key-spend of a `tr(KEY)` output with no script tree.
+    pub fn key_spend(bip32_path: BitcoinBip32Path) -> Self {
+        Self::KeySpend {
+            bip32_path,
+            merkle_root: None,
+        }
+    }
+}
+
+/// Where a key in a tapscript leaf sits under the bitcoin appkey: a wallet path whose keychain
+/// may be any normal index, not only receive or change.
+///
+/// A leaf key is placed by whoever wrote the descriptor, not by this wallet. BIP388 policies
+/// give each use of a key its own `<M;N>` keychain pair, and liana-gui gives a signer reused
+/// across spending paths `<2n;2n+1>`, so a recovery key sits on keychain 2 or above. Signing
+/// there is safe because the leaf sighash commits to the real prevout and leaf. Only outputs,
+/// which the wallet must find again, need [`BitcoinBip32Path`]. The depth stays the wallet's:
+/// keys at mixed depths are the collision BIP388 warns about.
+#[derive(
+    Clone, Copy, Debug, PartialEq, bincode::Encode, bincode::Decode, Eq, Hash, PartialOrd, Ord,
+)]
+pub struct LeafPath {
+    pub account: BitcoinAccount,
+    pub keychain: NormalIndex,
+    pub index: NormalIndex,
+}
+
+impl LeafPath {
+    pub fn path_segments_from_bitcoin_appkey(&self) -> impl Iterator<Item = u32> {
+        self.account
+            .path_segments_from_bitcoin_appkey()
+            .chain([self.keychain.to_u32(), self.index.to_u32()])
+    }
+
+    /// `None` unless `path` is four normal segments starting with a known account kind.
+    pub fn from_u32_slice(path: &[u32]) -> Option<Self> {
+        let [kind, account, keychain, index] = *path else {
+            return None;
+        };
+        let kind = match kind {
+            0 => AccountKind::Segwitv1,
+            _ => return None,
+        };
+        Some(Self {
+            account: BitcoinAccount {
+                kind,
+                index: NormalIndex::new(account)?,
+            },
+            keychain: NormalIndex::new(keychain)?,
+            index: NormalIndex::new(index)?,
+        })
+    }
+}
+
+impl From<BitcoinBip32Path> for LeafPath {
+    fn from(path: BitcoinBip32Path) -> Self {
+        Self {
+            account: path.account_keychain.account,
+            keychain: NormalIndex::new(path.account_keychain.keychain as u32)
+                .expect("receive and change are normal indices"),
+            index: path.index,
+        }
+    }
 }
 
 #[derive(
@@ -266,7 +418,7 @@ impl BitcoinBip32Path {
 impl AppTweak {
     pub fn kind(&self) -> AppTweakKind {
         match self {
-            AppTweak::Bitcoin { .. } => AppTweakKind::Bitcoin,
+            AppTweak::Bitcoin(_) => AppTweakKind::Bitcoin,
             AppTweak::Nostr => AppTweakKind::Nostr,
             AppTweak::TestMessage => AppTweakKind::TestMessage,
         }
@@ -276,13 +428,16 @@ impl AppTweak {
         let appkey = master_appkey.derive_bip32([self.kind() as u32]);
 
         match &self {
-            AppTweak::Bitcoin(bip32_path) => {
-                let concrete_internal_key =
-                    appkey.derive_bip32(bip32_path.path_segments_from_bitcoin_appkey());
-                let derived_key = concrete_internal_key.into_key();
+            AppTweak::Bitcoin(BitcoinTweak::KeySpend {
+                bip32_path,
+                merkle_root,
+            }) => {
+                let derived_key = appkey
+                    .derive_bip32(bip32_path.path_segments_from_bitcoin_appkey())
+                    .into_key();
                 let tweak = bitcoin::taproot::TapTweakHash::from_key_and_tweak(
                     derived_key.to_libsecp_xonly(),
-                    None,
+                    *merkle_root,
                 )
                 .to_scalar();
                 derived_key.into_xonly_with_tweak(
@@ -291,6 +446,10 @@ impl AppTweak {
                         .expect("computationally unreachable"),
                 )
             }
+            AppTweak::Bitcoin(BitcoinTweak::ScriptSpend { leaf_path }) => appkey
+                .derive_bip32(leaf_path.path_segments_from_bitcoin_appkey())
+                .into_key()
+                .into_xonly(),
             AppTweak::Nostr => appkey.into_key().into_xonly(),
             AppTweak::TestMessage => appkey.into_key().into_xonly(),
         }
@@ -567,6 +726,58 @@ mod test {
         assert_eq!(encode(&path), encode(&raw));
     }
 
+    /// The layout `AppTweak` had before scripted taproot spends. Encodings of this must decode
+    /// as `AppTweak`, and plain key-spend `AppTweak`s must encode identically, so that old
+    /// persisted signing sessions and old firmware stay compatible.
+    #[derive(bincode::Encode, bincode::Decode)]
+    enum LegacyAppTweak {
+        TestMessage,
+        Bitcoin(BitcoinBip32Path),
+        Nostr,
+    }
+
+    #[test]
+    fn app_tweak_encoding_is_backwards_compatible() {
+        let cfg = bincode::config::standard();
+        let bip32_path = BitcoinBip32Path::external(NormalIndex::new(42).unwrap());
+
+        let legacy_bytes = encode(&LegacyAppTweak::Bitcoin(bip32_path));
+        let key_spend = AppTweak::Bitcoin(BitcoinTweak::key_spend(bip32_path));
+        assert_eq!(encode(&key_spend), legacy_bytes);
+        let (decoded, _) = bincode::decode_from_slice::<AppTweak, _>(&legacy_bytes, cfg).unwrap();
+        assert_eq!(decoded, key_spend);
+        assert_eq!(
+            encode(&AppTweak::TestMessage),
+            encode(&LegacyAppTweak::TestMessage)
+        );
+        assert_eq!(encode(&AppTweak::Nostr), encode(&LegacyAppTweak::Nostr));
+
+        for variant in [
+            AppTweak::TestMessage,
+            AppTweak::Nostr,
+            AppTweak::Bitcoin(BitcoinTweak::KeySpend {
+                bip32_path,
+                merkle_root: Some(TapNodeHash::from_byte_array([7u8; 32])),
+            }),
+            AppTweak::Bitcoin(BitcoinTweak::ScriptSpend {
+                leaf_path: bip32_path.into(),
+            }),
+            AppTweak::Bitcoin(BitcoinTweak::ScriptSpend {
+                leaf_path: LeafPath::from_u32_slice(&[0, 0, 2, 7]).unwrap(),
+            }),
+        ] {
+            let (decoded, _) =
+                bincode::decode_from_slice::<AppTweak, _>(&encode(&variant), cfg).unwrap();
+            assert_eq!(decoded, variant);
+        }
+
+        // A plain key-spend smuggled in as the scripted variant would be a second encoding of
+        // the same tweak.
+        let mut second_form = alloc::vec![3u8];
+        second_form.extend(encode(&BitcoinTweak::key_spend(bip32_path)));
+        assert!(bincode::decode_from_slice::<AppTweak, _>(&second_form, cfg).is_err());
+    }
+
     /// A hardened index has to be refused wherever it can arrive, not only at the leaf type, so
     /// this drives it through each wire type that carries a path.
     #[test]
@@ -652,10 +863,7 @@ mod test {
         for bip32_path in [at_address_index, at_account_index] {
             let mut tx_template = crate::bitcoin_transaction::TransactionTemplate::new();
             tx_template.push_imaginary_owned_input(
-                crate::bitcoin_transaction::LocalSpk {
-                    master_appkey,
-                    bip32_path,
-                },
+                crate::bitcoin_transaction::LocalSpk::key_spend(master_appkey, bip32_path),
                 bitcoin::Amount::from_sat(100_000),
             );
             let bytes = encode(&crate::WireSignTask::BitcoinTransaction(tx_template));
