@@ -4,10 +4,37 @@ import 'package:frostsnap/src/rust/api/device_demo.dart';
 
 Duration ms(int n) => Duration(milliseconds: n);
 
+DeviceDemoCue swipe({int device = 0, required int contactInMs}) =>
+    DeviceDemoCue(
+      device: device,
+      contactInMs: contactInMs,
+      gesture: const DeviceDemoGesture.swipe(),
+    );
+
+DeviceDemoCue hold({
+  int device = 0,
+  required int contactInMs,
+  required int holdMs,
+}) => DeviceDemoCue(
+  device: device,
+  contactInMs: contactInMs,
+  gesture: DeviceDemoGesture.hold(holdMs: holdMs),
+);
+
+/// When the hand comes to rest after a cue at zero, to the frame.
+Duration settlesAt(DeviceDemoCue cue) {
+  final track = HandTrack()..cue(cue, Duration.zero);
+  var t = Duration.zero;
+  while (track.isMovingAt(t)) {
+    t += ms(1);
+  }
+  return t;
+}
+
 void main() {
   test('a swipe cue puts the finger on the screen when the touch lands', () {
     final track = HandTrack();
-    track.cue(const DeviceDemoEvent.swipe(contactInMs: 1400), ms(500));
+    track.cue(swipe(contactInMs: 1400), ms(500));
 
     expect(track.frameAt(ms(500)), HandFrame.rest);
     expect(
@@ -18,16 +45,14 @@ void main() {
 
   test('there is no hand until a gesture is cued', () {
     expect(HandTrack().frameAt(ms(5000)), isNull);
+    expect(HandTrack().isMovingAt(ms(5000)), isFalse);
   });
 
   test(
     'a hold cue presses when the touch lands and stays down for the hold',
     () {
       final track = HandTrack();
-      track.cue(
-        const DeviceDemoEvent.hold(contactInMs: 1500, holdMs: 8000),
-        ms(0),
-      );
+      track.cue(hold(contactInMs: 1500, holdMs: 8000), ms(0));
 
       expect(
         track.frameAt(ms(1500)),
@@ -45,21 +70,66 @@ void main() {
     },
   );
 
+  test('the timing the demo scripts by is the clips\' own', () {
+    final timing = HandTrack.timing;
+    const oneFrame = Duration(microseconds: 1000000 ~/ HandTrack.fps);
+
+    final swipeEnd = ms(timing.swipeContactMs + timing.swipeAfterContactMs);
+    expect(
+      settlesAt(swipe(contactInMs: timing.swipeContactMs)) - swipeEnd,
+      lessThanOrEqualTo(oneFrame),
+    );
+
+    final holdEnd = ms(
+      timing.holdContactMs + timing.holdPressMs + timing.holdAfterReleaseMs,
+    );
+    expect(
+      (settlesAt(
+                hold(
+                  contactInMs: timing.holdContactMs,
+                  holdMs: timing.holdPressMs,
+                ),
+              ) -
+              holdEnd)
+          .abs(),
+      lessThanOrEqualTo(oneFrame),
+    );
+  });
+
   test('the hand keeps moving with nothing arriving from the device', () {
     final track = HandTrack();
-    track.cue(const DeviceDemoEvent.swipe(contactInMs: 1000), ms(0));
+    track.cue(swipe(contactInMs: 1000), ms(0));
 
     final frames = {
       for (var t = 0; t < 1000; t += 1000 ~/ HandTrack.fps)
         track.frameAt(ms(t)),
     };
     expect(frames.length, greaterThan(20));
+    expect(track.isMovingAt(ms(999)), isTrue);
   });
 
-  test('after its clip the hand waits in the pose every clip starts from', () {
+  test('a cue for another device moves the hand there before its clip', () {
     final track = HandTrack();
-    track.cue(const DeviceDemoEvent.swipe(contactInMs: 1000), ms(0));
+    track.cue(hold(device: 0, contactInMs: 1500, holdMs: 3000), ms(0));
+    expect(track.deviceAt(ms(1000)), 0);
+
+    track.cue(hold(device: 1, contactInMs: 2400, holdMs: 3000), ms(7000));
+    expect(track.deviceAt(ms(7000)), 0);
+    expect(track.deviceAt(ms(7450)), closeTo(0.5, 0.01));
+    expect(track.deviceAt(ms(7900)), 1);
+    expect(track.isMovingAt(ms(7450)), isTrue);
+    expect(track.frameAt(ms(7450)), HandFrame.rest);
+    expect(
+      track.frameAt(ms(9400)),
+      const HandFrame(HandSheet.hold, HandTrack.holdContactFrame),
+    );
+  });
+
+  test('after its clip the hand rests in the pose every clip starts from', () {
+    final track = HandTrack();
+    track.cue(swipe(contactInMs: 1000), ms(0));
 
     expect(track.frameAt(ms(60000)), HandFrame.rest);
+    expect(track.isMovingAt(ms(60000)), isFalse);
   });
 }

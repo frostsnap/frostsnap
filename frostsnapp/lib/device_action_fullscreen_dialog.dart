@@ -234,13 +234,16 @@ Future<T?> showFullscreenActionDialog<T>(
         ),
       );
     }
-    return DeviceActionHero(
-      caseColor: needed.first.caseColor,
-      demo: hero.demo,
-      next: hero.showNext && needed.length > 1
-          ? (caseColor: needed[1].caseColor)
-          : null,
-      maxHeight: hero.maxHeight,
+    return ListenableBuilder(
+      listenable: Listenable.merge([hero.changes]),
+      builder: (context, _) => DeviceActionHero(
+        caseColors: [
+          for (final device in hero.chain ? needed : needed.take(1))
+            device.caseColor,
+        ],
+        demo: hero.demo(),
+        maxHeight: hero.maxHeight,
+      ),
     );
   }
 
@@ -410,8 +413,8 @@ class DeviceActionDialogLayout extends StatelessWidget {
         ],
         if (body != null) ...[
           SizedBox(height: 24),
-          DefaultTextStyle(
-            style: theme.textTheme.bodyLarge!,
+          DefaultTextStyle.merge(
+            style: theme.textTheme.bodyLarge,
             child: body(context),
           ),
         ],

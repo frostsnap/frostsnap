@@ -8,24 +8,31 @@ import 'package:frostsnap/src/rust/api/device_list.dart';
 import 'support/rust_lib.dart';
 
 const _hero = DeviceActionHero(
-  caseColor: CaseColor_Orange(),
-  demo: DeviceDemoKind.sign,
+  caseColors: [CaseColor_Orange()],
+  demo: DeviceDemoKind.sign(),
   maxHeight: 430,
 );
 
 void main() {
   setUpAll(initRustLibForTests);
 
-  testWidgets('the hand keeps animating while no device frames arrive', (
+  testWidgets('a hero with nothing to play leaves the engine idle', (
     tester,
   ) async {
     await tester.pumpWidget(
-      const MaterialApp(home: SizedBox(width: 400, child: _hero)),
+      const MaterialApp(
+        home: SizedBox(
+          width: 400,
+          child: DeviceActionHero(
+            caseColors: [CaseColor_Orange()],
+            demo: null,
+            maxHeight: 430,
+          ),
+        ),
+      ),
     );
-    for (var i = 0; i < 10; i++) {
-      expect(tester.binding.hasScheduledFrame, isTrue);
-      await tester.pump(const Duration(milliseconds: 33));
-    }
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(tester.binding.hasScheduledFrame, isFalse);
 
     await tester.pumpWidget(const SizedBox());
   });

@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:frostsnap/animated_gradient_card.dart';
 import 'package:frostsnap/device_action_fullscreen_dialog.dart';
+import 'package:frostsnap/device_action_hero.dart';
 import 'package:frostsnap/device_action_upgrade.dart';
 import 'package:frostsnap/device_identity_art.dart';
 import 'package:frostsnap/hex.dart';
@@ -17,6 +18,7 @@ import 'package:frostsnap/bitcoin_network_ext.dart';
 import 'package:frostsnap/bullet_list.dart';
 import 'package:frostsnap/copy_feedback.dart';
 import 'package:frostsnap/src/rust/api/bitcoin.dart';
+import 'package:frostsnap/src/rust/api/device_demo.dart';
 import 'package:frostsnap/src/rust/api/device_list.dart';
 import 'package:frostsnap/src/rust/api/firmware.dart';
 import 'package:frostsnap/src/rust/api/keygen.dart';
@@ -30,8 +32,6 @@ import 'package:sliver_tools/sliver_tools.dart';
 import 'global.dart';
 import 'maybe_fullscreen_dialog.dart';
 import 'wallet_device_list.dart';
-import 'package:frostsnap/device_action_hero.dart';
-import 'package:frostsnap/src/rust/api/device_demo.dart';
 
 /// Smallest strict majority of `totalDevices` — the recommended / default
 /// signing threshold for a new wallet.
@@ -142,6 +142,20 @@ class WalletCreateController extends ChangeNotifier {
     }
   }
 
+  /// The devices' security check, once they have the code to show.
+  DeviceDemoKind? _keygenDemo() {
+    final state = _keygenState;
+    final sessionHash = state?.sessionHash;
+    if (state == null || sessionHash == null) return null;
+    return DeviceDemoKind.keygen(
+      threshold: state.threshold,
+      nDevices: state.devices.length,
+      securityCheckCode: U8Array4(
+        Uint8List.fromList(sessionHash.field0.sublist(0, 4)),
+      ),
+    );
+  }
+
   FullscreenActionDialogController _buildKeygenController(
     BuildContext context,
     List<DeviceId> devices,
@@ -150,10 +164,7 @@ class WalletCreateController extends ChangeNotifier {
       context: context,
       devices: devices,
       title: 'Security Check',
-      hero: const DeviceActionHeroSpec(
-        demo: DeviceDemoKind.keygen,
-        showNext: true,
-      ),
+      hero: DeviceActionHeroSpec(demo: _keygenDemo, changes: this, chain: true),
       body: (context) => ListenableBuilder(
         listenable: this,
         builder: (context, _) {
@@ -162,8 +173,8 @@ class WalletCreateController extends ChangeNotifier {
           if (state == null) return const SizedBox();
 
           final sessionHash = state.sessionHash;
-          final n = form.selectedDevices.length;
-          final tOfN = '${form.threshold}-of-$n';
+          final n = state.devices.length;
+          final tOfN = '${state.threshold}-of-$n';
           return Column(
             crossAxisAlignment: CrossAxisAlignment.center,
             spacing: 12,

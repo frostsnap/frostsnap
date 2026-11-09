@@ -7,16 +7,16 @@ import 'package:frostsnap/device_colors.dart';
 import 'package:frostsnap/genuine_badge.dart';
 import 'package:frostsnap/copy_feedback.dart';
 import 'package:frostsnap/device_action_fullscreen_dialog.dart';
+import 'package:frostsnap/device_action_hero.dart';
 import 'package:frostsnap/device_identity_art.dart';
 import 'package:frostsnap/id_ext.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/coordinator.dart';
+import 'package:frostsnap/src/rust/api/device_demo.dart';
 import 'package:frostsnap/src/rust/api/device_list.dart';
 import 'package:frostsnap/theme.dart';
 
 import 'global.dart';
-import 'package:frostsnap/device_action_hero.dart';
-import 'package:frostsnap/src/rust/api/device_demo.dart';
 
 class DeviceDetails extends StatefulWidget {
   final ScrollController? scrollController;

@@ -32,7 +32,7 @@ pub struct FirmwareUpgradeConfirm {
                     >,
                 >,
             >,
-            Text<Gray4TextStyle>,
+            Redact<Text<Gray4TextStyle>>,
             Text<Gray4TextStyle>,
         )>,
     >,
@@ -106,9 +106,14 @@ impl FirmwareUpgradeConfirm {
             .with_border(PALETTE.outline, 2)
             .with_corner_radius(Size::new(8, 8));
 
-        let content = Column::new((title_text, hash_container, version_size_display, hold_text))
-            .with_main_axis_alignment(MainAxisAlignment::SpaceEvenly)
-            .with_cross_axis_alignment(CrossAxisAlignment::Center);
+        let content = Column::new((
+            title_text,
+            hash_container,
+            redact::redact(version_size_display),
+            hold_text,
+        ))
+        .with_main_axis_alignment(MainAxisAlignment::SpaceEvenly)
+        .with_cross_axis_alignment(CrossAxisAlignment::Center);
 
         let hold_to_confirm = HoldToConfirm::new(HOLD_TO_CONFIRM_TIME_SHORT_MS, content);
 
