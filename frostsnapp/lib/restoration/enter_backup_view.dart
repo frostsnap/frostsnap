@@ -5,6 +5,8 @@ import 'package:frostsnap/device_identity_art.dart';
 import 'package:frostsnap/restoration/recovery_flow.dart';
 import 'package:frostsnap/restoration/target_device.dart';
 import 'package:frostsnap/src/rust/api/recovery.dart';
+import 'package:frostsnap/device_action_hero.dart';
+import 'package:frostsnap/src/rust/api/device_demo.dart';
 
 class EnterBackupView extends StatefulWidget with TitledWidget {
   final Stream<EnterPhysicalBackupState> stream;
@@ -43,6 +45,7 @@ class _EnterBackupViewState extends State<EnterBackupView> {
       context: context,
       devices: [widget.targetDevice.id],
       title: 'Enter Physical Backup',
+      hero: const DeviceActionHeroSpec(demo: DeviceDemoKind.enterBackup),
       body: (context) {
         final theme = Theme.of(context);
         return Card.filled(

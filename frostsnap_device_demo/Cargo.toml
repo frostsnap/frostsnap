@@ -1,0 +1,10 @@
+[package]
+name = "frostsnap_device_demo"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+frostsnap_widgets = { workspace = true, features = ["std", "redact"] }
+frostsnap_core = { workspace = true }
+embedded-graphics.workspace = true
+bitcoin.workspace = true

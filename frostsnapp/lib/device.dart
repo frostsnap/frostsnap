@@ -15,6 +15,8 @@ import 'package:frostsnap/src/rust/api/device_list.dart';
 import 'package:frostsnap/theme.dart';
 
 import 'global.dart';
+import 'package:frostsnap/device_action_hero.dart';
+import 'package:frostsnap/src/rust/api/device_demo.dart';
 
 class DeviceDetails extends StatefulWidget {
   final ScrollController? scrollController;
@@ -380,6 +382,7 @@ class _DeviceDetailsState extends State<DeviceDetails> {
       context: context,
       devices: [id],
       title: 'Erase Device',
+      hero: const DeviceActionHeroSpec(demo: DeviceDemoKind.erase),
       body: (context) {
         final theme = Theme.of(context);
         return ValueListenableBuilder<bool>(

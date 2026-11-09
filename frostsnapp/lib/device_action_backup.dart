@@ -7,6 +7,8 @@ import 'package:frostsnap/global.dart';
 import 'package:frostsnap/wallet_key_mismatch.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/coordinator.dart';
+import 'package:frostsnap/device_action_hero.dart';
+import 'package:frostsnap/src/rust/api/device_demo.dart';
 
 class DeviceActionBackupController with ChangeNotifier {
   final AccessStructure accessStructure;
@@ -50,6 +52,7 @@ class DeviceActionBackupController with ChangeNotifier {
       context: context,
       devices: [id],
       title: 'Record key backup',
+      hero: const DeviceActionHeroSpec(demo: DeviceDemoKind.backup),
       body: (context) {
         final theme = Theme.of(context);
 

@@ -162,19 +162,28 @@ impl AddressDisplay {
 #[derive(Widget)]
 pub struct AddressWithIndex {
     #[widget_delegate]
-    container: Box<crate::Center<crate::Padding<Column<(Text<Gray4TextStyle>, AddressDisplay)>>>>,
+    container: Box<
+        crate::Center<
+            crate::Padding<
+                Column<(
+                    crate::Redact<Text<Gray4TextStyle>>,
+                    crate::Redact<AddressDisplay>,
+                )>,
+            >,
+        >,
+    >,
 }
 
 impl AddressWithIndex {
     pub fn new_with_seed(address: bitcoin::Address, index: usize, seed: u32) -> Self {
         use frostsnap_fonts::NOTO_SANS_18_LIGHT;
 
-        let title = Text::new(
+        let title = crate::redact::redact(Text::new(
             alloc::format!("Receive Address #{}", index),
             Gray4TextStyle::new(&NOTO_SANS_18_LIGHT, PALETTE.text_secondary),
-        );
+        ));
 
-        let address_display = AddressDisplay::new_with_seed(address, seed);
+        let address_display = crate::redact::redact(AddressDisplay::new_with_seed(address, seed));
 
         let mut column = Column::new((title, address_display))
             .with_main_axis_alignment(MainAxisAlignment::Start)

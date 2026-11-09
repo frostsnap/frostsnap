@@ -7,6 +7,7 @@ edition = "2021"
 default = ["std"]
 prefill-words = []
 std = []
+redact = []
 
 [dependencies]
 embedded-graphics = { version = "0.8.1", features = ["fixed_point"] }

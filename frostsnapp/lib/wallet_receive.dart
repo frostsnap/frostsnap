@@ -17,6 +17,8 @@ import 'package:pretty_qr_code/pretty_qr_code.dart';
 import 'package:frostsnap/src/rust/api/bitcoin.dart';
 
 import 'global.dart';
+import 'package:frostsnap/device_action_hero.dart';
+import 'package:frostsnap/src/rust/api/device_demo.dart';
 
 class AddressList extends StatefulWidget {
   final ScrollController? scrollController;
@@ -263,6 +265,7 @@ class _ReceiverPageState extends State<ReceivePage> {
       context: context,
       devices: devices,
       title: 'Verify address on device',
+      hero: const DeviceActionHeroSpec(demo: DeviceDemoKind.verifyAddress),
       body: _dialogBodyBuilder,
       actionButtons: [
         OutlinedButton(

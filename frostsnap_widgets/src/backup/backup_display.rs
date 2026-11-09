@@ -9,6 +9,7 @@ use crate::{
     page_slider::PageSlider,
     palette::PALETTE,
     prelude::*,
+    redact::{self, Redact},
     share_index::ShareIndexWidget,
     widget_list::{WidgetList, WidgetListItem},
     FadeSwitcher, HoldToConfirm, FONT_HUGE_MONO, FONT_MED,
@@ -24,7 +25,7 @@ const WORDS_PER_PAGE: usize = 3;
 #[derive(frostsnap_macros::Widget)]
 pub struct ShareIndexPage {
     #[widget_delegate]
-    center: Center<Column<(Text, ShareIndexWidget)>>,
+    center: Center<Column<(Text, Redact<ShareIndexWidget>)>>,
 }
 
 impl ShareIndexPage {
@@ -34,7 +35,7 @@ impl ShareIndexPage {
             DefaultTextStyle::new(FONT_MED, PALETTE.text_secondary),
         );
 
-        let share_index_widget = ShareIndexWidget::new(share_index, FONT_HUGE_MONO);
+        let share_index_widget = redact::redact(ShareIndexWidget::new(share_index, FONT_HUGE_MONO));
 
         let column = Column::builder()
             .push(label)
@@ -51,7 +52,7 @@ impl ShareIndexPage {
 #[derive(frostsnap_macros::Widget)]
 pub struct WordRow {
     #[widget_delegate]
-    row: Row<(Text, Text)>,
+    row: Row<(Text, Redact<Text>)>,
 }
 
 impl WordRow {
@@ -62,11 +63,13 @@ impl WordRow {
         )
         .with_alignment(Alignment::Left);
 
-        let word_text = Text::new(
-            String::from(word),
-            DefaultTextStyle::new(FONT_HUGE_MONO, PALETTE.primary),
-        )
-        .with_alignment(Alignment::Left);
+        let word_text = redact::redact(
+            Text::new(
+                String::from(word),
+                DefaultTextStyle::new(FONT_HUGE_MONO, PALETTE.primary),
+            )
+            .with_alignment(Alignment::Left),
+        );
 
         let row = Row::builder().push(number_text).gap(10).push(word_text);
 
@@ -138,7 +141,7 @@ impl WordsPage {
     }
 }
 
-type SingleWordRow = Row<(Text<Gray4TextStyle>, Text<Gray4TextStyle>)>;
+type SingleWordRow = Row<(Text<Gray4TextStyle>, Redact<Text<Gray4TextStyle>>)>;
 
 /// A page showing all 25 words in a simple scrollable format
 #[derive(Clone, frostsnap_macros::Widget)]
@@ -155,10 +158,10 @@ impl AllWordsPage {
                     format!("{:2}.", word_idx + 1),
                     Gray4TextStyle::new(FONT_ALL_WORDS, PALETTE.text_secondary),
                 ),
-                Text::new(
+                redact::redact(Text::new(
                     format!("{:<8}", BIP39_WORDS[word_indices[word_idx] as usize]),
                     Gray4TextStyle::new(FONT_ALL_WORDS, PALETTE.primary),
-                ),
+                )),
             ))
             .with_main_axis_alignment(MainAxisAlignment::Start)
         };
@@ -169,11 +172,13 @@ impl AllWordsPage {
                     " #.",
                     Gray4TextStyle::new(FONT_ALL_WORDS, PALETTE.text_secondary),
                 ),
-                Text::new(
-                    format!("{}", share_index),
-                    Gray4TextStyle::new(FONT_ALL_WORDS, PALETTE.primary),
-                )
-                .with_underline(PALETTE.surface),
+                redact::redact(
+                    Text::new(
+                        format!("{}", share_index),
+                        Gray4TextStyle::new(FONT_ALL_WORDS, PALETTE.primary),
+                    )
+                    .with_underline(PALETTE.surface),
+                ),
             ))
             .with_main_axis_alignment(MainAxisAlignment::Start);
 

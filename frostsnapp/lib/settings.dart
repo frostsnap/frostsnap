@@ -27,6 +27,8 @@ import 'package:frostsnap/stream_ext.dart';
 import 'package:frostsnap/icons.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter/gestures.dart';
+import 'package:frostsnap/device_action_hero.dart';
+import 'package:frostsnap/src/rust/api/device_demo.dart';
 
 const settingsMaxWidth = 580.0;
 
@@ -1208,6 +1210,7 @@ Future<void> _showEraseAllDialog(BuildContext context) async {
     context: context,
     devices: devicesToErase,
     title: 'Erase Multiple Devices',
+    hero: const DeviceActionHeroSpec(demo: DeviceDemoKind.erase),
     body: (context) {
       final theme = Theme.of(context);
       return Card.filled(

@@ -9,6 +9,8 @@ import 'package:frostsnap/animated_check.dart';
 import 'package:frostsnap/contexts.dart';
 import 'package:frostsnap/copy_feedback.dart';
 import 'package:frostsnap/device_action_fullscreen_dialog.dart';
+import 'package:frostsnap/device_action_hero.dart';
+import 'package:frostsnap/src/rust/api/device_demo.dart';
 import 'package:frostsnap/device_identity_art.dart';
 import 'package:frostsnap/global.dart';
 import 'package:frostsnap/id_ext.dart';
@@ -373,6 +375,7 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
       context: context,
       devices: devices,
       title: 'Sign transaction with connected device',
+      hero: const DeviceActionHeroSpec(demo: DeviceDemoKind.sign),
       actionButtons: [
         Builder(
           builder: (context) => OutlinedButton(

@@ -7,6 +7,8 @@ import 'package:frostsnap/src/rust/api/device_list.dart';
 import 'package:frostsnap/stream_ext.dart';
 import 'package:frostsnap/theme.dart';
 import 'package:frostsnap/wallet_create.dart';
+import 'package:frostsnap/device_action_hero.dart';
+import 'package:frostsnap/src/rust/api/device_demo.dart';
 
 enum FirmwareUpgradeStage { Acks, Progress }
 
@@ -89,6 +91,7 @@ class DeviceActionUpgradeController with ChangeNotifier {
       context: context,
       devices: upgradeTargets,
       title: 'Upgrade Firmware',
+      hero: const DeviceActionHeroSpec(demo: DeviceDemoKind.upgrade),
       body: (context) {
         final versionName = coord.upgradeFirmwareVersionName() ?? '';
         return SelectionArea(

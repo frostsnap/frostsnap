@@ -6,6 +6,7 @@ use crate::{
     page_slider::PageSlider,
     palette::PALETTE,
     prelude::*,
+    redact::{self, Redact},
     widget_list::{WidgetList, WidgetListItem},
     GrayToAlpha, HoldToConfirm, Image,
 };
@@ -32,7 +33,7 @@ const FONT_CAUTION_TEXT: &Gray4Font = &NOTO_SANS_17_REGULAR;
 
 const HIGH_FEE_ABSOLUTE_THRESHOLD_SATS: u64 = 100_000;
 const HIGH_FEE_PERCENTAGE_THRESHOLD: u64 = 5;
-const HOLD_TO_SIGN_TIME_MS: u32 = 3000;
+pub const HOLD_TO_SIGN_TIME_MS: u32 = 3000;
 
 const FONT_TO_SELF_FOOTNOTE: &Gray4Font = &NOTO_SANS_17_REGULAR;
 
@@ -51,7 +52,7 @@ pub struct AmountPage {
     center: Center<
         Column<(
             Text<Gray4TextStyle>,
-            BitcoinAmountDisplay,
+            Redact<BitcoinAmountDisplay>,
             Text<Gray4TextStyle>,
             Option<Text<Gray4TextStyle>>,
         )>,
@@ -74,7 +75,7 @@ impl AmountPage {
             )
         });
 
-        let amount_display = BitcoinAmountDisplay::new(amount_sats);
+        let amount_display = redact::redact(BitcoinAmountDisplay::new(amount_sats));
 
         let btc_text = Text::new(
             "BTC".to_string(),
@@ -104,8 +105,8 @@ pub struct AddressPage {
         Padding<
             Column<(
                 Text<Gray4TextStyle>,
-                AddressDisplay,
-                Option<Text<Gray4TextStyle>>,
+                Redact<AddressDisplay>,
+                Option<Redact<Text<Gray4TextStyle>>>,
             )>,
         >,
     >,
@@ -127,14 +128,15 @@ impl AddressPage {
         // wallet, and a bare "1/3" reads as one-of-three signers — a claim about the
         // access structure, not about where the money went.
         let footnote = owned.map(|path| {
-            Text::new(
+            redact::redact(Text::new(
                 path.label(),
                 Gray4TextStyle::new(FONT_TO_SELF_FOOTNOTE, PALETTE.text_secondary),
-            )
+            ))
         });
 
         let mixed_seed = rand_seed.wrapping_add((index as u32).wrapping_mul(0x9e3779b9));
-        let address_display = AddressDisplay::new_with_seed(address.clone(), mixed_seed);
+        let address_display =
+            redact::redact(AddressDisplay::new_with_seed(address.clone(), mixed_seed));
 
         let mut column = Column::new((title, address_display, footnote))
             .with_main_axis_alignment(MainAxisAlignment::Start);
@@ -189,8 +191,8 @@ pub struct FeePage {
     center: Center<
         Column<(
             Text<Gray4TextStyle>,
-            BitcoinAmountDisplay,
-            Text<Gray4TextStyle>,
+            Redact<BitcoinAmountDisplay>,
+            Redact<Text<Gray4TextStyle>>,
         )>,
     >,
 }
@@ -207,7 +209,7 @@ impl FeePage {
             Gray4TextStyle::new(FONT_PAGE_HEADER, PALETTE.text_secondary),
         );
 
-        let fee_amount = BitcoinAmountDisplay::new(fee_sats);
+        let fee_amount = redact::redact(BitcoinAmountDisplay::new(fee_sats));
 
         let fee_rate_text = if let Some(rate) = fee_rate_sats_per_vbyte {
             Text::new(
@@ -221,7 +223,7 @@ impl FeePage {
             )
         };
 
-        let mut column = Column::new((title, fee_amount, fee_rate_text))
+        let mut column = Column::new((title, fee_amount, redact::redact(fee_rate_text)))
             .with_main_axis_alignment(MainAxisAlignment::Center)
             .with_cross_axis_alignment(CrossAxisAlignment::Center);
         column.set_uniform_gap(10);

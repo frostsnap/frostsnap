@@ -1,7 +1,9 @@
 use super::{Column, Container, HoldToConfirm, Padding};
 use crate::{
-    gray4_style::Gray4TextStyle, palette::PALETTE, CrossAxisAlignment, MainAxisAlignment, Text,
-    HOLD_TO_CONFIRM_TIME_MS,
+    gray4_style::Gray4TextStyle,
+    palette::PALETTE,
+    redact::{self, Redact},
+    CrossAxisAlignment, MainAxisAlignment, Text, HOLD_TO_CONFIRM_TIME_MS,
 };
 use alloc::{format, string::ToString};
 use embedded_graphics::geometry::Size;
@@ -12,7 +14,7 @@ const FONT_CONFIRM_TEXT: &frostsnap_fonts::Gray4Font = &NOTO_SANS_17_REGULAR;
 const FONT_SECURITY_CODE: &frostsnap_fonts::Gray4Font = &NOTO_SANS_MONO_28_BOLD;
 
 type CodeColumn = Column<(Text<Gray4TextStyle>, Text<Gray4TextStyle>)>;
-type CodeContainer = Container<Padding<CodeColumn>>;
+type CodeContainer = Container<Padding<Redact<CodeColumn>>>;
 type SubtitleColumn = Column<(Text<Gray4TextStyle>, Text<Gray4TextStyle>)>;
 type PromptColumn = Column<(SubtitleColumn, CodeContainer, Text<Gray4TextStyle>)>;
 
@@ -49,7 +51,8 @@ impl KeygenCheck {
         code_column.set_gap(0, 3);
 
         // ⚖️ extra top padding to balance font descender
-        let padded_code_column = Padding::only(code_column)
+        // The threshold is checked against the wallet as much as the code is.
+        let padded_code_column = Padding::only(redact::redact(code_column))
             .left(10)
             .right(10)
             .top(7)

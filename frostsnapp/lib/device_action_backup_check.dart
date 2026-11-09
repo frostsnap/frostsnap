@@ -8,6 +8,8 @@ import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/coordinator.dart';
 import 'package:frostsnap/src/rust/api/recovery.dart';
 import 'package:frostsnap/stream_ext.dart';
+import 'package:frostsnap/device_action_hero.dart';
+import 'package:frostsnap/src/rust/api/device_demo.dart';
 
 class DeviceActionBackupCheckController with ChangeNotifier {
   final AccessStructure accessStructure;
@@ -46,6 +48,7 @@ class DeviceActionBackupCheckController with ChangeNotifier {
       context: context,
       devices: [id],
       title: 'Check Backup on Device',
+      hero: const DeviceActionHeroSpec(demo: DeviceDemoKind.checkBackup),
       body: (context) {
         final theme = Theme.of(context);
         return Text(

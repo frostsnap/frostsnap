@@ -31,6 +31,7 @@ pub mod image;
 pub mod key_touch;
 pub mod one_time_clear_hack;
 pub mod rat;
+pub mod redact;
 // pub mod page_by_page;
 // pub mod page_demo;
 pub mod page_slider;
@@ -102,6 +103,7 @@ pub use layout::{
 };
 pub use one_time_clear_hack::OneTimeClearHack;
 pub use rat::{Frac, Rat};
+pub use redact::Redact;
 // pub use hold_to_confirm_button::*;
 pub use bobbing_carat::BobbingCarat;
 pub use circle_button::*;

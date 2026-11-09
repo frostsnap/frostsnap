@@ -1,7 +1,10 @@
 use crate::HOLD_TO_CONFIRM_TIME_SHORT_MS;
 use crate::{
-    gray4_style::Gray4TextStyle, palette::PALETTE, prelude::*, Frac, GrayToAlpha, HoldToConfirm,
-    Image, Padding, ProgressIndicator,
+    gray4_style::Gray4TextStyle,
+    palette::PALETTE,
+    prelude::*,
+    redact::{self, Redact},
+    Frac, GrayToAlpha, HoldToConfirm, Image, Padding, ProgressIndicator,
 };
 use alloc::{boxed::Box, format, string::String, string::ToString};
 use embedded_graphics::geometry::Size;
@@ -19,12 +22,14 @@ pub struct FirmwareUpgradeConfirm {
             Text<Gray4TextStyle>,
             Container<
                 Padding<
-                    Column<(
-                        Text<Gray4TextStyle>,
-                        Text<Gray4TextStyle>,
-                        Text<Gray4TextStyle>,
-                        Text<Gray4TextStyle>,
-                    )>,
+                    Redact<
+                        Column<(
+                            Text<Gray4TextStyle>,
+                            Text<Gray4TextStyle>,
+                            Text<Gray4TextStyle>,
+                            Text<Gray4TextStyle>,
+                        )>,
+                    >,
                 >,
             >,
             Text<Gray4TextStyle>,
@@ -96,7 +101,7 @@ impl FirmwareUpgradeConfirm {
 
         let hash_column = Column::new((hash1, hash2, hash3, hash4))
             .with_cross_axis_alignment(CrossAxisAlignment::Center);
-        let hash_with_padding = Padding::symmetric(10, 5, hash_column);
+        let hash_with_padding = Padding::symmetric(10, 5, redact::redact(hash_column));
         let hash_container = Container::new(hash_with_padding)
             .with_border(PALETTE.outline, 2)
             .with_corner_radius(Size::new(8, 8));

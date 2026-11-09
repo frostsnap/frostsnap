@@ -30,6 +30,8 @@ import 'package:sliver_tools/sliver_tools.dart';
 import 'global.dart';
 import 'maybe_fullscreen_dialog.dart';
 import 'wallet_device_list.dart';
+import 'package:frostsnap/device_action_hero.dart';
+import 'package:frostsnap/src/rust/api/device_demo.dart';
 
 /// Smallest strict majority of `totalDevices` — the recommended / default
 /// signing threshold for a new wallet.
@@ -148,6 +150,10 @@ class WalletCreateController extends ChangeNotifier {
       context: context,
       devices: devices,
       title: 'Security Check',
+      hero: const DeviceActionHeroSpec(
+        demo: DeviceDemoKind.keygen,
+        showNext: true,
+      ),
       body: (context) => ListenableBuilder(
         listenable: this,
         builder: (context, _) {

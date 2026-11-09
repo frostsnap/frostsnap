@@ -7,6 +7,7 @@ use crate::{
     palette::PALETTE,
     prelude::*,
     progress_bars::ProgressBars,
+    redact::{self, Redact},
     touch_listener::TouchListener,
     translate::Translate,
     DefaultTextStyle, DynWidget, Key, KeyTouch, Sizing, Widget, FONT_HUGE_MONO, FONT_MED,
@@ -121,15 +122,15 @@ const BUTTON_CORNER_RADIUS: u32 = 8;
 struct OptionButton {
     word: &'static str,
     #[widget_delegate]
-    translate: Translate<Container<Center<Text<DefaultTextStyle>>>>,
+    translate: Translate<Container<Center<Redact<Text<DefaultTextStyle>>>>>,
 }
 
 impl OptionButton {
     fn new(label: &str, word: &'static str) -> TouchListener<Self> {
-        let text = Text::new(
+        let text = redact::redact(Text::new(
             String::from(label),
             DefaultTextStyle::new(FONT_HUGE_MONO, PALETTE.primary),
-        );
+        ));
         let container =
             Container::with_size(Center::new(text), Size::new(BUTTON_WIDTH, BUTTON_HEIGHT))
                 .with_fill(PALETTE.surface)
@@ -430,6 +431,14 @@ impl CheckBackupScreen {
             return elapsed >= SUCCESS_DWELL_MS;
         }
         false
+    }
+
+    /// The current question's right answer, as its position among the options from the top.
+    pub fn correct_option(&mut self) -> Option<u8> {
+        let correct_word = self.correct_word;
+        self.quiz_page_mut()?
+            .quiz_buttons()
+            .find_button_index(correct_word)
     }
 
     fn quiz_page_mut(&mut self) -> Option<&mut QuizPage> {

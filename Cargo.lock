@@ -2056,6 +2056,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "frostsnap_device_demo"
+version = "0.1.0"
+dependencies = [
+ "bitcoin",
+ "embedded-graphics",
+ "frostsnap_core",
+ "frostsnap_widgets",
+]
+
+[[package]]
 name = "frostsnap_embedded"
 version = "0.1.0"
 dependencies = [
@@ -4118,6 +4128,7 @@ dependencies = [
  "frostsnap_coordinator",
  "frostsnap_core",
  "frostsnap_desktop_camera",
+ "frostsnap_device_demo",
  "frostsnap_secure_boot",
  "futures",
  "image",

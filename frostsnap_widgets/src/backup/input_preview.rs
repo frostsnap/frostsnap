@@ -60,7 +60,7 @@ pub struct InputPreview {
     backspace_rect: Rectangle,
     progress_rect: Rectangle,
     progress: ProgressBars,
-    framebuf: Framebuf,
+    framebuf: crate::Redact<Framebuf>,
     init_draw: bool,
     cursor: Cursor,
     current_view_state: ViewState,
@@ -82,7 +82,7 @@ impl InputPreview {
 
         // 26 segments: 1 for share index + 25 words for Frostsnap backup
         let progress = ProgressBars::new(NUM_WORDS + 1);
-        let framebuf = Framebuf::new();
+        let framebuf = crate::redact::redact(Framebuf::new());
 
         Self {
             area: Rectangle::zero(),

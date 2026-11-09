@@ -84,6 +84,8 @@ flutter:
   assets:
     - assets/icons/
     - assets/devices/
+    - assets/devices/topdown/
+    - assets/devices/hand/
     - assets/google_fonts/
     - assets/frostsnap-logo.svg
     - assets/frostsnap-logo-trimmed.png

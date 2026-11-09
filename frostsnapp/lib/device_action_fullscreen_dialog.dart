@@ -1,9 +1,12 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:frostsnap/device_action_hero.dart';
+import 'package:frostsnap/device_colors.dart';
 import 'package:frostsnap/global.dart';
 import 'package:frostsnap/maybe_fullscreen_dialog.dart';
 import 'package:frostsnap/src/rust/api.dart';
+import 'package:frostsnap/src/rust/api/device_list.dart';
 import 'package:frostsnap/theme.dart';
 
 const String deviceSvg = '''
@@ -21,16 +24,21 @@ const String deviceSvg = '''
 
 class FullscreenActionDialogController<T> extends ChangeNotifier {
   String? title;
-  Function(BuildContext)? body;
+  WidgetBuilder? body;
   List<Widget>? actionButtons;
   Function()? onDismissed;
+
+  /// Opts the dialog into drawing the needed device plugged in, instead of a plain outline.
+  final DeviceActionHeroSpec? hero;
 
   /// The set of devices this controller is tracking. Invariant: seeded at
   /// construction and only ever shrinks. Use `remove*` methods to mark a
   /// device as "done"; the dialog auto-dismisses when the set is empty or
   /// when none of its devices remain connected.
   final Set<DeviceId> _actionNeeded;
-  Set<DeviceId> _connectedDevices;
+
+  /// In connection order, which is the order of the chain.
+  List<ConnectedDevice> _connected;
   NavigatorState? _navigator;
   bool _isShowing = false;
   bool _isDisposed = false;
@@ -54,15 +62,12 @@ class FullscreenActionDialogController<T> extends ChangeNotifier {
     this.body,
     this.actionButtons,
     this.onDismissed,
+    this.hero,
   }) : _actionNeeded = devices.toSet(),
-       _connectedDevices = coord
-           .deviceListState()
-           .devices
-           .map((dev) => dev.id)
-           .toSet() {
+       _connected = coord.deviceListState().devices {
     _navigator = Navigator.of(context, rootNavigator: true);
     _deviceListSubscription = GlobalStreams.deviceListSubject.listen((update) {
-      _connectedDevices = update.state.devices.map((dev) => dev.id).toSet();
+      _connected = update.state.devices;
       _reconcile();
     });
     // Defer the initial reconcile: the constructor is typically called from
@@ -101,6 +106,10 @@ class FullscreenActionDialogController<T> extends ChangeNotifier {
 
   Iterable<DeviceId> get actionsNeeded => _actionNeeded;
 
+  /// The connected devices that still have an action, in chain order.
+  List<ConnectedDevice> get connectedActionNeeded =>
+      _connected.where((dev) => _actionNeeded.contains(dev.id)).toList();
+
   /// Master switch. When false, the dialog is hidden regardless of
   /// `_actionNeeded` and will not show on future reconciles. Flip it back to
   /// true to let the controller drive visibility from device state again.
@@ -114,7 +123,7 @@ class FullscreenActionDialogController<T> extends ChangeNotifier {
   /// True iff the controller is enabled and at least one action-needed device
   /// is currently connected. This is the sole visibility condition.
   bool get shouldShow =>
-      _enabled && _actionNeeded.any(_connectedDevices.contains);
+      _enabled && _connected.any((dev) => _actionNeeded.contains(dev.id));
 
   void _reconcile() {
     if (_isDisposed) return;
@@ -211,11 +220,11 @@ Future<T?> showFullscreenActionDialog<T>(
   final body = controller.body;
   final actionButtons = controller.actionButtons;
 
-  final bodyColumn = Column(
-    mainAxisSize: MainAxisSize.min,
-    crossAxisAlignment: CrossAxisAlignment.stretch,
-    children: [
-      SvgPicture.string(
+  Widget picture(BuildContext context) {
+    final hero = controller.hero;
+    final needed = controller.connectedActionNeeded;
+    if (hero == null || needed.isEmpty) {
+      return SvgPicture.string(
         deviceSvg,
         width: 162,
         height: 134,
@@ -223,58 +232,17 @@ Future<T?> showFullscreenActionDialog<T>(
           theme.colorScheme.onSurface,
           BlendMode.srcATop,
         ),
-      ),
-      if (title != null) ...[
-        SizedBox(height: 32),
-        Text(
-          title,
-          style: theme.textTheme.headlineSmall,
-          textAlign: TextAlign.center,
-        ),
-      ],
-      if (body != null) ...[
-        SizedBox(height: 24),
-        DefaultTextStyle(
-          style: theme.textTheme.bodyLarge!,
-          child: body(context),
-        ),
-      ],
-    ],
-  );
-
-  final footerRow = Row(
-    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-    mainAxisSize: MainAxisSize.max,
-    spacing: 8,
-    children: actionButtons ?? [],
-  );
-
-  final card = Card(
-    color: Colors.black,
-    margin: EdgeInsets.zero,
-    child: Padding(
-      padding: const EdgeInsets.all(20.0),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          bodyColumn,
-          if (actionButtons != null) ...[SizedBox(height: 32), footerRow],
-        ],
-      ),
-    ),
-  );
-
-  final scaffold = Scaffold(
-    backgroundColor: Colors.black,
-    body: Center(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16.0),
-        child: bodyColumn,
-      ),
-    ),
-    persistentFooterButtons: [footerRow],
-  );
+      );
+    }
+    return DeviceActionHero(
+      caseColor: needed.first.caseColor,
+      demo: hero.demo,
+      next: hero.showNext && needed.length > 1
+          ? (caseColor: needed[1].caseColor)
+          : null,
+      maxHeight: hero.maxHeight,
+    );
+  }
 
   // Latched so we pop exactly once. Subsequent notifies while the pop
   // transition is animating (device list churn, verify-stream updates, the
@@ -303,7 +271,13 @@ Future<T?> showFullscreenActionDialog<T>(
       }
       final isCompact =
           WindowSizeContext.of(context) == WindowSizeClass.compact;
-      return isCompact ? scaffold : card;
+      return DeviceActionDialogLayout(
+        compact: isCompact,
+        picture: picture(context),
+        title: title,
+        body: body,
+        actionButtons: actionButtons,
+      );
     },
   );
 
@@ -392,6 +366,91 @@ class InfoRow {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       spacing: 12,
       children: rows.map((r) => r.toWidget(context)).toList(),
+    );
+  }
+}
+
+/// The device action dialog's content, full screen when [compact] and as a card otherwise.
+class DeviceActionDialogLayout extends StatelessWidget {
+  const DeviceActionDialogLayout({
+    super.key,
+    required this.compact,
+    required this.picture,
+    this.title,
+    this.body,
+    this.actionButtons,
+  });
+
+  final bool compact;
+  final Widget picture;
+  final String? title;
+  final WidgetBuilder? body;
+  final List<Widget>? actionButtons;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final title = this.title;
+    final body = this.body;
+    final actionButtons = this.actionButtons;
+
+    final bodyColumn = Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // The only flexible child, so the picture gets what the text leaves and gives way first.
+        Flexible(child: picture),
+        if (title != null) ...[
+          SizedBox(height: 32),
+          Text(
+            title,
+            style: theme.textTheme.headlineSmall,
+            textAlign: TextAlign.center,
+          ),
+        ],
+        if (body != null) ...[
+          SizedBox(height: 24),
+          DefaultTextStyle(
+            style: theme.textTheme.bodyLarge!,
+            child: body(context),
+          ),
+        ],
+      ],
+    );
+
+    final footerRow = Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      mainAxisSize: MainAxisSize.max,
+      spacing: 8,
+      children: actionButtons ?? [],
+    );
+
+    if (compact) {
+      return Scaffold(
+        backgroundColor: Colors.black,
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16.0),
+            child: bodyColumn,
+          ),
+        ),
+        persistentFooterButtons: [footerRow],
+      );
+    }
+    return Card(
+      color: Colors.black,
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.all(20.0),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Flexible(child: bodyColumn),
+            if (actionButtons != null) ...[SizedBox(height: 32), footerRow],
+          ],
+        ),
+      ),
     );
   }
 }
