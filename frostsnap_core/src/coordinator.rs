@@ -1073,37 +1073,10 @@ impl FrostCoordinator {
         signing_devices: &BTreeSet<DeviceId>,
         rng: &mut impl rand_core::RngCore,
     ) -> Result<SignSessionId, StartSignError> {
-        let AccessStructureRef {
-            key_id,
-            access_structure_id,
-        } = access_structure_ref;
-
         let key_data = self
-            .keys
-            .get(&key_id)
-            .ok_or(StartSignError::UnknownKey { key_id })?
+            .check_signing_devices(access_structure_ref, signing_devices)?
             .clone();
-
         let complete_key = key_data.complete_key;
-
-        let access_structure = complete_key
-            .access_structures
-            .get(&access_structure_id)
-            .ok_or(StartSignError::NoSuchAccessStructure)?;
-
-        for device in signing_devices {
-            if !access_structure.device_to_share_index.contains_key(device) {
-                return Err(StartSignError::DeviceNotPartOfKey { device_id: *device });
-            }
-        }
-
-        let selected = signing_devices.len();
-        if selected < access_structure.threshold() as usize {
-            return Err(StartSignError::NotEnoughDevicesSelected {
-                selected,
-                threshold: access_structure.threshold(),
-            });
-        }
 
         let checked_sign_task = sign_task
             .clone()
@@ -1129,6 +1102,44 @@ impl FrostCoordinator {
             nonces_by_device,
             rng,
         ))
+    }
+
+    /// The key of `access_structure_ref`, once `devices` are a threshold of that access structure.
+    fn check_signing_devices(
+        &self,
+        access_structure_ref: AccessStructureRef,
+        devices: &BTreeSet<DeviceId>,
+    ) -> Result<&CoordFrostKey, StartSignError> {
+        let AccessStructureRef {
+            key_id,
+            access_structure_id,
+        } = access_structure_ref;
+
+        let key_data = self
+            .keys
+            .get(&key_id)
+            .ok_or(StartSignError::UnknownKey { key_id })?;
+
+        let access_structure = key_data
+            .complete_key
+            .access_structures
+            .get(&access_structure_id)
+            .ok_or(StartSignError::NoSuchAccessStructure)?;
+
+        for device in devices {
+            if !access_structure.device_to_share_index.contains_key(device) {
+                return Err(StartSignError::DeviceNotPartOfKey { device_id: *device });
+            }
+        }
+
+        let selected = devices.len();
+        if selected < access_structure.threshold() as usize {
+            return Err(StartSignError::NotEnoughDevicesSelected {
+                selected,
+                threshold: access_structure.threshold(),
+            });
+        }
+        Ok(key_data)
     }
 
     /// Opens the signing session for `sign_task`, whose nonces are already reserved for each device
