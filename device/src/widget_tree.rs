@@ -157,7 +157,8 @@ impl WidgetTree {
                     phase: Some(phase),
                 }
             }
-            SignTask::Nostr { .. } => {
+            // Never prompted for: it is signed on the user's confirmation at its ECDH.
+            SignTask::Nostr { .. } | SignTask::SpContact { .. } => {
                 let mut standby = Standby::new(crate::FIRMWARE_VERSION);
                 standby.set_welcome();
                 Self::Standby(Box::new(standby))

@@ -238,6 +238,13 @@ impl Env for TestEnv {
                     .unwrap();
                 run.extend_from_device(from, ack);
             }
+            DeviceToUserMessage::SpContactSignRequest { phase } => {
+                let sign_ack = run
+                    .device(from)
+                    .sign_ack(*phase, &mut TestDeviceKeyGen)
+                    .unwrap();
+                run.extend_from_device(from, sign_ack);
+            }
             DeviceToUserMessage::Restoration(restoration) => {
                 use device::restoration::ToUserRestoration::*;
                 match *restoration {

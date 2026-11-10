@@ -666,6 +666,20 @@ impl<'a> DeviceLoop<'a> {
                                     rand_seed,
                                 }));
                         }
+                        // The user approved this contact at its ECDH, so there is no prompt.
+                        // Nothing is shown before this runs, so a bad coordinator contribution or
+                        // nonce drops the request instead of panicking, as the ECDH path does.
+                        DeviceToUserMessage::SpContactSignRequest { phase } => {
+                            self.ui.set_busy_task(ui::BusyTask::Signing);
+                            match self.signer.sign_ack(*phase, &mut crypto.share_encryption()) {
+                                Ok(sends) => self.outbox.extend(sends),
+                                Err(_e) => {
+                                    log_and_redraw!(self.ui, "sp contact sign failed: {_e:?}");
+                                    self.ui.clear_busy_task();
+                                    self.ui.go_to_default();
+                                }
+                            }
+                        }
                         DeviceToUserMessage::Restoration(to_user_restoration) => {
                             use frostsnap_core::device::restoration::ToUserRestoration::*;
                             match *to_user_restoration {

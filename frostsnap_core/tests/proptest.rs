@@ -682,7 +682,7 @@ impl Env for ProptestEnv {
                     .or_default()
                     .insert(from, *phase);
             }
-            SpContactEcdhRequest { .. } => {
+            SpContactEcdhRequest { .. } | SpContactSignRequest { .. } => {
                 // TODO: proptest adding contacts
             }
             Restoration(_msg) => {

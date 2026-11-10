@@ -28,6 +28,14 @@ pub enum SigningMutation {
     ForgetFinishedSignSession {
         session_id: SignSessionId,
     },
+    AddSpContact {
+        key_id: KeyId,
+        contact: alloc::boxed::Box<crate::silent_payments::SignedSpContact>,
+    },
+    RemoveSpContact {
+        key_id: KeyId,
+        name: alloc::string::String,
+    },
 }
 
 impl SigningMutation {
@@ -43,6 +51,8 @@ impl SigningMutation {
             | SigningMutation::ForgetFinishedSignSession { session_id } => {
                 Some(coord.get_sign_session(*session_id)?.key_id())
             }
+            SigningMutation::AddSpContact { key_id, .. }
+            | SigningMutation::RemoveSpContact { key_id, .. } => Some(*key_id),
         }
     }
 }
