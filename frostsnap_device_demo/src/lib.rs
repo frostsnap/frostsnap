@@ -757,9 +757,10 @@ mod test {
         );
 
         let verify = frame_at(DemoKind::VerifyAddress, 990);
+        assert!(!has_sharp_edges(&verify, (10, 50, 229, 165)), "address");
         assert!(
-            !has_sharp_edges(&verify, (0, 0, 239, 280)),
-            "address and its index"
+            has_sharp_edges(&verify, (30, 18, 210, 42)),
+            "receive address #7"
         );
 
         let typing_key_number = frame_at(DemoKind::EnterBackup, 3000);
