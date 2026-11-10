@@ -1,8 +1,9 @@
 //! The device's own screens, played by a scripted finger, for the app to show how to work the
 //! device.
 //!
-//! Only the device is rendered here. The app draws the hand from the [`Cue`]s, so a cue goes out
-//! [`Cue::contact_in_ms`] before the finger lands, giving the hand time to reach the screen.
+//! Only the device is rendered here. The app draws the hand by playing each [`Cue`]'s
+//! [`Cue::clips`], and a cue goes out [`Cue::contact_in_ms`] before the finger lands, giving the
+//! hand time to reach the screen. The clips' timing is [`hand_gestures`], generated with them.
 //! Amounts, addresses, hashes and words are placeholders and are blurred (see
 //! `frostsnap_widgets::redact`). The security check is given the real code instead: what the user
 //! does there is check that every device shows it.
@@ -23,7 +24,10 @@ use frostsnap_widgets::{
     SignTxPrompt, SuperDrawTarget, Widget, WidgetList, HOLD_TO_CONFIRM_TIME_LONG_MS,
     HOLD_TO_CONFIRM_TIME_MS, HOLD_TO_CONFIRM_TIME_SHORT_MS,
 };
+use hand_gestures::{FINGERTIP, HOLD, SWIPE, TAP};
 use std::{num::NonZeroU32, str::FromStr};
+
+pub mod hand_gestures;
 
 pub const WIDTH: u32 = 240;
 pub const HEIGHT: u32 = 280;
@@ -56,33 +60,71 @@ pub struct Cue {
     pub contact_in_ms: u32,
 }
 
+/// One of the hand's clips, starting `start_in_ms` after its cue goes out (before it, if
+/// negative).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ClipStart {
+    pub asset: &'static str,
+    pub start_in_ms: i32,
+}
+
+// The touch lands on a whole millisecond, so put it mid-frame: either side of the frame's edge it
+// would show the frame before or after it.
+const HALF_FRAME_MS: i64 = 500 / hand_gestures::FPS as i64;
+
+/// How the app plays a cue's hand.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Hand {
+    /// Played in order. Between two clips, and after the last, the hand keeps the clip's final
+    /// frame: for a hold, the finger still pressed.
+    pub clips: Vec<ClipStart>,
+    /// When the hand is back at rest.
+    pub settle_in_ms: i32,
+    /// How far, in screen pixels, the hand moves from where its clips put the fingertip so the
+    /// finger lands where the gesture touches.
+    pub offset: (i32, i32),
+}
+
+impl Cue {
+    pub fn hand(&self) -> Hand {
+        let contact = i64::from(self.contact_in_ms);
+        let at = |clip: &hand_gestures::Clip, touch: i64, point_ms: u32| {
+            (
+                ClipStart {
+                    asset: clip.asset,
+                    start_in_ms: (touch - i64::from(point_ms) - HALF_FRAME_MS) as i32,
+                },
+                clip.length_ms,
+            )
+        };
+        let (clips, press): (Vec<_>, Point) = match self.gesture {
+            Gesture::Swipe => (
+                vec![at(&SWIPE.clip, contact, SWIPE.contact_ms)],
+                Point::new(SWIPE_X, SWIPE_FROM_Y),
+            ),
+            Gesture::Tap { at: target } => (vec![at(&TAP.clip, contact, TAP.contact_ms)], target),
+            Gesture::Hold { ms } => (
+                vec![
+                    at(&HOLD.press, contact, HOLD.contact_ms),
+                    at(&HOLD.release, contact + i64::from(ms), HOLD.lift_ms),
+                ],
+                HOLD_BUTTON,
+            ),
+        };
+        let (last, length_ms) = clips.last().expect("every gesture has a clip");
+        Hand {
+            settle_in_ms: last.start_in_ms + *length_ms as i32,
+            clips: clips.iter().map(|(clip, _)| *clip).collect(),
+            offset: (press.x - FINGERTIP.0, press.y - FINGERTIP.1),
+        }
+    }
+}
+
 #[derive(Default)]
 pub struct Step {
     pub cues: Vec<Cue>,
     /// The whole screen as RGBA, present only when it changed.
     pub frame: Option<Vec<u8>>,
-}
-
-/// The timing of the hand clips the app plays, which the script follows so each touch lands when
-/// the finger does, and the next gesture waits for the hand to get back.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct HandTiming {
-    /// From the start of the swipe clip to the finger touching the screen.
-    pub swipe_contact_ms: u32,
-    /// From the touch to the end of the swipe clip.
-    pub swipe_after_contact_ms: u32,
-    /// From the start of the hold clip to the finger touching the screen.
-    pub hold_contact_ms: u32,
-    /// How long the hold clip keeps the finger down when it is not stretched.
-    pub hold_press_ms: u32,
-    /// From the finger lifting to the end of the hold clip.
-    pub hold_after_release_ms: u32,
-    /// From the start of the tap clip to the finger touching the screen.
-    pub tap_contact_ms: u32,
-    /// How long the tap clip keeps the finger down.
-    pub tap_press_ms: u32,
-    /// From the finger lifting to the end of the tap clip.
-    pub tap_after_release_ms: u32,
 }
 
 const REST_BEFORE_REPLAY_MS: u64 = 1000;
@@ -254,9 +296,9 @@ pub struct Demo {
 
 impl Demo {
     /// `seed` shuffles the first play's quiz; each replay shuffles it differently.
-    pub fn new(kind: DemoKind, hand: HandTiming, seed: NonZeroU32) -> Self {
+    pub fn new(kind: DemoKind, seed: NonZeroU32) -> Self {
         let _redacting = redact::enable_on_this_thread();
-        let (timeline, loop_ms) = schedule(&script(kind), hand);
+        let (timeline, loop_ms) = schedule(&script(kind));
         Self {
             kind,
             seed,
@@ -416,18 +458,18 @@ fn script(kind: DemoKind) -> Vec<Action> {
     }
 }
 
-fn schedule(actions: &[Action], hand: HandTiming) -> (Vec<(u64, Event)>, u64) {
+fn schedule(actions: &[Action]) -> (Vec<(u64, Event)>, u64) {
     let mut timeline = Vec::new();
     let mut t = 0;
     for action in actions {
         match *action {
             Action::Swipe => {
-                let contact = t + u64::from(hand.swipe_contact_ms);
+                let contact = t + u64::from(SWIPE.contact_ms);
                 timeline.push((
                     t,
                     Event::Cue(Cue {
                         gesture: Gesture::Swipe,
-                        contact_in_ms: hand.swipe_contact_ms,
+                        contact_in_ms: SWIPE.contact_ms,
                     }),
                 ));
                 timeline.push((
@@ -451,36 +493,37 @@ fn schedule(actions: &[Action], hand: HandTiming) -> (Vec<(u64, Event)>, u64) {
                         to_y: SWIPE_TO_Y - 2,
                     }),
                 ));
-                t = contact + u64::from(hand.swipe_after_contact_ms);
+                t = contact + u64::from(SWIPE.clip.length_ms - SWIPE.contact_ms);
             }
             Action::Hold { threshold_ms } => {
-                let ms = (threshold_ms + 100).max(hand.hold_press_ms);
-                let contact = t + u64::from(hand.hold_contact_ms);
+                let clips_own_press_ms = HOLD.press.length_ms - HOLD.contact_ms + HOLD.lift_ms;
+                let ms = (threshold_ms + 100).max(clips_own_press_ms);
+                let contact = t + u64::from(HOLD.contact_ms);
                 timeline.push((
                     t,
                     Event::Cue(Cue {
                         gesture: Gesture::Hold { ms },
-                        contact_in_ms: hand.hold_contact_ms,
+                        contact_in_ms: HOLD.contact_ms,
                     }),
                 ));
                 timeline.push((contact, Event::Input(Input::Press(HOLD_BUTTON))));
                 let release = contact + ms as u64;
                 timeline.push((release, Event::Input(Input::Release(HOLD_BUTTON))));
-                t = release + u64::from(hand.hold_after_release_ms);
+                t = release + u64::from(HOLD.release.length_ms - HOLD.lift_ms);
             }
             Action::Tap(target) => {
                 timeline.push((
                     t,
                     Event::TapCue {
                         target,
-                        contact_in_ms: hand.tap_contact_ms,
+                        contact_in_ms: TAP.contact_ms,
                     },
                 ));
-                let contact = t + u64::from(hand.tap_contact_ms);
+                let contact = t + u64::from(TAP.contact_ms);
                 timeline.push((contact, Event::TapPress));
-                let release = contact + u64::from(hand.tap_press_ms);
+                let release = contact + u64::from(TAP.lift_ms - TAP.contact_ms);
                 timeline.push((release, Event::TapRelease));
-                t = release + u64::from(hand.tap_after_release_ms);
+                t = release + u64::from(TAP.clip.length_ms - TAP.lift_ms);
             }
             Action::Pause(ms) => t += ms,
         }
@@ -519,17 +562,6 @@ mod test {
         security_check_code: [0xa3, 0x5f, 0x19, 0xc2],
     };
 
-    const HAND: HandTiming = HandTiming {
-        swipe_contact_ms: 1000,
-        swipe_after_contact_ms: 2167,
-        hold_contact_ms: 1500,
-        hold_press_ms: 3067,
-        hold_after_release_ms: 2433,
-        tap_contact_ms: 267,
-        tap_press_ms: 100,
-        tap_after_release_ms: 600,
-    };
-
     const SEED: NonZeroU32 = NonZeroU32::new(0x5eed).expect("non-zero");
 
     const KINDS: [DemoKind; 8] = [
@@ -544,7 +576,7 @@ mod test {
     ];
 
     fn play(screen: &mut dyn Screen, actions: &[Action]) {
-        let (timeline, loop_ms) = schedule(actions, HAND);
+        let (timeline, loop_ms) = schedule(actions);
         let mut fb = VecFramebuffer::new(WIDTH as usize, HEIGHT as usize);
         let mut finger = Finger::default();
         let mut events = timeline.iter().peekable();
@@ -559,7 +591,7 @@ mod test {
 
     /// Where the finger taps in each play of the demo, over `plays` plays.
     fn taps(kind: DemoKind, seed: NonZeroU32, plays: u64) -> Vec<Vec<Point>> {
-        let mut demo = Demo::new(kind, HAND, seed);
+        let mut demo = Demo::new(kind, seed);
         let mut plays_taps = vec![Vec::new(); plays as usize];
         for now_ms in (0..demo.loop_ms * plays).step_by(FRAME_MS as usize) {
             for cue in demo.step(now_ms).cues {
@@ -574,7 +606,7 @@ mod test {
     #[test]
     fn each_cue_leads_its_touch_by_contact_in_ms() {
         for kind in KINDS {
-            let (timeline, _) = schedule(&script(kind), HAND);
+            let (timeline, _) = schedule(&script(kind));
             for (i, (at, event)) in timeline.iter().enumerate() {
                 let contact_in_ms = match event {
                     Event::Cue(cue) => cue.contact_in_ms,
@@ -590,31 +622,138 @@ mod test {
         }
     }
 
+    fn cue_of(event: &Event) -> Option<Cue> {
+        match *event {
+            Event::Cue(cue) => Some(cue),
+            Event::TapCue { contact_in_ms, .. } => Some(Cue {
+                gesture: Gesture::Tap { at: Point::zero() },
+                contact_in_ms,
+            }),
+            _ => None,
+        }
+    }
+
     #[test]
     fn no_gesture_starts_before_the_last_one_is_back_at_rest() {
         for kind in KINDS {
-            let (timeline, _) = schedule(&script(kind), HAND);
+            let (timeline, _) = schedule(&script(kind));
             let mut at_rest_from = 0;
-            for (at, event) in &timeline {
-                let (contact_in_ms, after_contact_ms) = match event {
-                    Event::Cue(Cue {
-                        gesture: Gesture::Swipe,
-                        contact_in_ms,
-                    }) => (*contact_in_ms, HAND.swipe_after_contact_ms),
-                    Event::Cue(Cue {
-                        gesture: Gesture::Hold { ms },
-                        contact_in_ms,
-                    }) => (*contact_in_ms, ms + HAND.hold_after_release_ms),
-                    Event::TapCue { contact_in_ms, .. } => (
-                        *contact_in_ms,
-                        HAND.tap_press_ms + HAND.tap_after_release_ms,
-                    ),
-                    _ => continue,
-                };
-                assert!(*at >= at_rest_from, "{kind:?} at {at}");
-                at_rest_from = at + u64::from(contact_in_ms + after_contact_ms);
+            for (at, cue) in timeline.iter().filter_map(|(at, e)| Some((at, cue_of(e)?))) {
+                assert!(*at as i64 >= at_rest_from, "{kind:?} at {at}");
+                at_rest_from = *at as i64 + i64::from(cue.hand().settle_in_ms);
             }
         }
+    }
+
+    #[test]
+    fn a_hold_releases_only_after_its_press_clip_has_played() {
+        for ms in [0, HOLD_TO_CONFIRM_TIME_MS, HOLD_TO_CONFIRM_TIME_LONG_MS] {
+            let (timeline, _) = schedule(&[Action::Hold { threshold_ms: ms }]);
+            let cue = timeline
+                .iter()
+                .find_map(|(_, e)| cue_of(e))
+                .expect("a hold is cued");
+            let [press, release] = cue.hand().clips[..] else {
+                panic!("a hold is a press and a release");
+            };
+            assert!(
+                release.start_in_ms >= press.start_in_ms + HOLD.press.length_ms as i32,
+                "{ms}"
+            );
+        }
+    }
+
+    /// When each frame of a checked-in clip starts, by its decoded timing, then when it ends.
+    fn frame_starts(asset: &str) -> Vec<u32> {
+        use image::AnimationDecoder;
+        let path = format!("{}/../{asset}", env!("CARGO_MANIFEST_DIR"));
+        let bytes = std::fs::read(&path).expect("clip is checked in");
+        let decoder = image::codecs::webp::WebPDecoder::new(std::io::Cursor::new(bytes))
+            .expect("clip decodes");
+        let mut starts = vec![0];
+        for frame in decoder.into_frames() {
+            let (numer, denom) = frame.expect("frame decodes").delay().numer_denom_ms();
+            starts.push(starts.last().copied().unwrap_or(0) + numer / denom);
+        }
+        starts
+    }
+
+    #[test]
+    fn the_clips_last_as_long_as_their_manifest_says() {
+        for clip in [SWIPE.clip, TAP.clip, HOLD.press, HOLD.release] {
+            assert_eq!(
+                frame_starts(clip.asset).last().copied(),
+                Some(clip.length_ms),
+                "{}",
+                clip.asset
+            );
+        }
+    }
+
+    // The encoder merges identical neighbouring frames, so this goes by the decoded clips' times:
+    // when the device feels each touch, the clip shown is on the frame its manifest times it by.
+    #[test]
+    fn every_touch_lands_on_its_contact_or_lift_frame() {
+        for kind in KINDS {
+            let (timeline, _) = schedule(&script(kind));
+            for (i, (cued_at, cue)) in timeline
+                .iter()
+                .enumerate()
+                .filter_map(|(i, (at, e))| Some((i, (*at, cue_of(e)?))))
+            {
+                let hand = cue.hand();
+                let after = |is: fn(&Event) -> bool| {
+                    let (at, _) = timeline[i + 1..]
+                        .iter()
+                        .find(|(_, e)| is(e))
+                        .expect("the cue's touch is scheduled");
+                    (at - cued_at) as i64
+                };
+                let press =
+                    || after(|e| matches!(e, Event::Input(Input::Press(_)) | Event::TapPress));
+                let release =
+                    || after(|e| matches!(e, Event::Input(Input::Release(_)) | Event::TapRelease));
+                let touches = match cue.gesture {
+                    Gesture::Swipe => vec![(press(), 0, SWIPE.contact_ms)],
+                    Gesture::Tap { .. } => {
+                        vec![(press(), 0, TAP.contact_ms), (release(), 0, TAP.lift_ms)]
+                    }
+                    Gesture::Hold { .. } => {
+                        vec![(press(), 0, HOLD.contact_ms), (release(), 1, HOLD.lift_ms)]
+                    }
+                };
+                for (touch, clip, frame_ms) in touches {
+                    let clip = hand.clips[clip];
+                    let elapsed = (touch - i64::from(clip.start_in_ms)) as u32;
+                    let starts = frame_starts(clip.asset);
+                    let showing = starts
+                        .windows(2)
+                        .find(|edges| edges[0] <= elapsed && elapsed < edges[1])
+                        .map(|edges| edges[0]);
+                    assert_eq!(showing, Some(frame_ms), "{kind:?} {}", clip.asset);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn the_hand_moves_onto_each_touch() {
+        let offset = |gesture| {
+            Cue {
+                gesture,
+                contact_in_ms: 0,
+            }
+            .hand()
+            .offset
+        };
+        assert_eq!(offset(Gesture::Hold { ms: 3000 }), (0, 0));
+        assert_eq!(offset(Gesture::Swipe), (0, SWIPE_FROM_Y - FINGERTIP.1));
+        assert_eq!(
+            offset(Gesture::Tap {
+                at: Point::new(41, 147)
+            }),
+            (41 - FINGERTIP.0, 147 - FINGERTIP.1)
+        );
     }
 
     #[test]
@@ -671,7 +810,7 @@ mod test {
 
     #[test]
     fn every_tap_has_a_finger_on_it() {
-        let (timeline, _) = schedule(&script(DemoKind::EnterBackup), HAND);
+        let (timeline, _) = schedule(&script(DemoKind::EnterBackup));
         let touches = timeline
             .iter()
             .filter(|(_, e)| matches!(e, Event::Input(Input::Press(_))))
@@ -689,7 +828,7 @@ mod test {
     #[test]
     fn every_kind_replays_and_sends_only_changed_screens() {
         for kind in KINDS {
-            let mut demo = Demo::new(kind, HAND, SEED);
+            let mut demo = Demo::new(kind, SEED);
             let mut frames = 0;
             let mut previous: Option<Vec<u8>> = None;
             for now_ms in (0..demo.loop_ms * 2).step_by(FRAME_MS as usize) {
@@ -705,7 +844,7 @@ mod test {
     }
 
     fn frame_at(kind: DemoKind, at_ms: u64) -> Vec<u8> {
-        let mut demo = Demo::new(kind, HAND, SEED);
+        let mut demo = Demo::new(kind, SEED);
         let mut last = Vec::new();
         for now_ms in (0..=at_ms).step_by(FRAME_MS as usize) {
             if let Some(frame) = demo.step(now_ms).frame {

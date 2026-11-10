@@ -356,6 +356,10 @@ backup +ARGS="":
 simulate +ARGS="":
     (cd tools/widget_simulator && cargo run -- {{ARGS}}; )
 
+# Rebuild the device action dialogs' hand clips and the demo's manifest of their timing.
+hand-gestures:
+    cargo run --release -p hand_gestures
+
 stack-check +ARGS="stacks --max-pct 25":
     cargo run -p stack_check -- {{ARGS}}
 

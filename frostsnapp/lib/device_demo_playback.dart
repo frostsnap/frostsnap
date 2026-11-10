@@ -1,108 +1,29 @@
 import 'dart:async';
 import 'dart:ui' as ui;
 
+import 'package:collection/collection.dart';
 import 'package:flutter/animation.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:frostsnap/src/rust/api/device_demo.dart';
 
-enum HandSheet {
-  swipe('assets/devices/hand/hand-swipe-sheet.webp'),
-  hold('assets/devices/hand/hand-hold-sheet.webp');
+/// One play of a hand clip: its asset, from when it started.
+typedef HandClipPlay = ({String asset, Duration start});
 
-  const HandSheet(this.asset);
-
-  final String asset;
-
-  static const columns = 20;
-  static const cellSize = ui.Size(186, 304);
-
-  // The wrist runs off a cell's edge, so cells packed edge to edge bleed into each other's
-  // edges when filtered. The sheets leave this much transparency around every cell.
-  static const _margin = 8.0;
-
-  ui.Rect cell(int index) => ui.Rect.fromLTWH(
-    (index % columns) * (cellSize.width + 2 * _margin) + _margin,
-    (index ~/ columns) * (cellSize.height + 2 * _margin) + _margin,
-    cellSize.width,
-    cellSize.height,
-  );
-}
-
+/// A play of a hand clip, shown [elapsed] into it. Past its end, it shows its last frame.
 @immutable
-class HandFrame {
-  const HandFrame(this.sheet, this.index);
+class HandPose {
+  const HandPose(this.play, this.elapsed);
 
-  final HandSheet sheet;
-  final int index;
-
-  /// Both clips start and end on this pose, so the hand can wait in it between gestures.
-  static const rest = HandFrame(HandSheet.swipe, 0);
-
-  @override
-  bool operator ==(Object other) =>
-      other is HandFrame && other.sheet == sheet && other.index == index;
-
-  @override
-  int get hashCode => Object.hash(sheet, index);
+  final HandClipPlay play;
+  final Duration elapsed;
 }
 
-/// Which frame of the hand clips to draw, given the gestures the device demo announced.
+/// Which hand clip to show, and how far into it, given the gestures the device demo cued. The
+/// clips and their timing come with each cue.
 class HandTrack {
-  static const fps = 30;
-  static const swipeContactFrame = 30;
-  static const holdContactFrame = 45;
-  static const _holdStillFrame = 90;
-  static const _holdLiftFrame = 137;
-  static const _holdFrames = 210;
-
-  /// Where on the device's screen every clip puts the fingertip. A tap elsewhere moves the hand.
-  static const fingertip = Offset(120, 215);
-
-  // A tap is the hold clip's own reach, press and lift, played quickly: the same hand, lit and
-  // framed the same, with no sheet of its own. Hold frames up to 22 and from 171 are still the
-  // rest pose, so a tap starts and ends where every clip does.
-  static final List<HandFrame> _tapClip = [
-    for (var i = 20; i < holdContactFrame; i += 2) HandFrame(HandSheet.hold, i),
-    for (var i = 0; i < _tapPressFrames; i++)
-      const HandFrame(HandSheet.hold, holdContactFrame),
-    for (var i = _holdLiftFrame; i <= 171; i += 2) HandFrame(HandSheet.hold, i),
-  ];
-  static final tapContactFrame = _tapClip.indexOf(
-    const HandFrame(HandSheet.hold, holdContactFrame),
-  );
-  static const _tapPressFrames = 3;
-
-  // The finger's upward stroke (clip frames 30–55) plays at double speed; the frames saved rest on
-  // the end pose so the cycle keeps its length.
-  static final List<int> _swipeCycle = () {
-    final stroke = [for (var i = 30; i <= 55; i += 2) i];
-    final after = [for (var i = 56; i <= 94; i++) i];
-    final rest = 95 - (30 + stroke.length + after.length);
-    return [
-      for (var i = 0; i < 30; i++) i,
-      ...stroke,
-      ...after,
-      for (var i = 0; i < rest; i++) 94,
-    ];
-  }();
-
-  static int _ms(int frames) => (frames * 1000 / fps).round();
-
-  /// The clips' timing, which the device demo scripts its touches by.
-  static final timing = DeviceDemoHandTiming(
-    swipeContactMs: _ms(swipeContactFrame),
-    swipeAfterContactMs: _ms(_swipeCycle.length - swipeContactFrame),
-    holdContactMs: _ms(holdContactFrame),
-    holdPressMs: _ms(_holdLiftFrame - holdContactFrame),
-    holdAfterReleaseMs: _ms(_holdFrames - _holdLiftFrame),
-    tapContactMs: _ms(tapContactFrame),
-    tapPressMs: _ms(_tapPressFrames),
-    tapAfterReleaseMs: _ms(_tapClip.length - tapContactFrame - _tapPressFrames),
-  );
-
-  Duration? _start;
-  List<HandFrame> _clip = const [];
+  final _clips = <HandClipPlay>[];
+  Duration _settle = Duration.zero;
   ({Duration at, Offset offset}) _from = (
     at: Duration.zero,
     offset: Offset.zero,
@@ -110,46 +31,34 @@ class HandTrack {
   ({Duration at, Offset offset}) _to = (at: Duration.zero, offset: Offset.zero);
 
   void cue(DeviceDemoCue cue, Duration at) {
-    final (clip, contactFrame) = switch (cue.gesture) {
-      DeviceDemoGesture_Swipe() => (
-        [for (final i in _swipeCycle) HandFrame(HandSheet.swipe, i)],
-        swipeContactFrame,
-      ),
-      DeviceDemoGesture_Hold(:final holdMs) => (
-        _holdClip(holdMs),
-        holdContactFrame,
-      ),
-      DeviceDemoGesture_Tap() => (_tapClip, tapContactFrame),
-    };
-    final contact = at + Duration(milliseconds: cue.contactInMs);
+    // Until the new gesture's first clip starts, the hand stays on the clip it last played.
+    final shown = _clips.lastWhereOrNull((clip) => clip.start <= at);
+    _clips
+      ..clear()
+      ..addAll([if (shown != null) shown])
+      ..addAll([
+        for (final clip in cue.clips)
+          (
+            asset: clip.asset,
+            start: at + Duration(milliseconds: clip.startInMs),
+          ),
+      ]);
+    _settle = at + Duration(milliseconds: cue.settleInMs);
     _from = (at: at, offset: offsetAt(at));
     _to = (
-      at: contact,
-      offset: switch (cue.gesture) {
-        DeviceDemoGesture_Tap(:final x, :final y) =>
-          Offset(x.toDouble(), y.toDouble()) - fingertip,
-        _ => Offset.zero,
-      },
+      at: at + Duration(milliseconds: cue.contactInMs),
+      offset: Offset(cue.offsetX.toDouble(), cue.offsetY.toDouble()),
     );
-    _clip = clip;
-    // The touch lands on a whole millisecond, so put it mid-frame: either side of the frame's
-    // edge it would show the frame before or after contact.
-    _start =
-        contact -
-        Duration(microseconds: ((contactFrame + 0.5) * 1000000 / fps).round());
   }
 
-  /// Null until the first gesture: a demo that never asks for one has no hand.
-  HandFrame? frameAt(Duration now) {
-    final start = _start;
-    if (start == null) return null;
-    final n = ((now - start).inMicroseconds * fps / 1000000).floor();
-    if (n < 0 || n >= _clip.length) return HandFrame.rest;
-    return _clip[n];
+  /// Null until the first clip starts: a demo that never cues a gesture has no hand.
+  HandPose? poseAt(Duration now) {
+    final clip = _clips.lastWhereOrNull((clip) => clip.start <= now);
+    return clip == null ? null : HandPose(clip, now - clip.start);
   }
 
-  /// How far from [fingertip] the hand is, in the device screen's pixels. It moves to each tap's
-  /// target as the finger reaches for it.
+  /// How far from where the clips put the fingertip the hand is, in the device screen's pixels.
+  /// It moves onto each gesture's press point as the finger reaches for it.
   Offset offsetAt(Duration now) {
     if (now >= _to.at) return _to.offset;
     if (now <= _from.at) return _from.offset;
@@ -159,32 +68,197 @@ class HandTrack {
     return Offset.lerp(_from.offset, _to.offset, t) ?? _to.offset;
   }
 
-  /// Whether the hand is still playing its clip.
-  bool isMovingAt(Duration now) {
-    final start = _start;
-    return start != null &&
-        now < start + Duration(microseconds: _clip.length * 1000000 ~/ fps);
+  /// Whether the hand is still going, rather than resting on its last frame.
+  bool isMovingAt(Duration now) => now < _settle;
+}
+
+typedef HandClipFrame = ({ui.Image image, Duration duration});
+
+/// A hand clip's frames, decoded one at a time in order.
+abstract interface class HandClipFrames {
+  int get frameCount;
+
+  /// The next frame and how long it shows.
+  Future<HandClipFrame> next();
+
+  void dispose();
+}
+
+typedef OpenHandClip = Future<HandClipFrames> Function(String asset);
+
+class _CodecFrames implements HandClipFrames {
+  _CodecFrames(this._codec);
+
+  final ui.Codec _codec;
+
+  @override
+  int get frameCount => _codec.frameCount;
+
+  @override
+  Future<HandClipFrame> next() async {
+    final frame = await _codec.getNextFrame();
+    return (image: frame.image, duration: frame.duration);
   }
 
-  // The hand is motionless mid-press, so a longer hold repeats that one frame.
-  static List<HandFrame> _holdClip(int holdMs) {
-    final extra =
-        ((holdMs * fps / 1000).round() - (_holdLiftFrame - holdContactFrame))
-            .clamp(0, 1 << 20);
-    return [
-      for (var i = 0; i < _holdStillFrame; i++) HandFrame(HandSheet.hold, i),
-      for (var i = 0; i < extra; i++)
-        HandFrame(HandSheet.hold, _holdStillFrame),
-      for (var i = _holdStillFrame; i < _holdFrames; i++)
-        HandFrame(HandSheet.hold, i),
-    ];
+  @override
+  void dispose() => _codec.dispose();
+}
+
+/// Shows a [HandPose] from its clip, decoding the clip's frames in order so only the frame on
+/// show and the one being decoded are ever in memory, not whole clips.
+class HandPlayer extends ChangeNotifier {
+  HandPlayer({OpenHandClip open = openAsset}) : _open = open;
+
+  /// Decodes the app's bundled clip with Flutter's codec.
+  static Future<HandClipFrames> openAsset(String asset) async {
+    final data = await rootBundle.load(asset);
+    return _CodecFrames(
+      await ui.instantiateImageCodec(data.buffer.asUint8List()),
+    );
+  }
+
+  final OpenHandClip _open;
+  HandPose? _want;
+  HandClipPlay? _playing;
+  HandClipPlay? _failed;
+  HandClipFrames? _frames;
+  var _decoded = 0;
+  var _decodedUntil = Duration.zero;
+  ({ui.Image image, Duration from, Duration until})? _ahead;
+  ui.Image? _image;
+  var _busy = false;
+  var _disposed = false;
+
+  /// The frame on show, kept until the next one is ready so the hand never blinks out.
+  ui.Image? get image => _image;
+
+  void show(HandPose? pose) {
+    if (pose == null) return;
+    _want = pose;
+    _pump();
+  }
+
+  // The next frame is decoded ahead and swapped in on the tick it falls due, so a frame never
+  // waits on its own decode. One open or decode is in flight at a time. When decoding falls
+  // behind the clock, frames whose time has already passed are dropped rather than shown late.
+  // A play that failed isn't retried: the next cue's play starts afresh.
+  void _pump() {
+    final want = _want;
+    if (_disposed || want == null || want.play == _failed) return;
+    if (want.play != _playing) {
+      if (!_busy) {
+        _busy = true;
+        unawaited(_openPlay(want.play));
+      }
+      return;
+    }
+    _promote(want);
+    final frames = _frames;
+    if (_busy ||
+        frames == null ||
+        _ahead != null ||
+        _decoded >= frames.frameCount) {
+      return;
+    }
+    _busy = true;
+    unawaited(_decodeNext(frames));
+  }
+
+  void _promote(HandPose want) {
+    final ahead = _ahead;
+    if (ahead == null || want.elapsed < ahead.from) return;
+    _ahead = null;
+    final frames = _frames;
+    final passed =
+        want.elapsed >= ahead.until &&
+        frames != null &&
+        _decoded < frames.frameCount;
+    if (passed) {
+      ahead.image.dispose();
+    } else {
+      _image?.dispose();
+      _image = ahead.image;
+      notifyListeners();
+    }
+  }
+
+  Future<void> _openPlay(HandClipPlay play) async {
+    _frames?.dispose();
+    _frames = null;
+    _ahead?.image.dispose();
+    _ahead = null;
+    _playing = play;
+    _decoded = 0;
+    _decodedUntil = Duration.zero;
+    try {
+      final frames = await _open(play.asset);
+      if (_disposed || _want?.play != play) {
+        frames.dispose();
+      } else {
+        _frames = frames;
+      }
+    } catch (error, stack) {
+      _fail(play, error, stack);
+    } finally {
+      _busy = false;
+    }
+    _pump();
+  }
+
+  Future<void> _decodeNext(HandClipFrames frames) async {
+    final play = _playing;
+    try {
+      final frame = await frames.next();
+      if (_disposed || !identical(frames, _frames) || _want?.play != play) {
+        frame.image.dispose();
+      } else {
+        final from = _decodedUntil;
+        _decoded++;
+        _decodedUntil += frame.duration;
+        _ahead = (image: frame.image, from: from, until: _decodedUntil);
+      }
+    } catch (error, stack) {
+      if (identical(frames, _frames)) {
+        frames.dispose();
+        _frames = null;
+      }
+      _fail(play, error, stack);
+    } finally {
+      _busy = false;
+    }
+    _pump();
+  }
+
+  void _fail(HandClipPlay? play, Object error, StackTrace stack) {
+    _failed = play;
+    FlutterError.reportError(
+      FlutterErrorDetails(
+        exception: error,
+        stack: stack,
+        library: 'device demo',
+        context: ErrorDescription('while playing a hand clip'),
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    _frames?.dispose();
+    _frames = null;
+    _ahead?.image.dispose();
+    _ahead = null;
+    _image?.dispose();
+    _image = null;
+    super.dispose();
   }
 }
 
 /// A running device demo: its latest screen and where the hand is.
 class DeviceDemoPlayback extends ChangeNotifier {
-  DeviceDemoPlayback(DeviceDemoKind kind)
-    : _demo = DeviceDemo(kind: kind, hand: HandTrack.timing) {
+  DeviceDemoPlayback(DeviceDemoKind kind, {OpenHandClip? openHandClip})
+    : _demo = DeviceDemo(kind: kind),
+      handPlayer = HandPlayer(open: openHandClip ?? HandPlayer.openAsset) {
     _clock.start();
     _events = _demo.events().listen(_onEvent);
   }
@@ -193,6 +267,7 @@ class DeviceDemoPlayback extends ChangeNotifier {
   late final StreamSubscription<DeviceDemoEvent> _events;
   final _clock = Stopwatch();
   final hand = HandTrack();
+  final HandPlayer handPlayer;
   ui.Image? _first;
   ui.Image? _screen;
   bool _decoding = false;
@@ -206,7 +281,8 @@ class DeviceDemoPlayback extends ChangeNotifier {
 
   Duration get now => _clock.elapsed;
 
-  HandFrame? get handFrame => hand.frameAt(now);
+  /// Moves the hand's clip on to now. Call it each frame while the hand moves.
+  void tickHand() => handPlayer.show(hand.poseAt(now));
 
   Offset get handOffset => hand.offsetAt(now);
 
@@ -219,6 +295,7 @@ class DeviceDemoPlayback extends ChangeNotifier {
         if (!_decoding) _decodeNext();
       case DeviceDemoEvent_Gesture(:final field0):
         hand.cue(field0, now);
+        tickHand();
         notifyListeners();
     }
   }
@@ -255,46 +332,9 @@ class DeviceDemoPlayback extends ChangeNotifier {
     _disposed = true;
     _events.cancel();
     _demo.dispose();
+    handPlayer.dispose();
     _first?.dispose();
     _screen?.dispose();
     super.dispose();
-  }
-}
-
-/// The decoded hand sheets, held only while a hero is showing: decoded they take tens of MB.
-class HandSheets {
-  static int _holders = 0;
-  static Future<Map<HandSheet, ui.Image>>? _loaded;
-
-  static Future<Map<HandSheet, ui.Image>> acquire() {
-    _holders++;
-    return _loaded ??= _load();
-  }
-
-  static void release() {
-    _holders--;
-    if (_holders > 0) return;
-    final loaded = _loaded;
-    _loaded = null;
-    loaded?.then((sheets) {
-      for (final image in sheets.values) {
-        image.dispose();
-      }
-    });
-  }
-
-  static Future<Map<HandSheet, ui.Image>> _load() async {
-    final entries = await Future.wait(
-      HandSheet.values.map((sheet) async {
-        final data = await rootBundle.load(sheet.asset);
-        final codec = await ui.instantiateImageCodec(data.buffer.asUint8List());
-        try {
-          return MapEntry(sheet, (await codec.getNextFrame()).image);
-        } finally {
-          codec.dispose();
-        }
-      }),
-    );
-    return Map.fromEntries(entries);
   }
 }

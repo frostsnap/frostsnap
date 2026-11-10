@@ -13,13 +13,14 @@ members = [
     "frostsnap_fonts",
     "frostsnap_widgets",
     "tools/widget_simulator",
+    "tools/hand_gestures",
     "tools/stack_check",
     "cst816s",
     "frostsnapp/desktop_camera",
     "macros",
 ]
 
-# device, cst816s require riscv32; widget_simulator needs SDL2.
+# device, cst816s require riscv32; widget_simulator needs SDL2; hand_gestures builds libwebp.
 # Exclude from default so `cargo check` at the root just works.
 default-members = [
     "frostsnap_core",

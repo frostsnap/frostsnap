@@ -8,8 +8,8 @@ import 'package:frostsnap/device_action_fullscreen_dialog.dart';
 import 'package:frostsnap/device_action_hero.dart';
 import 'package:frostsnap/device_demo_playback.dart';
 import 'package:frostsnap/src/rust/api/device_demo.dart';
-import 'package:frostsnap/src/rust/lib.dart';
 import 'package:frostsnap/src/rust/api/device_list.dart';
+import 'package:frostsnap/src/rust/lib.dart';
 
 import 'support/rust_lib.dart';
 

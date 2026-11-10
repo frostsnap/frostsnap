@@ -1,4 +1,4 @@
-use crate::device_demo::{self, Demo, DemoKind, Gesture, HandTiming};
+use crate::device_demo::{self, Demo, DemoKind};
 use crate::frb_generated::StreamSink;
 use flutter_rust_bridge::frb;
 use std::{
@@ -27,55 +27,43 @@ pub enum DeviceDemoKind {
     Upgrade,
 }
 
-/// The timing of the app's hand clips; see [`HandTiming`].
-pub struct DeviceDemoHandTiming {
-    pub swipe_contact_ms: u32,
-    pub swipe_after_contact_ms: u32,
-    pub hold_contact_ms: u32,
-    pub hold_press_ms: u32,
-    pub hold_after_release_ms: u32,
-    pub tap_contact_ms: u32,
-    pub tap_press_ms: u32,
-    pub tap_after_release_ms: u32,
-}
-
 pub enum DeviceDemoEvent {
     /// The device's whole screen as RGBA, sent only when it changed.
     Frame(Vec<u8>),
     Gesture(DeviceDemoCue),
 }
 
-/// A gesture whose finger lands `contact_in_ms` from now.
+/// A gesture of the hand, whose finger lands `contact_in_ms` from now.
 pub struct DeviceDemoCue {
     pub contact_in_ms: u32,
-    pub gesture: DeviceDemoGesture,
+    /// Played in order. Before, between and after them the hand keeps the last frame shown.
+    pub clips: Vec<DeviceDemoClip>,
+    /// When the hand is back at rest.
+    pub settle_in_ms: i32,
+    /// How far, in the device screen's pixels, the hand moves from where the clips put the
+    /// fingertip, reaching it by the touch.
+    pub offset_x: i32,
+    pub offset_y: i32,
 }
 
-pub enum DeviceDemoGesture {
-    Swipe,
-    /// Held for `hold_ms`.
-    Hold {
-        hold_ms: u32,
-    },
-    /// Lands on this point of the device's screen.
-    Tap {
-        x: i32,
-        y: i32,
-    },
+/// One of the hand's animated clips, an asset, starting `start_in_ms` from now (or that long ago,
+/// if negative).
+pub struct DeviceDemoClip {
+    pub asset: String,
+    pub start_in_ms: i32,
 }
 
 /// A device screen played by a scripted finger. It runs until disposed.
 #[frb(opaque)]
 pub struct DeviceDemo {
     kind: DemoKind,
-    hand: HandTiming,
     started: AtomicBool,
     stopped: Arc<AtomicBool>,
 }
 
 impl DeviceDemo {
     #[frb(sync)]
-    pub fn new(kind: DeviceDemoKind, hand: DeviceDemoHandTiming) -> Self {
+    pub fn new(kind: DeviceDemoKind) -> Self {
         Self {
             kind: match kind {
                 DeviceDemoKind::Sign => DemoKind::Sign,
@@ -93,16 +81,6 @@ impl DeviceDemo {
                 DeviceDemoKind::EnterBackup => DemoKind::EnterBackup,
                 DeviceDemoKind::Erase => DemoKind::Erase,
                 DeviceDemoKind::Upgrade => DemoKind::Upgrade,
-            },
-            hand: HandTiming {
-                swipe_contact_ms: hand.swipe_contact_ms,
-                swipe_after_contact_ms: hand.swipe_after_contact_ms,
-                hold_contact_ms: hand.hold_contact_ms,
-                hold_press_ms: hand.hold_press_ms,
-                hold_after_release_ms: hand.hold_after_release_ms,
-                tap_contact_ms: hand.tap_contact_ms,
-                tap_press_ms: hand.tap_press_ms,
-                tap_after_release_ms: hand.tap_after_release_ms,
             },
             started: AtomicBool::new(false),
             stopped: Arc::new(AtomicBool::new(false)),
@@ -124,7 +102,7 @@ impl DeviceDemo {
         if self.started.swap(true, Ordering::Relaxed) {
             return;
         }
-        let (kind, hand) = (self.kind, self.hand);
+        let kind = self.kind;
         let stopped = self.stopped.clone();
         // Each time a demo plays, its quiz puts the right answers in different places.
         let seed = SystemTime::now()
@@ -134,19 +112,26 @@ impl DeviceDemo {
             .and_then(NonZeroU32::new)
             .unwrap_or(NonZeroU32::MIN);
         std::thread::spawn(move || {
-            let mut demo = Demo::new(kind, hand, seed);
+            let mut demo = Demo::new(kind, seed);
             let start = Instant::now();
             let mut next = start;
             while !stopped.load(Ordering::Relaxed) {
                 let step = demo.step(start.elapsed().as_millis() as u64);
                 let cues = step.cues.into_iter().map(|cue| {
+                    let hand = cue.hand();
                     DeviceDemoEvent::Gesture(DeviceDemoCue {
                         contact_in_ms: cue.contact_in_ms,
-                        gesture: match cue.gesture {
-                            Gesture::Swipe => DeviceDemoGesture::Swipe,
-                            Gesture::Hold { ms } => DeviceDemoGesture::Hold { hold_ms: ms },
-                            Gesture::Tap { at } => DeviceDemoGesture::Tap { x: at.x, y: at.y },
-                        },
+                        clips: hand
+                            .clips
+                            .into_iter()
+                            .map(|clip| DeviceDemoClip {
+                                asset: clip.asset.to_string(),
+                                start_in_ms: clip.start_in_ms,
+                            })
+                            .collect(),
+                        settle_in_ms: hand.settle_in_ms,
+                        offset_x: hand.offset.0,
+                        offset_y: hand.offset.1,
                     })
                 });
                 for event in cues.chain(step.frame.map(DeviceDemoEvent::Frame)) {

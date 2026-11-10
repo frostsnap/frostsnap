@@ -57,7 +57,6 @@ class _DeviceActionHeroState extends State<DeviceActionHero>
   DeviceDemoPlayback? _playback;
   final _handTick = ValueNotifier(0);
   late final Ticker _ticker;
-  late final Future<Map<HandSheet, ui.Image>> _sheets;
 
   DeviceDemoPlayback? _play() {
     final demo = widget.demo;
@@ -73,6 +72,7 @@ class _DeviceActionHeroState extends State<DeviceActionHero>
   }
 
   void _tickHand(Duration _) {
+    _playback?.tickHand();
     _handTick.value++;
     if (!_handMoving) _ticker.stop();
   }
@@ -80,7 +80,6 @@ class _DeviceActionHeroState extends State<DeviceActionHero>
   @override
   void initState() {
     super.initState();
-    _sheets = HandSheets.acquire();
     _ticker = createTicker(_tickHand);
     _playback = _play();
   }
@@ -99,7 +98,6 @@ class _DeviceActionHeroState extends State<DeviceActionHero>
     _ticker.dispose();
     _handTick.dispose();
     _playback?.dispose();
-    HandSheets.release();
     super.dispose();
   }
 
@@ -136,10 +134,10 @@ class _DeviceActionHeroState extends State<DeviceActionHero>
           );
     final hand = playback == null
         ? const SizedBox()
-        : FutureBuilder(
-            future: _sheets,
-            builder: (context, sheets) => CustomPaint(
-              painter: _HandPainter(playback, sheets.data, repaint: _handTick),
+        : CustomPaint(
+            painter: _HandPainter(
+              playback,
+              repaint: Listenable.merge([_handTick, playback.handPlayer]),
             ),
           );
 
@@ -185,21 +183,19 @@ class _DeviceActionHeroState extends State<DeviceActionHero>
 }
 
 class _HandPainter extends CustomPainter {
-  _HandPainter(this.playback, this.sheets, {required Listenable repaint})
+  _HandPainter(this.playback, {required Listenable repaint})
     : super(repaint: repaint);
 
   final DeviceDemoPlayback playback;
-  final Map<HandSheet, ui.Image>? sheets;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final frame = playback.handFrame;
-    final sheet = frame == null ? null : sheets?[frame.sheet];
-    if (frame == null || sheet == null) return;
+    final image = playback.handPlayer.image;
+    if (image == null) return;
     final offset = playback.handOffset;
     canvas.drawImageRect(
-      sheet,
-      frame.sheet.cell(frame.index),
+      image,
+      Offset.zero & Size(image.width.toDouble(), image.height.toDouble()),
       Offset(
             offset.dx * _display.width / _deviceScreenSize.width,
             offset.dy * _display.height / _deviceScreenSize.height,
@@ -210,8 +206,7 @@ class _HandPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_HandPainter old) =>
-      old.playback != playback || old.sheets != sheets;
+  bool shouldRepaint(_HandPainter old) => old.playback != playback;
 }
 
 const _assets = 'assets/devices/topdown';
