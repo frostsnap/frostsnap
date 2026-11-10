@@ -1,6 +1,7 @@
 use crate::DISPLAY_REFRESH_MS;
 use alloc::{boxed::Box, string::ToString};
 use embedded_graphics::prelude::*;
+use frostsnap_comms::firmware_version::FirmwareLabel;
 use frostsnap_cst816s::interrupt::TouchReceiver;
 use frostsnap_widgets::palette::PALETTE;
 use frostsnap_widgets::{
@@ -43,6 +44,7 @@ pub struct FrostyUi<'a> {
     pub busy_task: Option<BusyTask>,
     pub current_widget_index: usize,
     default_workflow: Option<Workflow>,
+    firmware: FirmwareLabel,
 }
 
 impl<'a> FrostyUi<'a> {
@@ -50,14 +52,16 @@ impl<'a> FrostyUi<'a> {
     /// construction is stack-heavy and merging it into the init functions'
     /// frames pushes them over the CI stack-check limit.
     #[inline(never)]
-    pub fn new(display: DeviceDisplay<'a>, touch_receiver: TouchReceiver) -> Self {
+    pub fn new(
+        display: DeviceDisplay<'a>,
+        touch_receiver: TouchReceiver,
+        firmware: FirmwareLabel,
+    ) -> Self {
         use embedded_graphics::geometry::Size;
         use frostsnap_widgets::debug::EnabledDebug;
 
-        let root_widget = RootWidget::new(
-            WidgetTree::Standby(Box::new(Standby::new(crate::FIRMWARE_VERSION))),
-            200,
-        );
+        let root_widget =
+            RootWidget::new(WidgetTree::Standby(Box::new(Standby::new(firmware))), 200);
         let debug_config = EnabledDebug {
             logs: cfg!(feature = "debug_log"),
             memory: cfg!(feature = "debug_mem"),
@@ -77,6 +81,7 @@ impl<'a> FrostyUi<'a> {
             current_widget_index: 0,
             busy_task: Default::default(),
             default_workflow: None,
+            firmware,
         }
     }
 }
@@ -176,11 +181,9 @@ impl<'a> UserInteraction for FrostyUi<'a> {
 
         // Convert workflow to widget tree
         let new_page = match workflow {
-            Workflow::Startup => {
-                WidgetTree::Standby(Box::new(Standby::new(crate::FIRMWARE_VERSION)))
-            }
+            Workflow::Startup => WidgetTree::Standby(Box::new(Standby::new(self.firmware))),
             Workflow::None => {
-                let mut standby = Standby::new(crate::FIRMWARE_VERSION);
+                let mut standby = Standby::new(self.firmware);
                 standby.set_welcome();
                 WidgetTree::Standby(Box::new(standby))
             }
@@ -188,19 +191,25 @@ impl<'a> UserInteraction for FrostyUi<'a> {
                 device_name,
                 held_share,
             } => {
-                let mut standby = Standby::new(crate::FIRMWARE_VERSION);
+                let mut standby = Standby::new(self.firmware);
                 standby.set_key(device_name.to_string(), held_share);
                 WidgetTree::Standby(Box::new(standby))
             }
             Workflow::UserPrompt(prompt) => match prompt {
                 Prompt::KeyGen { phase } => WidgetTree::build_keygen_check(phase),
                 Prompt::Signing { phase, rand_seed } => {
-                    WidgetTree::build_signing_prompt(phase, rand_seed)
+                    WidgetTree::build_signing_prompt(phase, rand_seed, self.firmware)
                 }
                 Prompt::ConfirmFirmwareUpgrade {
                     firmware_digest,
+                    version,
                     size,
-                } => WidgetTree::build_confirm_firmware_upgrade(firmware_digest, size),
+                } => WidgetTree::build_confirm_firmware_upgrade(
+                    firmware_digest,
+                    version,
+                    size,
+                    self.firmware.environment,
+                ),
                 Prompt::EraseDevice => WidgetTree::build_erase_device(),
             },
 

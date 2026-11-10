@@ -31,7 +31,7 @@
 //!
 //! Cosmetic: nothing waits on it and a failed attestation is ignored.
 
-use crate::firmware::FirmwareVersion;
+use crate::firmware::DeviceFirmware;
 use crate::persist::{BincodeWrapper, Persist};
 use bdk_chain::rusqlite_impl;
 use frostsnap_comms::genuine_certificate::{CertificateBody, GenuineError};
@@ -106,7 +106,7 @@ impl GenuineCheck {
     pub fn connected(
         &mut self,
         id: DeviceId,
-        firmware: FirmwareVersion,
+        firmware: DeviceFirmware,
         rng: &mut impl RngCore,
     ) -> Option<genuine_check::CoordinatorMessage> {
         let firmware_supports_check = firmware.features().genuine_check;
@@ -457,8 +457,14 @@ pub(crate) mod test {
         RsaPrivateKey::new(&mut StdRng::seed_from_u64(3), DS_KEY_SIZE_BITS).unwrap()
     });
 
-    pub(crate) fn supported() -> FirmwareVersion {
-        FirmwareVersion::new(Sha256Digest([0xab; 32]))
+    pub(crate) fn supported() -> DeviceFirmware {
+        DeviceFirmware {
+            digest: Sha256Digest([0xab; 32]),
+            version: crate::DeviceVersion::Reported {
+                version: crate::VersionNumber::new(0, 5, 0),
+                environment: crate::Environment::Dev,
+            },
+        }
     }
 
     pub(crate) struct TestDevice {

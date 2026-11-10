@@ -213,13 +213,7 @@ pub enum Signer {
     Unknown,
 }
 
-/// Classify a verified image's `key_digest` against the prod/dev digests the
-/// caller has computed from the committed `bootloader/{env}/secure-boot-pubkey.pem`
-/// files (via [`secure_boot_pubkey_from_pem`] + [`compute_key_digest`]).
-///
-/// The pinned digests are passed in rather than read from disk so this crate
-/// imposes no filesystem layout on its callers — each consumer decides how to
-/// resolve the bootloader directory.
+/// Classify a verified image's `key_digest` against prod/dev key digests.
 pub fn classify_signer(key_digest: &[u8; 32], prod: &[u8; 32], dev: &[u8; 32]) -> Signer {
     if key_digest == prod {
         Signer::Prod
@@ -228,6 +222,25 @@ pub fn classify_signer(key_digest: &[u8; 32], prod: &[u8; 32], dev: &[u8; 32]) -
     } else {
         Signer::Unknown
     }
+}
+
+/// [`classify_signer`] against the prod/dev keys committed at
+/// `frostsnap_factory/bootloader/{env}/secure-boot-pubkey.pem`.
+pub fn classify_pinned(key_digest: &[u8; 32]) -> Signer {
+    let pinned = |pem: &[u8]| {
+        compute_key_digest(
+            &secure_boot_pubkey_from_pem(pem).expect("the committed secure-boot keys parse"),
+        )
+    };
+    classify_signer(
+        key_digest,
+        &pinned(include_bytes!(
+            "../../frostsnap_factory/bootloader/prod/secure-boot-pubkey.pem"
+        )),
+        &pinned(include_bytes!(
+            "../../frostsnap_factory/bootloader/dev/secure-boot-pubkey.pem"
+        )),
+    )
 }
 
 /// Load an RSA public key from a `bootloader/{env}/secure-boot-pubkey.pem` file.
