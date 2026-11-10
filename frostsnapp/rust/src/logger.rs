@@ -44,7 +44,7 @@ pub fn set_dart_logger(sink: StreamSink<String>) -> bool {
 
 /// Obtain the Dart logger.
 ///
-/// [`set_dart_logger`] must be called atleast once before calling this method.
+/// [`set_dart_logger`] must be called at least once before calling this method.
 pub fn dart_logger<S>() -> impl tracing_subscriber::layer::Layer<S>
 where
     S: tracing::Subscriber + for<'a> LookupSpan<'a>,

@@ -197,7 +197,7 @@ pub struct EnteredPhysicalBackup {
 }
 
 #[derive(Clone, Debug, Copy, bincode::Encode, bincode::Decode, PartialEq)]
-/// An encoded signature that can pass ffi boundries easily
+/// An encoded signature that can pass ffi boundaries easily
 pub struct EncodedSignature(pub [u8; 64]);
 
 impl EncodedSignature {

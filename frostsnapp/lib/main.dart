@@ -35,7 +35,7 @@ Future<void> main() async {
   // https://stackoverflow.com/questions/57689492/flutter-unhandled-exception-servicesbinding-defaultbinarymessenger-was-accesse
   WidgetsFlutterBinding.ensureInitialized();
 
-  // 💡 renable if you want to mess around with different fonts
+  // 💡 re-enable if you want to mess around with different fonts
   GoogleFonts.config.allowRuntimeFetching = false;
   // 🖕 to all intellectual property but I am doing what I am told.
   LicenseRegistry.addLicense(() async* {

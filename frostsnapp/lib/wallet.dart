@@ -338,7 +338,7 @@ class _TxListState extends State<TxList> {
     final fsCtx = FrostsnapContext.of(context)!;
     final frostKey = coord.getFrostKey(keyId: walletCtx.keyId);
 
-    // TODO: This is a hack to scroll to top everytime we switch wallets.
+    // TODO: This is a hack to scroll to top every time we switch wallets.
     // There are better ways to do this but requires more involved changes.
     if (prevKey == null || walletCtx.keyId != prevKey) {
       prevKey = walletCtx.keyId;
@@ -820,7 +820,7 @@ class WalletBottomBar extends StatelessWidget {
     // Replicates a Material 3 Expressive Toolbar
     // https://m3.material.io/components/toolbars
     return SizedBox(
-      // Arbitary height to bound the bottom bar.
+      // Arbitrary height to bound the bottom bar.
       height: 200,
       child: BottomActionBar(
         child: Align(

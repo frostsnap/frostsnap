@@ -59,7 +59,7 @@ impl<T> Persisted<T> {
     }
 
     #[allow(non_snake_case)]
-    /// Scary upppercase method that allows you opt-out of persisting anything at the end of a mutation
+    /// Scary uppercase method that allows you opt-out of persisting anything at the end of a mutation
     pub fn MUTATE_NO_PERSIST(&mut self) -> &mut T {
         &mut self.0
     }
