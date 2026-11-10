@@ -97,7 +97,7 @@ impl<'a> DeviceLoop<'a> {
 
         let full_nvs = *nvs;
 
-        let header_sectors = nvs.split_off_front(2);
+        let header_sectors = nvs.split_off_front(crate::flash::HEADER_SECTORS);
         let header_flash = crate::flash::FlashHeader::new(header_sectors);
         let header = match header_flash.read_header() {
             Some(h) => h,
