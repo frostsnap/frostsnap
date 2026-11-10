@@ -5,7 +5,6 @@ import 'package:collection/collection.dart';
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-import 'package:frostsnap/animated_check.dart';
 import 'package:frostsnap/contexts.dart';
 import 'package:frostsnap/copy_feedback.dart';
 import 'package:frostsnap/device_action_fullscreen_dialog.dart';
@@ -16,9 +15,9 @@ import 'package:frostsnap/wallet_key_mismatch.dart';
 import 'package:frostsnap/psbt.dart';
 import 'package:frostsnap/snackbar.dart';
 import 'package:frostsnap/src/rust/api.dart';
+import 'package:frostsnap/src/rust/api/coordinator.dart';
 import 'package:frostsnap/src/rust/api/bitcoin.dart';
 import 'package:frostsnap/src/rust/lib.dart';
-import 'package:frostsnap/src/rust/api/device_list.dart';
 import 'package:frostsnap/src/rust/api/psbt_manager.dart';
 import 'package:frostsnap/src/rust/api/signing.dart';
 import 'package:frostsnap/src/rust/api/super_wallet.dart';
@@ -356,12 +355,10 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
   late TxDetailsModel txDetails;
   SignSessionId? ssid;
   late final StreamSubscription<TxState> txStateSub;
-  StreamSubscription<DeviceListUpdate>? devicesSub;
   StreamSubscription<SigningState>? signingSub;
   bool signingErrorHandled = false;
   SigningState? signingState;
   bool? broadcastDone;
-  Set<DeviceId> connectedDevices = <DeviceId>{};
   Psbt? psbt;
 
   FullscreenActionDialogController<void>? actionDialogController;
@@ -470,16 +467,6 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
     return null;
   }
 
-  onDeviceListData(DeviceListUpdate data) {
-    final connectedIds = data.state.devices.map((dev) => dev.id);
-    if (mounted) {
-      setState(() {
-        connectedDevices.clear();
-        connectedDevices.addAll(connectedIds);
-      });
-    }
-  }
-
   void _onCancelSigning() async {
     if (signingDone) return;
     // Dismiss the fullscreen sign dialog first — otherwise the controller
@@ -533,7 +520,6 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
           actionDialogController = _buildActionDialogController(
             signingParams.devices,
           );
-          devicesSub = GlobalStreams.deviceListSubject.listen(onDeviceListData);
           broadcastDone = false;
           late final StreamSubscription<SigningState> sub;
           sub = signingParams.startSigning().listen(
@@ -563,8 +549,6 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
 
   @override
   void dispose() {
-    devicesSub?.cancel();
-    devicesSub = null;
     if (signingSub?.cancel() != null) {
       coord.cancelProtocol();
       signingSub = null;
@@ -679,34 +663,15 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
             ],
           ),
         ),
-        ...neededFrom.map((deviceId) {
-          final deviceName = coord.getDeviceName(id: deviceId) ?? '<no-name>';
-          final isConnected = connectedDevices.contains(deviceId);
-          final shareIndex = accessStruct?.getDeviceShortShareIndex(
-            deviceId: deviceId,
-          );
-          final label = shareIndex != null
-              ? '#$shareIndex $deviceName'
-              : deviceName;
-          final Widget trailing;
-          if (signingState!.gotShares.any(
-            (gotSharesFrom) => deviceId == gotSharesFrom,
-          )) {
-            trailing = AnimatedCheckCircle();
-          } else {
-            trailing = Text(
-              isConnected ? 'Requesting Signature' : '',
-              style: TextStyle(
-                color: isConnected ? theme.colorScheme.primary : null,
-              ),
-            );
-          }
-          return ListTile(
-            enabled: isConnected,
-            title: DeviceNameWithArt.forId(deviceId, name: Text(label)),
-            trailing: trailing,
-          );
-        }),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 10),
+          child: DeviceTileGrid(
+            tiles: [
+              for (final deviceId in neededFrom)
+                _signerTile(context, deviceId, accessStruct),
+            ],
+          ),
+        ),
         Divider(height: 0.0),
         Align(
           alignment: AlignmentDirectional.centerStart,
@@ -722,6 +687,32 @@ class _TxDetailsPageState extends State<TxDetailsPage> {
           ),
         ),
       ],
+    );
+  }
+
+  // Plugging a signer in opens the signing dialog over this sheet, so a tile only ever needs to
+  // say whether its signature is in.
+  Widget _signerTile(
+    BuildContext context,
+    DeviceId deviceId,
+    AccessStructure? accessStruct,
+  ) {
+    final theme = Theme.of(context);
+    final signed = signingState!.gotShares.any(
+      (gotSharesFrom) => deviceId == gotSharesFrom,
+    );
+    return DeviceTile(
+      id: deviceId,
+      name: coord.getDeviceName(id: deviceId) ?? '<no-name>',
+      shareIndex: accessStruct?.getDeviceShortShareIndex(deviceId: deviceId),
+      color: theme.colorScheme.surfaceContainerHighest,
+      needsAction: !signed,
+      corner: Icon(
+        signed ? Icons.check_circle : Icons.radio_button_unchecked,
+        size: 18,
+        color: theme.colorScheme.primary,
+        semanticLabel: signed ? 'Signed' : 'Not signed yet',
+      ),
     );
   }
 

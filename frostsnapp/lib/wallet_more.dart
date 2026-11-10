@@ -180,10 +180,7 @@ class _WalletMoreState extends State<WalletMore> {
             onTap: () async {
               await MaybeFullscreenDialog.show(
                 context: context,
-                child: KeyContext(
-                  keyId: walletCtx.keyId,
-                  child: KeysSettings(),
-                ),
+                child: walletCtx.wrap(KeysSettings()),
               );
             },
           ),

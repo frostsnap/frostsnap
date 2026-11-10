@@ -14,7 +14,6 @@ import 'package:frostsnap/src/rust/api/super_wallet.dart';
 import 'package:frostsnap/src/rust/api/transaction.dart';
 import 'package:frostsnap/theme.dart';
 import 'package:frostsnap/device_identity_art.dart';
-import 'package:frostsnap/genuine_badge.dart';
 import 'package:frostsnap/wallet.dart';
 import 'package:frostsnap/wallet_send_controllers.dart';
 import 'package:frostsnap/wallet_send_feerate_picker.dart';
@@ -504,44 +503,58 @@ class _WalletSendPageState extends State<WalletSendPage> {
             title: Text('Select Signers'),
             trailing: Text('${threshold} required'),
           ),
-          Column(
-            children: signers.map((device) {
-              final (id, name) = device;
-              final nonces = coord.noncesAvailable(id: id);
-              final isSelected = state.isSignerSelected(dId: id);
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 10),
+            child: DeviceTileGrid(
+              tiles: signers.map((device) {
+                final (id, name) = device;
+                final nonces = coord.noncesAvailable(id: id);
+                final isSelected = state.isSignerSelected(dId: id);
 
-              if (nonces == 0) state.deselectSigner(dId: id);
+                if (nonces == 0) state.deselectSigner(dId: id);
 
-              return CheckboxListTile(
-                value: isSelected,
-                onChanged: remaining > 0 || isSelected
-                    ? (selected) => selected ?? false
-                          ? state.selectSigner(dId: id)
-                          : state.deselectSigner(dId: id)
-                    : null,
-                title: Row(
-                  spacing: 8,
-                  children: [
-                    Expanded(
-                      child: DeviceNameWithArt.forId(
-                        id,
-                        name: Text(
-                          name ?? '<unknown>',
-                          overflow: TextOverflow.ellipsis,
+                final canToggle = nonces > 0 && (remaining > 0 || isSelected);
+                void toggle() => isSelected
+                    ? state.deselectSigner(dId: id)
+                    : state.selectSigner(dId: id);
+
+                return DeviceTile(
+                  id: id,
+                  name: name ?? '<unknown>',
+                  shareIndex: accessStruct.getDeviceShortShareIndex(
+                    deviceId: id,
+                  ),
+                  color: theme.colorScheme.surfaceContainerHighest,
+                  selected: isSelected,
+                  onTap: canToggle ? toggle : null,
+                  footer: nonces == 0
+                      ? Text(
+                          'No nonces left',
+                          textAlign: TextAlign.center,
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: theme.colorScheme.error,
+                          ),
+                        )
+                      : null,
+                  corner: nonces == 0
+                      ? Icon(
+                          Icons.error_outline,
+                          size: 18,
+                          color: theme.colorScheme.error,
+                        )
+                      : SizedBox.square(
+                          dimension: 18,
+                          child: Checkbox(
+                            value: isSelected,
+                            materialTapTargetSize:
+                                MaterialTapTargetSize.shrinkWrap,
+                            visualDensity: VisualDensity.compact,
+                            onChanged: canToggle ? (_) => toggle() : null,
+                          ),
                         ),
-                      ),
-                    ),
-                    GenuineBadge.forDeviceId(id),
-                  ],
-                ),
-                subtitle: nonces == 0
-                    ? Text(
-                        'no nonces remaining or too many signing sessions',
-                        style: TextStyle(color: theme.colorScheme.error),
-                      )
-                    : null,
-              );
-            }).toList(),
+                );
+              }).toList(),
+            ),
           ),
           Padding(
             padding: const EdgeInsets.all(12.0),
