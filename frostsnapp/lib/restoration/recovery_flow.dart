@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:frostsnap/global.dart';
 import 'package:frostsnap/restoration/candidate_ready_view.dart';
 import 'package:frostsnap/restoration/enter_backup_view.dart';
+import 'package:frostsnap/restoration/enter_card_view.dart';
 import 'package:frostsnap/restoration/enter_device_name_view.dart';
 import 'package:frostsnap/restoration/enter_threshold_view.dart';
 import 'package:frostsnap/restoration/enter_wallet_name_view.dart';
@@ -17,6 +18,7 @@ import 'package:frostsnap/restoration/target_device.dart';
 import 'package:frostsnap/secure_key_provider.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/recovery.dart';
+import 'package:frostsnap/src/rust/api/verifiable_card.dart';
 import 'package:frostsnap/stream_ext.dart';
 import 'package:frostsnap/wallet_key_mismatch.dart';
 import 'package:frostsnap/maybe_fullscreen_dialog.dart';
@@ -144,6 +146,160 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
     }
   }
 
+  /// The wallet's key for a card entered into an existing wallet. The card's
+  /// decode target needs it, so it is fetched before the request and reused
+  /// when the share comes back.
+  SymmetricKey? _cardWalletKey;
+
+  /// On to the card's entry, through the device's nonces if it needs them.
+  Future<void> _startCardEntry(
+    String deviceName, {
+    required bool nonces,
+  }) async {
+    if (recoveryContext case AddingToWalletContext(:final accessStructureRef)) {
+      final key = await existingWalletKey(
+        context: mounted ? context : null,
+        accessStructureRef: accessStructureRef,
+        action: 'add this card to the wallet',
+      );
+      if (!mounted) return;
+      if (key == null) {
+        Navigator.pop(context);
+        return;
+      }
+      _cardWalletKey = key;
+    }
+    setState(() {
+      pushPrevState();
+      final entry = RecoveryFlowStage.enterCard(deviceName: deviceName);
+      flowState.stage = nonces
+          ? RecoveryFlowStage.generatingNonces(nextStage: entry)
+          : entry;
+    });
+  }
+
+  /// What happens to an entered backup, a 25-word one or a card: the
+  /// context decides. [walletKey] is the wallet's key when the caller already
+  /// fetched it (the card path fetches it before the request), so it isn't
+  /// fetched twice.
+  Future<void> _onBackupEntered(
+    PhysicalBackupPhase backupPhase,
+    String deviceName, {
+    SymmetricKey? walletKey,
+  }) async {
+    try {
+      switch (recoveryContext) {
+        case AddingToWalletContext(:final accessStructureRef):
+          final encryptionKey =
+              walletKey ??
+              await existingWalletKey(
+                context: mounted ? context : null,
+                accessStructureRef: accessStructureRef,
+                action: 'add this backup to the wallet',
+              );
+          if (encryptionKey == null) {
+            if (mounted) Navigator.pop(context);
+            return;
+          }
+          final isValid = await coord.checkPhysicalBackup(
+            accessStructureRef: accessStructureRef,
+            phase: backupPhase,
+            encryptionKey: encryptionKey,
+          );
+
+          if (!isValid) {
+            popOnError(
+              errorTitle: 'Cannot add backup',
+              errorMessage: 'The backup is not compatible with this wallet',
+            );
+            return;
+          }
+
+          await coord.tellDeviceToConsolidatePhysicalBackup(
+            accessStructureRef: accessStructureRef,
+            phase: backupPhase,
+            encryptionKey: encryptionKey,
+            deviceName: deviceName,
+          );
+          if (mounted) {
+            Navigator.pop(context);
+          }
+
+        case NewRestorationContext(
+          :final walletName,
+          :final network,
+          :final threshold,
+        ):
+          final restorationId = await coord.startRestoringWallet(
+            name: walletName!,
+            threshold: threshold,
+            network: network!,
+          );
+
+          final encryptionKey = await SecureKeyProvider.getEncryptionKey();
+          final error = await coord.checkPhysicalBackupForRestoration(
+            restorationId: restorationId,
+            phase: backupPhase,
+            encryptionKey: encryptionKey,
+          );
+
+          if (error != null) {
+            popOnError(
+              errorTitle: 'Cannot add backup',
+              errorMessage: error.toString(),
+            );
+            return;
+          }
+
+          await coord.tellDeviceToSavePhysicalBackup(
+            phase: backupPhase,
+            restorationId: restorationId,
+            deviceName: deviceName,
+          );
+          setState(() {
+            recoveryContext = (recoveryContext as NewRestorationContext)
+                .copyWith(restorationId: restorationId);
+            flowState.stage = RecoveryFlowStage.physicalBackupSuccess(
+              deviceName: deviceName,
+            );
+          });
+
+        case ContinuingRestorationContext(:final restorationId):
+          final encryptionKey = await SecureKeyProvider.getEncryptionKey();
+          final error = await coord.checkPhysicalBackupForRestoration(
+            restorationId: restorationId,
+            phase: backupPhase,
+            encryptionKey: encryptionKey,
+          );
+
+          if (error != null) {
+            popOnError(
+              errorTitle: 'Cannot add backup',
+              errorMessage: error.toString(),
+            );
+            return;
+          }
+
+          await coord.tellDeviceToSavePhysicalBackup(
+            phase: backupPhase,
+            restorationId: restorationId,
+            deviceName: deviceName,
+          );
+          setState(() {
+            flowState.stage = RecoveryFlowStage.physicalBackupSuccess(
+              deviceName: deviceName,
+            );
+          });
+      }
+    } catch (e, stackTrace) {
+      popOnError(
+        errorTitle: 'Failed to save backup',
+        errorMessage: '$e\n\nStack trace:\n$stackTrace',
+        isException: true,
+      );
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -231,23 +387,45 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
               devices: [flowState.targetDevice.id],
             );
 
-            if (nonceRequest.someNoncesRequested()) {
-              setState(() {
-                pushPrevState();
-                flowState.stage = RecoveryFlowStage.generatingNonces(
-                  nextStage: RecoveryFlowStage.enterBackup(
-                    deviceName: deviceName,
-                  ),
-                );
-              });
-            } else {
-              setState(() {
-                pushPrevState();
-                flowState.stage = RecoveryFlowStage.enterBackup(
-                  deviceName: deviceName,
-                );
-              });
-            }
+            // Every card backup is the 64-word card.
+            _startCardEntry(
+              deviceName,
+              nonces: nonceRequest.someNoncesRequested(),
+            );
+          },
+        );
+
+      case EnterCardStage(:final deviceName):
+        final walletKey = _cardWalletKey;
+        final target = switch (recoveryContext) {
+          AddingToWalletContext(:final accessStructureRef) =>
+            CardRestoreTarget.wallet(
+              accessStructureRef: accessStructureRef,
+              encryptionKey: walletKey!,
+            ),
+          ContinuingRestorationContext(:final restorationId) =>
+            CardRestoreTarget.restoration(restorationId: restorationId),
+          NewRestorationContext() => const CardRestoreTarget.none(),
+        };
+        child = EnterCardView(
+          deviceName: coord.getDeviceName(id: flowState.targetDevice.id),
+          // The app's count of failed reads is per restore, not per page, so
+          // it carries over when the user comes back with another device.
+          failureKey: restoreFailureKey(recoveryContext),
+          failureDevice: flowState.targetDevice.id,
+          driver: CoordCardRestoreDriver(
+            deviceId: flowState.targetDevice.id,
+            target: target,
+          ),
+          // The restore ends on the device too, before the page goes.
+          onCancel: () {
+            coord.cancelProtocol();
+            tryPopPrevState(context);
+          },
+          onFinished: (backupPhase) =>
+              _onBackupEntered(backupPhase, deviceName, walletKey: walletKey),
+          onError: (e) {
+            popOnError(errorTitle: 'Backup Entry Failed', errorMessage: e);
           },
         );
 
@@ -309,120 +487,8 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
           onCancel: () {
             tryPopPrevState(context);
           },
-          onFinished: (backupPhase) async {
-            try {
-              switch (recoveryContext) {
-                case AddingToWalletContext(:final accessStructureRef):
-                  final encryptionKey = await existingWalletKey(
-                    context: mounted ? context : null,
-                    accessStructureRef: accessStructureRef,
-                    action: 'add this backup to the wallet',
-                  );
-                  if (encryptionKey == null) {
-                    if (mounted) Navigator.pop(context);
-                    return;
-                  }
-                  final isValid = await coord.checkPhysicalBackup(
-                    accessStructureRef: accessStructureRef,
-                    phase: backupPhase,
-                    encryptionKey: encryptionKey,
-                  );
-
-                  if (!isValid) {
-                    popOnError(
-                      errorTitle: 'Cannot add backup',
-                      errorMessage:
-                          'The backup is not compatible with this wallet',
-                    );
-                    return;
-                  }
-
-                  await coord.tellDeviceToConsolidatePhysicalBackup(
-                    accessStructureRef: accessStructureRef,
-                    phase: backupPhase,
-                    encryptionKey: encryptionKey,
-                    deviceName: deviceName,
-                  );
-                  if (mounted) {
-                    Navigator.pop(context);
-                  }
-
-                case NewRestorationContext(
-                  :final walletName,
-                  :final network,
-                  :final threshold,
-                ):
-                  final restorationId = await coord.startRestoringWallet(
-                    name: walletName!,
-                    threshold: threshold,
-                    network: network!,
-                  );
-
-                  final encryptionKey =
-                      await SecureKeyProvider.getEncryptionKey();
-                  final error = await coord.checkPhysicalBackupForRestoration(
-                    restorationId: restorationId,
-                    phase: backupPhase,
-                    encryptionKey: encryptionKey,
-                  );
-
-                  if (error != null) {
-                    popOnError(
-                      errorTitle: 'Cannot add backup',
-                      errorMessage: error.toString(),
-                    );
-                    return;
-                  }
-
-                  await coord.tellDeviceToSavePhysicalBackup(
-                    phase: backupPhase,
-                    restorationId: restorationId,
-                    deviceName: deviceName,
-                  );
-                  setState(() {
-                    recoveryContext = (recoveryContext as NewRestorationContext)
-                        .copyWith(restorationId: restorationId);
-                    flowState.stage = RecoveryFlowStage.physicalBackupSuccess(
-                      deviceName: deviceName,
-                    );
-                  });
-
-                case ContinuingRestorationContext(:final restorationId):
-                  final encryptionKey =
-                      await SecureKeyProvider.getEncryptionKey();
-                  final error = await coord.checkPhysicalBackupForRestoration(
-                    restorationId: restorationId,
-                    phase: backupPhase,
-                    encryptionKey: encryptionKey,
-                  );
-
-                  if (error != null) {
-                    popOnError(
-                      errorTitle: 'Cannot add backup',
-                      errorMessage: error.toString(),
-                    );
-                    return;
-                  }
-
-                  await coord.tellDeviceToSavePhysicalBackup(
-                    phase: backupPhase,
-                    restorationId: restorationId,
-                    deviceName: deviceName,
-                  );
-                  setState(() {
-                    flowState.stage = RecoveryFlowStage.physicalBackupSuccess(
-                      deviceName: deviceName,
-                    );
-                  });
-              }
-            } catch (e, stackTrace) {
-              popOnError(
-                errorTitle: 'Failed to save backup',
-                errorMessage: '$e\n\nStack trace:\n$stackTrace',
-                isException: true,
-              );
-            }
-          },
+          onFinished: (backupPhase) =>
+              _onBackupEntered(backupPhase, deviceName),
           onError: (e) {
             popOnError(errorTitle: 'Backup Entry Failed', errorMessage: e);
           },

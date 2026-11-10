@@ -15,6 +15,14 @@ pub enum Key {
     NavBack,
     NavForward,
     ShowEnteredWords,
+    /// "Can't read this word" on a card entry screen.
+    CantRead,
+    /// A page's full-width button, e.g. "Edit words 1-32".
+    Continue,
+    /// A word option on the device round's answer screen (0..3).
+    DeviceRoundOption(u8),
+    /// "None of these" on the device round's answer screen.
+    NoneOfThese,
 }
 
 pub struct KeyTouch {

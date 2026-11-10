@@ -67,6 +67,13 @@ jobs:
         working-directory: .
         run: just stack-check stacks --board ${{ matrix.board }} --max-pct 25
 
+      # The card-timing bench probe must never ship, but it must keep building on its own: the
+      # lint above compiles it only together with every other feature. Last, so the image
+      # uploaded and stack-checked above is the plain one.
+      - name: Build with card-timing (never shipped)
+        if: matrix.board == 'frontier'
+        run: just build-firmware ${{ matrix.board }} --locked --features card-timing
+
   test-ordinary-libs:
     name: Test ordinary libraries
     runs-on: ubuntu-latest

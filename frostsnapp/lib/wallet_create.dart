@@ -438,6 +438,26 @@ class WalletCreateController extends ChangeNotifier {
       cannotUpgrade: (_) => true,
     );
   });
+
+  /// A device that failed a card check after the final check began is marked
+  /// suspect, and can't join a new wallet (spec L1.7.6).
+  bool get devicesSuspect =>
+      _deviceList.devices.any((dev) => coord.deviceIsSuspect(deviceId: dev.id));
+
+  /// Why the selected devices and threshold can't make the backup card,
+  /// which every new key backs up as: their firmware lacks it, or the
+  /// threshold is 1 (where any one key can spend, so only the 1-of-1 case
+  /// may make a card). Null when they can.
+  String? get cardNotAllowedReason {
+    if (!coord.devicesSupportCard(devices: _form.selectedDevices.toList())) {
+      return "These devices' firmware can't make the backup card.";
+    }
+    if (_form.threshold == 1 && _form.selectedDevices.length > 1) {
+      return "A threshold of 1 can't use the backup card. Choose 2 or more.";
+    }
+    return null;
+  }
+
   bool get allWalletDevicesConnected => _form.selectedDevices.every(
     (selectedId) => _deviceList.devices.any((dev) => dev.id == selectedId),
   );
@@ -462,6 +482,7 @@ class WalletCreateController extends ChangeNotifier {
           !devicesNeedUpgrade &&
           !devicesUsed &&
           !devicesIncompatible &&
+          !devicesSuspect &&
           !hasDuplicateDeviceNames &&
           _deviceList.devices.every((d) => _form.deviceNames.containsKey(d.id)),
     WalletCreateStep.nonceReplenish => false, // Auto-advances, no manual next
@@ -469,7 +490,8 @@ class WalletCreateController extends ChangeNotifier {
       allWalletDevicesConnected &&
           _form.threshold != null &&
           _form.threshold! > 0 &&
-          _form.threshold! <= _form.selectedDevices.length,
+          _form.threshold! <= _form.selectedDevices.length &&
+          cardNotAllowedReason == null,
   };
   bool get canGoBack => _step.index != 0;
 
@@ -760,6 +782,7 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
                 .requestFocus();
             return AddDeviceRow(
               device: device,
+              suspect: coord.deviceIsSuspect(deviceId: device.id),
               eligibility: device.firmwareUpgradeEligibility(),
               nameEditor: (context) => _inlineNameField(context, device),
               onEditName: focusName,
@@ -860,9 +883,32 @@ class _WalletCreatePageState extends State<WalletCreatePage> {
           recommendedThreshold: recommendedThresholdFor(totalCount),
           onChanged: (value) => setState(() => form.threshold = value),
         ),
+        _buildCardNote(context),
         if (!_controller.allWalletDevicesConnected)
           buildDisconnectedWarningCard(context),
       ],
+    );
+  }
+
+  /// Every key backs up as the 64-word split card (design §5.4): no
+  /// checkbox, only why it can't when it can't.
+  Widget _buildCardNote(BuildContext context) {
+    final theme = Theme.of(context);
+    final reason = _controller.cardNotAllowedReason;
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+      title: const Text(
+        'Each key backs up as a 64-word card: words 1–32 from the device and '
+        'words 33–64 from your phone.',
+      ),
+      subtitle: reason == null
+          ? null
+          : Text(
+              reason,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.error,
+              ),
+            ),
     );
   }
 
@@ -1578,6 +1624,7 @@ class AddDeviceRow extends StatelessWidget {
   const AddDeviceRow({
     super.key,
     required this.device,
+    this.suspect = false,
     required this.eligibility,
     required this.nameEditor,
     required this.onEditName,
@@ -1585,6 +1632,10 @@ class AddDeviceRow extends StatelessWidget {
   });
 
   final ConnectedDevice device;
+
+  /// The device failed a card check after the final check began (spec L1.7.6), so it can't
+  /// join a new wallet.
+  final bool suspect;
   final FirmwareUpgradeEligibility eligibility;
 
   /// Built only for a device that can be named here.
@@ -1596,6 +1647,20 @@ class AddDeviceRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final art = DeviceIdentityArt.forDevice(device, focusable: false);
+
+    if (suspect) {
+      return DeviceArtCard(
+        focusable: false,
+        art: art,
+        main: const DevicePlaceholderText("Can't join this wallet"),
+        notice: DeviceNotice(
+          icon: Icons.dangerous_rounded,
+          title: 'Failed a backup check',
+          detail: "Don't use this device for a new wallet.",
+          color: cs.error,
+        ),
+      );
+    }
 
     if (device.name case final name?) {
       return DeviceArtCard(

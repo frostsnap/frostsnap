@@ -120,6 +120,12 @@ where
         self.prev.is_none() && self.current.is_not_faded()
     }
 
+    /// Whether a fade is under way: the previous widget is still fading out, or the
+    /// current one hasn't finished fading in.
+    pub fn is_transitioning(&self) -> bool {
+        !self.is_idle()
+    }
+
     /// Get a reference to the current widget
     pub fn current(&self) -> &T {
         &self.current.child
@@ -218,5 +224,45 @@ where
         self.current.draw(target, current_time)?;
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::{palette::PALETTE, vec_framebuffer::VecFramebuffer, SizedBox};
+
+    fn draw_at(switcher: &mut FadeSwitcher<SizedBox<Rgb565>>, ms: u64) {
+        let mut target =
+            SuperDrawTarget::new(VecFramebuffer::<Rgb565>::new(10, 10), PALETTE.background);
+        switcher
+            .draw(&mut target, Instant::from_millis(ms))
+            .unwrap();
+    }
+
+    #[test]
+    fn is_transitioning_covers_the_whole_fade() {
+        let config = FadeConfig::new(100);
+        let mut switcher =
+            FadeSwitcher::new(SizedBox::new(Size::new(10, 10))).with_fade_config(config);
+        switcher.set_constraints(Size::new(10, 10));
+
+        // the first widget fades in from nothing
+        assert!(switcher.is_transitioning());
+        draw_at(&mut switcher, 0);
+        assert!(switcher.is_transitioning());
+        draw_at(&mut switcher, 100);
+        assert!(!switcher.is_transitioning());
+
+        // the old widget fades out, then the new one fades in
+        switcher.switch_to(SizedBox::new(Size::new(10, 10)));
+        assert!(switcher.is_transitioning());
+        draw_at(&mut switcher, 150);
+        draw_at(&mut switcher, 250);
+        assert!(switcher.is_transitioning(), "new widget not faded in yet");
+        draw_at(&mut switcher, 260);
+        assert!(switcher.is_transitioning());
+        draw_at(&mut switcher, 360);
+        assert!(!switcher.is_transitioning());
     }
 }

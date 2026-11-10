@@ -28,6 +28,15 @@ impl RootWidget {
     pub fn current_mut(&mut self) -> &mut WidgetTree {
         self.page_switcher.current_mut()
     }
+
+    pub fn current(&self) -> &WidgetTree {
+        self.page_switcher.current()
+    }
+
+    /// A fade between pages is under way.
+    pub fn is_transitioning(&self) -> bool {
+        self.page_switcher.is_transitioning()
+    }
 }
 
 impl DynWidget for RootWidget {

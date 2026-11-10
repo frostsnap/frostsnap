@@ -32,6 +32,7 @@ use sha2::Sha256;
 use std::collections::{HashMap, HashSet};
 use tracing::{event, Level};
 
+pub mod card;
 mod coordinator_to_user;
 pub mod keys;
 pub mod restoration;
@@ -53,6 +54,7 @@ pub struct FrostCoordinator {
     active_sign_session_order: Vec<SignSessionId>,
     finished_signing_sessions: BTreeMap<SignSessionId, FinishedSignSession>,
     restoration: restoration::State,
+    card: card::State,
     pub keygen_fingerprint: schnorr_fun::frost::Fingerprint,
 }
 
@@ -309,6 +311,7 @@ impl FrostCoordinator {
                 self.keys.remove(&key_id)?;
                 self.key_order.retain(|&entry| entry != key_id);
                 self.restoration.clear_up_key_deletion(key_id);
+                self.card.clear_up_key_deletion(key_id);
                 let sessions_to_delete = self
                     .active_signing_sessions
                     .iter()
@@ -413,6 +416,9 @@ impl FrostCoordinator {
                     .restoration
                     .apply_mutation_restoration(inner, self.keygen_fingerprint)
                     .map(Mutation::Restoration);
+            }
+            Card(inner) => {
+                return self.card.apply(inner).map(Mutation::Card);
             }
         }
 
@@ -694,6 +700,7 @@ impl FrostCoordinator {
                                     devices_in_order: state.devices_in_order,
                                     pending_key_name: state.pending_key_name,
                                     purpose: state.purpose,
+                                    backup_format: state.backup_format,
                                     certifier,
                                     coordinator_keypair: state.my_keypair,
                                 },
@@ -765,6 +772,7 @@ impl FrostCoordinator {
                                     acks: Default::default(),
                                     pending_key_name: state.pending_key_name,
                                     purpose: state.purpose,
+                                    backup_format: state.backup_format,
                                 })
                             );
                         } else {
@@ -840,6 +848,7 @@ impl FrostCoordinator {
                                     device_to_share_index,
                                     pending_key_name: state.pending_key_name,
                                     purpose: state.purpose,
+                                    backup_format: state.backup_format,
                                 }));
                             } else {
                                 entry.insert(KeyGenState::WaitingForAcks(state));
@@ -955,6 +964,7 @@ impl FrostCoordinator {
             DeviceToCoordinatorMessage::Restoration(message) => {
                 self.recv_restoration_message(from, message)
             }
+            DeviceToCoordinatorMessage::Card(message) => self.recv_card_message(from, message),
         }
     }
 
@@ -969,6 +979,7 @@ impl FrostCoordinator {
             purpose,
             keygen_id,
             devices_in_order,
+            backup_format,
         } = begin_keygen;
 
         if self.pending_keygens.contains_key(&keygen_id) {
@@ -987,6 +998,15 @@ impl FrostCoordinator {
             panic!(
                 "caller needs to ensure that threshold < devices.len(). Tried {threshold}-of-{n_devices}",
             );
+        }
+
+        let card = backup_format == card::BackupFormat::Card64;
+        // A card holds the index and the threshold in a byte each, and a threshold-1 card only
+        // for index 1.
+        if card && (n_devices > 255 || threshold > 255 || (threshold == 1 && n_devices != 1)) {
+            return Err(ActionError::StateInconsistent(format!(
+                "a {threshold}-of-{n_devices} key can't use verifiable cards"
+            )));
         }
         let receiver_keys: Vec<Point> = devices_in_order.iter().map(|d| d.pubkey()).collect();
         let schnorr = schnorr_fun::new_with_deterministic_nonces::<Sha256>();
@@ -1021,6 +1041,7 @@ impl FrostCoordinator {
                 devices_in_order: devices_in_order.clone(),
                 pending_key_name: key_name.clone(),
                 purpose,
+                backup_format,
                 contributer: Box::new(contributer),
                 my_keypair: coordinator_keypair,
             }),
@@ -1036,7 +1057,10 @@ impl FrostCoordinator {
             coordinator_public_keys,
         };
 
-        Ok(SendBeginKeygen(begin_message))
+        Ok(SendBeginKeygen {
+            begin: begin_message,
+            card,
+        })
     }
 
     pub fn finalize_keygen(
@@ -1056,6 +1080,12 @@ impl FrostCoordinator {
                     finalize.purpose,
                     rng,
                 );
+                if finalize.backup_format != card::BackupFormat::Words25 {
+                    self.mutate(Mutation::Card(card::CardMutation::KeyFormat {
+                        key_id: access_structure_ref.key_id,
+                        format: finalize.backup_format,
+                    }));
+                }
                 Ok(SendFinalizeKeygen {
                     devices,
                     access_structure_ref,
@@ -1547,6 +1577,7 @@ impl FrostCoordinator {
     pub fn clear_tmp_data(&mut self) {
         self.pending_keygens.clear();
         self.restoration.clear_tmp_data();
+        self.card.clear_tmp_data();
     }
 
     pub fn knows_about_share(
@@ -1715,6 +1746,7 @@ pub struct KeyGenWaitingForResponses {
     pub devices_in_order: Vec<DeviceId>,
     pub pending_key_name: String,
     pub purpose: KeyPurpose,
+    pub backup_format: card::BackupFormat,
     pub contributer: Box<certpedpop::Contributor<certpedpop::AuxContributor>>,
     pub my_keypair: KeyPair,
 }
@@ -1725,6 +1757,7 @@ pub struct KeyGenWaitingForCertificates {
     pub devices_in_order: Vec<DeviceId>,
     pub pending_key_name: String,
     pub purpose: KeyPurpose,
+    pub backup_format: card::BackupFormat,
     pub certifier: certpedpop::Certifier<certpedpop::vrf_cert::VrfCertScheme<Sha256>>,
     pub coordinator_keypair: KeyPair,
 }
@@ -1736,6 +1769,7 @@ pub struct KeyGenWaitingForAcks {
     pub acks: BTreeSet<DeviceId>,
     pub pending_key_name: String,
     pub purpose: KeyPurpose,
+    pub backup_format: card::BackupFormat,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -1744,6 +1778,7 @@ pub struct KeyGenNeedsFinalize {
     pub device_to_share_index: BTreeMap<DeviceId, ShareIndex>,
     pub pending_key_name: String,
     pub purpose: KeyPurpose,
+    pub backup_format: card::BackupFormat,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -1920,29 +1955,33 @@ pub enum Mutation {
     Signing(signing::SigningMutation),
     #[delegate_kind]
     Restoration(restoration::RestorationMutation),
+    #[delegate_kind]
+    Card(card::CardMutation),
 }
 
 impl Mutation {
     pub fn tied_to_key(&self, coord: &FrostCoordinator) -> Option<KeyId> {
-        Some(match self {
+        match self {
             Mutation::Keygen(keys::KeyMutation::NewKey { complete_key, .. }) => {
-                complete_key.master_appkey.key_id()
+                Some(complete_key.master_appkey.key_id())
             }
             Mutation::Keygen(keys::KeyMutation::NewAccessStructure { shared_key, .. }) => {
-                MasterAppkey::from_xpub_unchecked(shared_key).key_id()
+                Some(MasterAppkey::from_xpub_unchecked(shared_key).key_id())
             }
             Mutation::Keygen(keys::KeyMutation::NewShare {
                 access_structure_ref,
                 ..
-            }) => access_structure_ref.key_id,
+            }) => Some(access_structure_ref.key_id),
             Mutation::Keygen(keys::KeyMutation::DeleteShare {
                 access_structure_ref,
                 ..
-            }) => access_structure_ref.key_id,
-            Mutation::Keygen(keys::KeyMutation::DeleteKey(key_id)) => *key_id,
-            Mutation::Signing(inner) => inner.tied_to_key(coord)?,
-            Mutation::Restoration(inner) => inner.tied_to_key()?,
-        })
+            }) => Some(access_structure_ref.key_id),
+            Mutation::Keygen(keys::KeyMutation::DeleteKey(key_id)) => Some(*key_id),
+            Mutation::Signing(inner) => inner.tied_to_key(coord),
+            Mutation::Restoration(inner) => inner.tied_to_key(),
+            // A suspect mark is tied to no key, so it survives the key's deletion.
+            Mutation::Card(inner) => inner.tied_to_key(),
+        }
     }
 
     pub fn tied_to_restoration(&self) -> Option<RestorationId> {
@@ -2071,16 +2110,30 @@ impl IntoIterator for RequestDeviceSign {
 }
 
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
-pub struct SendBeginKeygen(pub keygen::Begin);
+pub struct SendBeginKeygen {
+    pub begin: keygen::Begin,
+    /// The key uses verifiable cards: devices get `Begin2`.
+    pub card: bool,
+}
 
 impl IntoIterator for SendBeginKeygen {
     type Item = CoordinatorSend;
     type IntoIter = core::iter::Once<CoordinatorSend>;
 
     fn into_iter(self) -> Self::IntoIter {
+        let destinations = self.begin.devices.iter().cloned().collect();
+        let message = if self.card {
+            keygen::Keygen::Begin2(keygen::Begin2 {
+                begin: self.begin,
+                card: true,
+            })
+            .into()
+        } else {
+            self.begin.into()
+        };
         core::iter::once(CoordinatorSend::ToDevice {
-            destinations: self.0.devices.iter().cloned().collect(),
-            message: self.0.into(),
+            destinations,
+            message,
         })
     }
 }

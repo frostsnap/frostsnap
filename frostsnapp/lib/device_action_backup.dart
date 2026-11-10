@@ -4,6 +4,7 @@ import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:frostsnap/device_action_fullscreen_dialog.dart';
 import 'package:frostsnap/global.dart';
+import 'package:frostsnap/snackbar.dart';
 import 'package:frostsnap/wallet_key_mismatch.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/coordinator.dart';
@@ -133,6 +134,7 @@ class DeviceActionBackupController with ChangeNotifier {
 
     try {
       bool isComplete = false;
+      bool refused = false;
       await for (final state in coord.displayBackup(
         id: id,
         accessStructureRef: accessStructure.accessStructureRef(),
@@ -150,10 +152,14 @@ class DeviceActionBackupController with ChangeNotifier {
           );
         }
 
+        refused |= state.refused;
         if (state.closeDialog) break;
       }
 
       await controller.removeActionNeeded(id);
+      if (refused && context.mounted) {
+        showMessageSnackbar(context, cardShareRefusedMessage);
+      }
       return isComplete;
     } finally {
       if (_dialogController == controller) _dialogController = null;
@@ -161,3 +167,8 @@ class DeviceActionBackupController with ChangeNotifier {
     }
   }
 }
+
+/// Why a device won't show or check a share as 25 words.
+const cardShareRefusedMessage =
+    'This key was restored from a verifiable card, so it can\'t be shown or '
+    'checked as 25 words. Its words are on the card.';

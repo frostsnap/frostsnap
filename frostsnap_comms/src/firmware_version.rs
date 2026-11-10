@@ -61,6 +61,7 @@ impl VersionNumber {
             upgrade_digest_no_sig: *self > V0_0_1,
             check_backup: *self >= V0_3_0,
             genuine_check: *self > V0_4_0,
+            verifiable_card: false,
         }
     }
 }
@@ -73,6 +74,8 @@ pub struct FirmwareFeatures {
     pub check_backup: bool,
     /// Device answers `CoordinatorSendBody::GenuineCheck`
     pub genuine_check: bool,
+    /// Device supports the verifiable backup card (experimental; no release has it)
+    pub verifiable_card: bool,
 }
 
 impl FirmwareFeatures {
@@ -81,6 +84,7 @@ impl FirmwareFeatures {
             upgrade_digest_no_sig: true,
             check_backup: true,
             genuine_check: true,
+            verifiable_card: true,
         }
     }
 }
