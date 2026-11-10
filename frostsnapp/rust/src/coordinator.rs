@@ -328,6 +328,9 @@ impl FfiCoordinator {
                                     }
                                 }
                             }
+                            DeviceChange::BusyPorts { .. } => {
+                                /* the device list picked this up above */
+                            }
                         }
                     }
 

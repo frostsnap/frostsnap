@@ -103,6 +103,9 @@ pub struct DeviceListState {
     /// Announced devices not in `devices` because they haven't registered or asked for a name. A
     /// device can stay here as long as it likes, so presence is decided by both lists.
     pub unlisted: Vec<ConnectedDevice>,
+    /// Ports with a Frostsnap device on them that another process (e.g. another instance of the
+    /// app) is using, so we can't talk to the device. Non-empty means the user should be told.
+    pub busy_ports: Vec<String>,
     pub state_id: u32,
 }
 
