@@ -3,8 +3,9 @@ use frostsnap_core::device::{DevicePrf, DeviceToUserMessage, KeyPurpose};
 use frostsnap_core::message::{CoordinatorToDeviceMessage, DeviceSend, DeviceToCoordinatorMessage};
 use frostsnap_core::{
     coordinator::{
-        BeginKeygen, CoordinatorSend, CoordinatorToUserKeyGenMessage, CoordinatorToUserMessage,
-        FrostCoordinator,
+        keys::KeyMutation, restoration::RestorationMutation, signing::SigningMutation, BeginKeygen,
+        CoordinatorSend, CoordinatorToUserKeyGenMessage, CoordinatorToUserMessage,
+        FrostCoordinator, Mutation, StagedMutation,
     },
     device::FrostSigner,
     DeviceId, MessageResult, SymmetricKey,
@@ -164,6 +165,7 @@ pub struct Run {
     pub message_queue: VecDeque<Send>,
     pub transcript: Vec<Send>,
     pub start_coordinator: FrostCoordinator,
+    pub coordinator_log: Vec<StagedMutation>,
     pub start_devices: BTreeMap<DeviceId, FrostSigner>,
 }
 
@@ -175,6 +177,7 @@ impl core::fmt::Debug for Run {
             .field("message_queue", &self.message_queue)
             .field("transcript", &self.transcript)
             .field("start_coordinator", &"..")
+            .field("coordinator_log", &"..")
             .field("start_devices", &"..")
             .finish()
     }
@@ -218,17 +221,29 @@ impl Run {
         purpose: KeyPurpose,
     ) -> Self {
         let mut run = Self::generate(n_devices, rng);
+        run.keygen(threshold, purpose, env, rng);
+        run
+    }
 
+    /// Generates a key on all of the run's devices.
+    #[allow(unused)]
+    pub fn keygen(
+        &mut self,
+        threshold: u16,
+        purpose: KeyPurpose,
+        env: &mut impl Env,
+        rng: &mut impl rand_core::RngCore,
+    ) {
         use rand_chacha::{rand_core::SeedableRng, ChaCha20Rng};
         let mut seed = [0u8; 32];
         rng.fill_bytes(&mut seed);
         let mut coordinator_rng = ChaCha20Rng::from_seed(seed);
 
-        let keygen_init = run
+        let keygen_init = self
             .coordinator
             .begin_keygen(
                 BeginKeygen::new(
-                    run.devices.keys().cloned().collect::<Vec<_>>(),
+                    self.devices.keys().cloned().collect::<Vec<_>>(),
                     threshold,
                     "my new key".to_string(),
                     purpose,
@@ -237,12 +252,9 @@ impl Run {
                 &mut coordinator_rng,
             )
             .unwrap();
-        let keygen_id = keygen_init.0.keygen_id;
-        run.extend(keygen_init);
+        self.extend(keygen_init);
 
-        run.run_until_finished(env, rng).unwrap();
-
-        run
+        self.run_until_finished(env, rng).unwrap();
     }
 
     #[allow(unused)]
@@ -269,6 +281,7 @@ impl Run {
     pub fn new(coordinator: FrostCoordinator, devices: BTreeMap<DeviceId, FrostSigner>) -> Self {
         Self {
             start_coordinator: coordinator.clone(),
+            coordinator_log: Default::default(),
             start_devices: devices.clone(),
             coordinator,
             devices,
@@ -283,6 +296,7 @@ impl Run {
         coordinator.keygen_fingerprint = TEST_FINGERPRINT;
         self.coordinator = coordinator.clone();
         self.start_coordinator = coordinator;
+        self.coordinator_log.clear();
     }
 
     #[allow(unused)]
@@ -380,14 +394,55 @@ impl Run {
         Ok(())
     }
 
-    pub fn check_mutations(&mut self) {
-        let mutations = self.coordinator.take_staged_mutations();
-
-        for mutation in mutations {
-            self.start_coordinator.apply_mutation(mutation);
+    fn replayed_coordinator(&self) -> FrostCoordinator {
+        let mut replayed = self.start_coordinator.clone();
+        for logged in &self.coordinator_log {
+            replayed.apply_mutation(logged.mutation.clone());
         }
+        replayed
+    }
+
+    /// Replaces the coordinator with one rebuilt from what it has persisted, as a restart would.
+    #[allow(unused)]
+    pub fn restart_coordinator(&mut self) {
+        self.check_mutations();
+        self.coordinator = self.replayed_coordinator();
+    }
+
+    pub fn check_mutations(&mut self) {
+        for staged in self.coordinator.take_staged_mutations() {
+            // Apps delete every mutation tied to a key or restoration when it's deleted. Pruning the
+            // log the same way, then checking a replay of it still matches the coordinator, is what
+            // makes that deletion safe for them.
+            match staged.mutation {
+                Mutation::Keygen(KeyMutation::DeleteKey(key_id)) => self
+                    .coordinator_log
+                    .retain(|logged| logged.tied_to_key != Some(key_id)),
+                Mutation::Restoration(RestorationMutation::DeleteRestoration {
+                    restoration_id,
+                }) => self
+                    .coordinator_log
+                    .retain(|logged| logged.mutation.tied_to_restoration() != Some(restoration_id)),
+                _ => {
+                    if let Mutation::Signing(signing) = &staged.mutation {
+                        let survives_key_deletion = matches!(
+                            signing,
+                            SigningMutation::NewNonces { .. }
+                                | SigningMutation::ConsumeNonces { .. }
+                        );
+                        assert_eq!(
+                            staged.tied_to_key.is_none(),
+                            survives_key_deletion,
+                            "{signing:?} has the wrong key attribution"
+                        );
+                    }
+                    self.coordinator_log.push(staged)
+                }
+            }
+        }
+
         assert_eq!(
-            self.start_coordinator,
+            self.replayed_coordinator(),
             {
                 let mut tmp = self.coordinator.clone();
                 tmp.clear_tmp_data();
@@ -416,7 +471,9 @@ impl Run {
 
 impl Drop for Run {
     fn drop(&mut self) {
-        self.check_mutations();
+        if !std::thread::panicking() {
+            self.check_mutations();
+        }
     }
 }
 
