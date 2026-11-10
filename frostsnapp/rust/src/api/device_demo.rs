@@ -2,11 +2,12 @@ use crate::frb_generated::StreamSink;
 use flutter_rust_bridge::frb;
 use frostsnap_device_demo::{Demo, DemoKind, Gesture, HandTiming};
 use std::{
+    num::NonZeroU32,
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc,
     },
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 const FRAME: Duration = Duration::from_millis(33);
@@ -33,6 +34,9 @@ pub struct DeviceDemoHandTiming {
     pub hold_contact_ms: u32,
     pub hold_press_ms: u32,
     pub hold_after_release_ms: u32,
+    pub tap_contact_ms: u32,
+    pub tap_press_ms: u32,
+    pub tap_after_release_ms: u32,
 }
 
 pub enum DeviceDemoEvent {
@@ -52,6 +56,11 @@ pub enum DeviceDemoGesture {
     /// Held for `hold_ms`.
     Hold {
         hold_ms: u32,
+    },
+    /// Lands on this point of the device's screen.
+    Tap {
+        x: i32,
+        y: i32,
     },
 }
 
@@ -91,6 +100,9 @@ impl DeviceDemo {
                 hold_contact_ms: hand.hold_contact_ms,
                 hold_press_ms: hand.hold_press_ms,
                 hold_after_release_ms: hand.hold_after_release_ms,
+                tap_contact_ms: hand.tap_contact_ms,
+                tap_press_ms: hand.tap_press_ms,
+                tap_after_release_ms: hand.tap_after_release_ms,
             },
             started: AtomicBool::new(false),
             stopped: Arc::new(AtomicBool::new(false)),
@@ -114,8 +126,15 @@ impl DeviceDemo {
         }
         let (kind, hand) = (self.kind, self.hand);
         let stopped = self.stopped.clone();
+        // Each time a demo plays, its quiz puts the right answers in different places.
+        let seed = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|since| since.subsec_nanos())
+            .ok()
+            .and_then(NonZeroU32::new)
+            .unwrap_or(NonZeroU32::MIN);
         std::thread::spawn(move || {
-            let mut demo = Demo::new(kind, hand);
+            let mut demo = Demo::new(kind, hand, seed);
             let start = Instant::now();
             let mut next = start;
             while !stopped.load(Ordering::Relaxed) {
@@ -126,6 +145,7 @@ impl DeviceDemo {
                         gesture: match cue.gesture {
                             Gesture::Swipe => DeviceDemoGesture::Swipe,
                             Gesture::Hold { ms } => DeviceDemoGesture::Hold { hold_ms: ms },
+                            Gesture::Tap { at } => DeviceDemoGesture::Tap { x: at.x, y: at.y },
                         },
                     })
                 });

@@ -19,11 +19,11 @@ use frostsnap_widgets::{
     palette::PALETTE,
     redact, sign_prompt,
     vec_framebuffer::VecFramebuffer,
-    AddressWithIndex, Center, DynWidget, EraseDevice, FirmwareUpgradeConfirm, Instant, KeygenCheck,
+    AddressWithIndex, Center, EraseDevice, FirmwareUpgradeConfirm, Instant, KeygenCheck,
     SignTxPrompt, SuperDrawTarget, Widget, WidgetList, HOLD_TO_CONFIRM_TIME_LONG_MS,
     HOLD_TO_CONFIRM_TIME_MS, HOLD_TO_CONFIRM_TIME_SHORT_MS,
 };
-use std::str::FromStr;
+use std::{num::NonZeroU32, str::FromStr};
 
 pub const WIDTH: u32 = 240;
 pub const HEIGHT: u32 = 280;
@@ -47,6 +47,7 @@ pub enum DemoKind {
 pub enum Gesture {
     Swipe,
     Hold { ms: u32 },
+    Tap { at: Point },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -76,6 +77,12 @@ pub struct HandTiming {
     pub hold_press_ms: u32,
     /// From the finger lifting to the end of the hold clip.
     pub hold_after_release_ms: u32,
+    /// From the start of the tap clip to the finger touching the screen.
+    pub tap_contact_ms: u32,
+    /// How long the tap clip keeps the finger down.
+    pub tap_press_ms: u32,
+    /// From the finger lifting to the end of the tap clip.
+    pub tap_after_release_ms: u32,
 }
 
 const REST_BEFORE_REPLAY_MS: u64 = 1000;
@@ -85,18 +92,14 @@ const SWIPE_FROM_Y: i32 = 222;
 const SWIPE_TO_Y: i32 = 10;
 const SWIPE_STEPS: i32 = 3;
 const FRAME_MS: u64 = 33;
-const TAP_MS: u64 = 120;
 const HOLD_BUTTON: Point = Point::new(120, 215);
-// The quiz's shuffle is xorshift, which never moves from a zero seed.
-const QUIZ_SEED: u32 = 0x5eed;
 const QUIZ_OPTIONS: [Point; 3] = [
     Point::new(120, 104),
     Point::new(120, 166),
     Point::new(120, 228),
 ];
 
-/// One thing the finger does. Only swipes and holds have a hand drawn for them; taps on a
-/// keyboard or quiz play on the screen alone.
+/// One thing the finger does.
 #[derive(Clone, Copy, Debug)]
 enum Action {
     Swipe,
@@ -105,9 +108,15 @@ enum Action {
     Hold {
         threshold_ms: u32,
     },
-    Tap(Point),
-    AnswerQuiz,
+    Tap(Target),
     Pause(u64),
+}
+
+#[derive(Clone, Copy, Debug)]
+enum Target {
+    At(Point),
+    /// The quiz shuffles its options, so where the right answer is is only known when it is asked.
+    RightAnswer,
 }
 
 enum Input {
@@ -116,19 +125,24 @@ enum Input {
     // The device only turns the page when a drag is released, and only if the release moved.
     SwipeRelease { from_y: i32, to_y: i32 },
     Release(Point),
-    PressRightAnswer,
-    ReleaseAnswer,
 }
 
 enum Event {
     Cue(Cue),
+    TapCue { target: Target, contact_in_ms: u32 },
     Input(Input),
+    TapPress,
+    TapRelease,
 }
 
 /// Object-safe face of a screen widget, so every kind runs through one loop.
 trait Screen {
     fn draw(&mut self, fb: &mut VecFramebuffer<Rgb565>, now: Instant);
     fn input(&mut self, input: &Input, now: Instant);
+
+    fn right_answer(&mut self) -> Option<Point> {
+        None
+    }
 }
 
 fn draw_widget<W: Widget<Color = Rgb565>>(
@@ -155,9 +169,6 @@ fn touch<W: Widget<Color = Rgb565>>(widget: &mut W, input: &Input, now: Instant)
         Input::Release(point) => {
             widget.handle_touch(point, now, true);
         }
-        Input::PressRightAnswer | Input::ReleaseAnswer => {
-            unreachable!("only the quiz is scripted to answer")
-        }
     }
 }
 
@@ -173,39 +184,66 @@ impl<W: Widget<Color = Rgb565>> Screen for Plain<W> {
     }
 }
 
-/// The quiz shuffles its options, so where the right answer is is only known when it is asked.
-struct Quiz {
-    screen: CheckBackupScreen,
-    pressed: Option<Point>,
-}
+struct Quiz(CheckBackupScreen);
 
 impl Screen for Quiz {
     fn draw(&mut self, fb: &mut VecFramebuffer<Rgb565>, now: Instant) {
-        draw_widget(&mut self.screen, fb, now);
+        draw_widget(&mut self.0, fb, now);
     }
 
     fn input(&mut self, input: &Input, now: Instant) {
-        match input {
-            Input::PressRightAnswer => {
-                if let Some(option) = self.screen.correct_option() {
-                    let point = QUIZ_OPTIONS[option as usize];
-                    self.screen.handle_touch(point, now, false);
-                    self.pressed = Some(point);
+        touch(&mut self.0, input, now);
+    }
+
+    fn right_answer(&mut self) -> Option<Point> {
+        Some(QUIZ_OPTIONS[self.0.correct_option()? as usize])
+    }
+}
+
+/// Where the finger's tap lands, fixed when its cue goes out, so the touch is where the hand went.
+#[derive(Default)]
+struct Finger {
+    tap_at: Option<Point>,
+}
+
+impl Finger {
+    fn play(&mut self, event: &Event, screen: &mut dyn Screen, now: Instant) -> Option<Cue> {
+        match *event {
+            Event::Cue(cue) => return Some(cue),
+            Event::TapCue {
+                target,
+                contact_in_ms,
+            } => {
+                self.tap_at = match target {
+                    Target::At(point) => Some(point),
+                    Target::RightAnswer => screen.right_answer(),
+                };
+                return self.tap_at.map(|at| Cue {
+                    gesture: Gesture::Tap { at },
+                    contact_in_ms,
+                });
+            }
+            Event::Input(ref input) => screen.input(input, now),
+            Event::TapPress => {
+                if let Some(at) = self.tap_at {
+                    screen.input(&Input::Press(at), now);
                 }
             }
-            Input::ReleaseAnswer => {
-                if let Some(point) = self.pressed.take() {
-                    self.screen.handle_touch(point, now, true);
+            Event::TapRelease => {
+                if let Some(at) = self.tap_at.take() {
+                    screen.input(&Input::Release(at), now);
                 }
             }
-            input => touch(&mut self.screen, input, now),
         }
+        None
     }
 }
 
 pub struct Demo {
     kind: DemoKind,
+    seed: NonZeroU32,
     screen: Box<dyn Screen>,
+    finger: Finger,
     timeline: Vec<(u64, Event)>,
     next_event: usize,
     loop_ms: u64,
@@ -215,12 +253,15 @@ pub struct Demo {
 }
 
 impl Demo {
-    pub fn new(kind: DemoKind, hand: HandTiming) -> Self {
+    /// `seed` shuffles the first play's quiz; each replay shuffles it differently.
+    pub fn new(kind: DemoKind, hand: HandTiming, seed: NonZeroU32) -> Self {
         let _redacting = redact::enable_on_this_thread();
         let (timeline, loop_ms) = schedule(&script(kind), hand);
         Self {
             kind,
-            screen: screen(kind),
+            seed,
+            screen: screen(kind, seed),
+            finger: Finger::default(),
             timeline,
             next_event: 0,
             loop_ms,
@@ -236,7 +277,9 @@ impl Demo {
         let _redacting = redact::enable_on_this_thread();
         let mut step = Step::default();
         if now_ms >= self.loop_started_at + self.loop_ms {
-            self.screen = screen(self.kind);
+            self.seed = next_play(self.seed);
+            self.screen = screen(self.kind, self.seed);
+            self.finger = Finger::default();
             self.next_event = 0;
             self.loop_started_at = now_ms;
             self.fb.clear(PALETTE.background);
@@ -246,10 +289,8 @@ impl Demo {
             if self.loop_started_at + at > now_ms {
                 break;
             }
-            match event {
-                Event::Cue(cue) => step.cues.push(*cue),
-                Event::Input(input) => self.screen.input(input, now),
-            }
+            step.cues
+                .extend(self.finger.play(event, self.screen.as_mut(), now));
             self.next_event += 1;
         }
         self.screen.draw(&mut self.fb, now);
@@ -275,12 +316,18 @@ fn rgba(fb: &VecFramebuffer<Rgb565>) -> Vec<u8> {
     out
 }
 
+// An odd multiplier permutes the u32s and keeps zero at zero, so a non-zero seed stays non-zero,
+// which the quiz's xorshift shuffle needs to move at all.
+fn next_play(seed: NonZeroU32) -> NonZeroU32 {
+    NonZeroU32::new(seed.get().wrapping_mul(0x9e37_79b9)).expect("non-zero stays non-zero")
+}
+
 fn sized<W: Widget<Color = Rgb565>>(mut widget: W) -> W {
     widget.set_constraints(Size::new(WIDTH, HEIGHT));
     widget
 }
 
-fn screen(kind: DemoKind) -> Box<dyn Screen> {
+fn screen(kind: DemoKind, seed: NonZeroU32) -> Box<dyn Screen> {
     match kind {
         DemoKind::Sign => Box::new(Plain(sized(SignTxPrompt::new_with_seed(
             placeholder_sign_prompt(),
@@ -294,10 +341,11 @@ fn screen(kind: DemoKind) -> Box<dyn Screen> {
             security_check_code,
         } => Box::new(Plain(sized(KeygenCheck::new(t_of_n, security_check_code)))),
         DemoKind::Backup => Box::new(Plain(sized(BackupDisplay::new(placeholder_words(), 1)))),
-        DemoKind::CheckBackup => Box::new(Quiz {
-            screen: sized(CheckBackupScreen::new(placeholder_words(), 1, QUIZ_SEED)),
-            pressed: None,
-        }),
+        DemoKind::CheckBackup => Box::new(Quiz(sized(CheckBackupScreen::new(
+            placeholder_words(),
+            1,
+            seed.get(),
+        )))),
         DemoKind::EnterBackup => Box::new(Plain(sized(EnterShareScreen::new()))),
         DemoKind::Erase => Box::new(Plain(sized(EraseDevice::new()))),
         DemoKind::Upgrade => Box::new(Plain(sized(FirmwareUpgradeConfirm::new(
@@ -328,24 +376,29 @@ fn script(kind: DemoKind) -> Vec<Action> {
         DemoKind::CheckBackup => {
             let mut actions = vec![Action::Pause(1200)];
             for _ in 0..4 {
-                actions.extend([Action::AnswerQuiz, Action::Pause(1400)]);
+                actions.extend([Action::Tap(Target::RightAnswer), Action::Pause(400)]);
             }
             actions
         }
         DemoKind::EnterBackup => {
-            let tap = |x, y, after| [Action::Tap(Point::new(x, y)), Action::Pause(after)];
+            let tap = |x, y, after| {
+                [
+                    Action::Tap(Target::At(Point::new(x, y))),
+                    Action::Pause(after),
+                ]
+            };
             let mut actions = vec![Action::Pause(1200)];
             for (x, y, after) in [
-                (41, 147, 520),
-                (120, 93, 520),
-                (195, 255, 900),
-                (90, 82, 520),
-                (30, 182, 900),
-                (90, 147, 1000),
-                (210, 182, 520),
-                (30, 82, 700),
-                (90, 92, 900),
-                (175, 96, 1800),
+                (41, 147, 0),
+                (120, 93, 0),
+                (195, 255, 380),
+                (90, 82, 0),
+                (30, 182, 380),
+                (90, 147, 480),
+                (210, 182, 0),
+                (30, 82, 180),
+                (90, 92, 380),
+                (175, 96, 1280),
             ] {
                 actions.extend(tap(x, y, after));
             }
@@ -415,15 +468,19 @@ fn schedule(actions: &[Action], hand: HandTiming) -> (Vec<(u64, Event)>, u64) {
                 timeline.push((release, Event::Input(Input::Release(HOLD_BUTTON))));
                 t = release + u64::from(hand.hold_after_release_ms);
             }
-            Action::Tap(point) => {
-                timeline.push((t, Event::Input(Input::Press(point))));
-                t += TAP_MS;
-                timeline.push((t, Event::Input(Input::Release(point))));
-            }
-            Action::AnswerQuiz => {
-                timeline.push((t, Event::Input(Input::PressRightAnswer)));
-                t += TAP_MS;
-                timeline.push((t, Event::Input(Input::ReleaseAnswer)));
+            Action::Tap(target) => {
+                timeline.push((
+                    t,
+                    Event::TapCue {
+                        target,
+                        contact_in_ms: hand.tap_contact_ms,
+                    },
+                ));
+                let contact = t + u64::from(hand.tap_contact_ms);
+                timeline.push((contact, Event::TapPress));
+                let release = contact + u64::from(hand.tap_press_ms);
+                timeline.push((release, Event::TapRelease));
+                t = release + u64::from(hand.tap_after_release_ms);
             }
             Action::Pause(ms) => t += ms,
         }
@@ -468,7 +525,12 @@ mod test {
         hold_contact_ms: 1500,
         hold_press_ms: 3067,
         hold_after_release_ms: 2433,
+        tap_contact_ms: 267,
+        tap_press_ms: 100,
+        tap_after_release_ms: 600,
     };
+
+    const SEED: NonZeroU32 = NonZeroU32::new(0x5eed).expect("non-zero");
 
     const KINDS: [DemoKind; 8] = [
         DemoKind::Sign,
@@ -484,16 +546,29 @@ mod test {
     fn play(screen: &mut dyn Screen, actions: &[Action]) {
         let (timeline, loop_ms) = schedule(actions, HAND);
         let mut fb = VecFramebuffer::new(WIDTH as usize, HEIGHT as usize);
+        let mut finger = Finger::default();
         let mut events = timeline.iter().peekable();
         for now_ms in (0..loop_ms).step_by(FRAME_MS as usize) {
             let now = Instant::from_millis(now_ms);
             while let Some((_, event)) = events.next_if(|(at, _)| *at <= now_ms) {
-                if let Event::Input(input) = event {
-                    screen.input(input, now);
-                }
+                finger.play(event, screen, now);
             }
             screen.draw(&mut fb, now);
         }
+    }
+
+    /// Where the finger taps in each play of the demo, over `plays` plays.
+    fn taps(kind: DemoKind, seed: NonZeroU32, plays: u64) -> Vec<Vec<Point>> {
+        let mut demo = Demo::new(kind, HAND, seed);
+        let mut plays_taps = vec![Vec::new(); plays as usize];
+        for now_ms in (0..demo.loop_ms * plays).step_by(FRAME_MS as usize) {
+            for cue in demo.step(now_ms).cues {
+                if let Gesture::Tap { at } = cue.gesture {
+                    plays_taps[(now_ms / demo.loop_ms) as usize].push(at);
+                }
+            }
+        }
+        plays_taps
     }
 
     #[test]
@@ -501,13 +576,43 @@ mod test {
         for kind in KINDS {
             let (timeline, _) = schedule(&script(kind), HAND);
             for (i, (at, event)) in timeline.iter().enumerate() {
-                if let Event::Cue(cue) = event {
-                    let (press_at, _) = timeline[i + 1..]
-                        .iter()
-                        .find(|(_, e)| matches!(e, Event::Input(Input::Press(_))))
-                        .expect("every cue has a touch");
-                    assert_eq!(*press_at, at + cue.contact_in_ms as u64, "{kind:?}");
-                }
+                let contact_in_ms = match event {
+                    Event::Cue(cue) => cue.contact_in_ms,
+                    Event::TapCue { contact_in_ms, .. } => *contact_in_ms,
+                    _ => continue,
+                };
+                let (press_at, _) = timeline[i + 1..]
+                    .iter()
+                    .find(|(_, e)| matches!(e, Event::Input(Input::Press(_)) | Event::TapPress))
+                    .expect("every cue has a touch");
+                assert_eq!(*press_at, at + contact_in_ms as u64, "{kind:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn no_gesture_starts_before_the_last_one_is_back_at_rest() {
+        for kind in KINDS {
+            let (timeline, _) = schedule(&script(kind), HAND);
+            let mut at_rest_from = 0;
+            for (at, event) in &timeline {
+                let (contact_in_ms, after_contact_ms) = match event {
+                    Event::Cue(Cue {
+                        gesture: Gesture::Swipe,
+                        contact_in_ms,
+                    }) => (*contact_in_ms, HAND.swipe_after_contact_ms),
+                    Event::Cue(Cue {
+                        gesture: Gesture::Hold { ms },
+                        contact_in_ms,
+                    }) => (*contact_in_ms, ms + HAND.hold_after_release_ms),
+                    Event::TapCue { contact_in_ms, .. } => (
+                        *contact_in_ms,
+                        HAND.tap_press_ms + HAND.tap_after_release_ms,
+                    ),
+                    _ => continue,
+                };
+                assert!(*at >= at_rest_from, "{kind:?} at {at}");
+                at_rest_from = at + u64::from(contact_in_ms + after_contact_ms);
             }
         }
     }
@@ -536,22 +641,55 @@ mod test {
 
     #[test]
     fn the_quiz_is_answered_right_every_time() {
-        let mut quiz = Quiz {
-            screen: sized(CheckBackupScreen::new(placeholder_words(), 1, QUIZ_SEED)),
-            pressed: None,
-        };
+        let mut quiz = Quiz(sized(CheckBackupScreen::new(
+            placeholder_words(),
+            1,
+            SEED.get(),
+        )));
         let mut actions = vec![Action::Pause(1200)];
         for _ in 0..26 {
-            actions.extend([Action::AnswerQuiz, Action::Pause(1400)]);
+            actions.extend([Action::Tap(Target::RightAnswer), Action::Pause(1400)]);
         }
         play(&mut quiz, &actions);
-        assert!(quiz.screen.is_verified());
+        assert!(quiz.0.is_verified());
+    }
+
+    #[test]
+    fn the_quiz_answers_move_between_plays() {
+        let first_seed = taps(DemoKind::CheckBackup, SEED, 2);
+        let other_seed = taps(
+            DemoKind::CheckBackup,
+            NonZeroU32::new(7).expect("non-zero"),
+            1,
+        );
+        for play in [&first_seed[0], &first_seed[1], &other_seed[0]] {
+            assert_eq!(play.len(), 4);
+        }
+        assert_ne!(first_seed[0], first_seed[1], "a replay");
+        assert_ne!(first_seed[0], other_seed[0], "another seed");
+    }
+
+    #[test]
+    fn every_tap_has_a_finger_on_it() {
+        let (timeline, _) = schedule(&script(DemoKind::EnterBackup), HAND);
+        let touches = timeline
+            .iter()
+            .filter(|(_, e)| matches!(e, Event::Input(Input::Press(_))))
+            .count();
+        assert_eq!(touches, 0, "every key is pressed by a cued tap");
+        assert_eq!(
+            taps(DemoKind::EnterBackup, SEED, 1)[0].len(),
+            timeline
+                .iter()
+                .filter(|(_, e)| matches!(e, Event::TapPress))
+                .count()
+        );
     }
 
     #[test]
     fn every_kind_replays_and_sends_only_changed_screens() {
         for kind in KINDS {
-            let mut demo = Demo::new(kind, HAND);
+            let mut demo = Demo::new(kind, HAND, SEED);
             let mut frames = 0;
             let mut previous: Option<Vec<u8>> = None;
             for now_ms in (0..demo.loop_ms * 2).step_by(FRAME_MS as usize) {
@@ -567,7 +705,7 @@ mod test {
     }
 
     fn frame_at(kind: DemoKind, at_ms: u64) -> Vec<u8> {
-        let mut demo = Demo::new(kind, HAND);
+        let mut demo = Demo::new(kind, HAND, SEED);
         let mut last = Vec::new();
         for now_ms in (0..=at_ms).step_by(FRAME_MS as usize) {
             if let Some(frame) = demo.step(now_ms).frame {
@@ -624,9 +762,10 @@ mod test {
             "address and its index"
         );
 
-        let typing_key_number = frame_at(DemoKind::EnterBackup, 1980);
+        let typing_key_number = frame_at(DemoKind::EnterBackup, 3000);
         assert!(
-            !has_sharp_edges(&typing_key_number, (0, 6, 110, 46)),
+            // Above the cursor, which is drawn sharp under the text.
+            !has_sharp_edges(&typing_key_number, (0, 6, 110, 34)),
             "key number"
         );
         assert!(
@@ -634,7 +773,7 @@ mod test {
             "backspace"
         );
 
-        let typing_word = frame_at(DemoKind::EnterBackup, 3960);
+        let typing_word = frame_at(DemoKind::EnterBackup, 5600);
         assert!(
             // Above the cursor, which is drawn sharp under the text.
             !has_sharp_edges(&typing_word, (0, 6, 110, 34)),

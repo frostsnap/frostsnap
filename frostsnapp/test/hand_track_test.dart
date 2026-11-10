@@ -15,6 +15,12 @@ DeviceDemoCue hold({required int contactInMs, required int holdMs}) =>
       gesture: DeviceDemoGesture.hold(holdMs: holdMs),
     );
 
+DeviceDemoCue tap({required int contactInMs, required int x, required int y}) =>
+    DeviceDemoCue(
+      contactInMs: contactInMs,
+      gesture: DeviceDemoGesture.tap(x: x, y: y),
+    );
+
 /// When the hand comes to rest after a cue at zero, to the frame.
 Duration settlesAt(DeviceDemoCue cue) {
   final track = HandTrack()..cue(cue, Duration.zero);
@@ -88,6 +94,65 @@ void main() {
           .abs(),
       lessThanOrEqualTo(oneFrame),
     );
+
+    final tapEnd = ms(
+      timing.tapContactMs + timing.tapPressMs + timing.tapAfterReleaseMs,
+    );
+    expect(
+      (settlesAt(tap(contactInMs: timing.tapContactMs, x: 120, y: 215)) -
+              tapEnd)
+          .abs(),
+      lessThanOrEqualTo(oneFrame),
+    );
+
+    final track = HandTrack()
+      ..cue(tap(contactInMs: timing.tapContactMs, x: 120, y: 215), ms(0));
+    // Hold frames up to 22 and from 171 are the rest pose.
+    for (final edge in [Duration.zero, tapEnd - oneFrame]) {
+      expect(
+        switch (track.frameAt(edge)) {
+          HandFrame(sheet: HandSheet.hold, :final index) =>
+            index <= 22 || index >= 171,
+          _ => false,
+        },
+        isTrue,
+        reason: '$edge',
+      );
+    }
+    expect(
+      track.frameAt(ms(timing.tapContactMs)),
+      const HandFrame(HandSheet.hold, HandTrack.holdContactFrame),
+    );
+    expect(
+      track.frameAt(ms(timing.tapContactMs + timing.tapPressMs) + oneFrame),
+      isNot(const HandFrame(HandSheet.hold, HandTrack.holdContactFrame)),
+    );
+  });
+
+  test('a tap moves the finger onto its target as the hand reaches for it', () {
+    final track = HandTrack();
+    expect(track.offsetAt(ms(0)), Offset.zero);
+
+    track.cue(tap(contactInMs: 300, x: 41, y: 147), ms(1000));
+    expect(track.offsetAt(ms(1000)), Offset.zero);
+    expect(
+      track.offsetAt(ms(1300)),
+      const Offset(41, 147) - HandTrack.fingertip,
+    );
+    expect(
+      track.offsetAt(ms(1900)),
+      const Offset(41, 147) - HandTrack.fingertip,
+    );
+
+    track.cue(tap(contactInMs: 300, x: 195, y: 255), ms(2000));
+    expect(
+      track.offsetAt(ms(2150)),
+      (const Offset(41, 147) + const Offset(195, 255)) / 2 -
+          HandTrack.fingertip,
+    );
+
+    track.cue(hold(contactInMs: 1500, holdMs: 3000), ms(3000));
+    expect(track.offsetAt(ms(4500)), Offset.zero);
   });
 
   test('the hand keeps moving with nothing arriving from the device', () {

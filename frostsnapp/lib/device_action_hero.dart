@@ -196,10 +196,15 @@ class _HandPainter extends CustomPainter {
     final frame = playback.handFrame;
     final sheet = frame == null ? null : sheets?[frame.sheet];
     if (frame == null || sheet == null) return;
+    final offset = playback.handOffset;
     canvas.drawImageRect(
       sheet,
       frame.sheet.cell(frame.index),
-      Offset.zero & size,
+      Offset(
+            offset.dx * _display.width / _deviceScreenSize.width,
+            offset.dy * _display.height / _deviceScreenSize.height,
+          ) &
+          size,
       Paint()..filterQuality = FilterQuality.medium,
     );
   }
