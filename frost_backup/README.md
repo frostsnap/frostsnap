@@ -16,7 +16,7 @@ A Shamir secret sharing backup scheme for secp256k1 scalars that encodes shares 
 
 #### `share_index`
 
-The share index is a decimal integer prefixed `#` with in the format. The index is never `0`. 
+The share index is a decimal integer prefixed with `#`. Index `0` is reserved for a backup of the secret itself: Shamir's scheme defines the secret as `f(0)`.
 
 #### Words Bit Layout
 
