@@ -17,7 +17,7 @@ use frostsnap_core::bitcoin_transaction::{
 use frostsnap_widgets::{
     backup::{BackupDisplay, CheckBackupScreen, EnterShareScreen},
     palette::PALETTE,
-    sign_prompt,
+    redact, sign_prompt,
     vec_framebuffer::VecFramebuffer,
     AddressWithIndex, Center, DynWidget, EraseDevice, FirmwareUpgradeConfirm, Instant, KeygenCheck,
     SignTxPrompt, SuperDrawTarget, Widget, WidgetList, HOLD_TO_CONFIRM_TIME_LONG_MS,
@@ -216,6 +216,7 @@ pub struct Demo {
 
 impl Demo {
     pub fn new(kind: DemoKind, hand: HandTiming) -> Self {
+        let _redacting = redact::enable_on_this_thread();
         let (timeline, loop_ms) = schedule(&script(kind), hand);
         Self {
             kind,
@@ -231,6 +232,8 @@ impl Demo {
 
     /// Advances the screen to `now_ms`, which must not go backwards.
     pub fn step(&mut self, now_ms: u64) -> Step {
+        // Screens build some of their widgets as they are paged through, not only up front.
+        let _redacting = redact::enable_on_this_thread();
         let mut step = Step::default();
         if now_ms >= self.loop_started_at + self.loop_ms {
             self.screen = screen(self.kind);
@@ -602,6 +605,17 @@ mod test {
         assert!(
             has_sharp_edges(&upgrade, (40, 141, 200, 159)),
             "hold to upgrade"
+        );
+
+        let address_page = frame_at(DemoKind::Sign, 3500);
+        assert!(
+            // Built only when the first swipe pages to it.
+            !has_sharp_edges(&address_page, (10, 50, 229, 160)),
+            "address"
+        );
+        assert!(
+            has_sharp_edges(&address_page, (60, 20, 180, 40)),
+            "to address"
         );
 
         let verify = frame_at(DemoKind::VerifyAddress, 990);

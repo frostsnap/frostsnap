@@ -7,7 +7,8 @@ edition = "2021"
 default = ["std"]
 prefill-words = []
 std = []
-redact = []
+# Lets a thread blur its `Redact`s; see `redact::enable_on_this_thread`.
+redact = ["std"]
 
 [dependencies]
 embedded-graphics = { version = "0.8.1", features = ["fixed_point"] }

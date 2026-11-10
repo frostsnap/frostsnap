@@ -1,8 +1,11 @@
 //! Data a screen shows that the app's demo of it must not invite anyone to read.
 //!
 //! The app plays the device's own screens to show how to work the device. Amounts, addresses and
-//! codes there are placeholders, and a sharp placeholder looks like something to check. With the
-//! `redact` feature `Redact` blurs its child; without it (firmware) it is the child itself.
+//! codes there are placeholders, and a sharp placeholder looks like something to check.
+//!
+//! A `Redact` blurs only when built on a thread inside [`enable_on_this_thread`]: the app also
+//! draws real device screens (the simulator's), and those must stay readable. Without the `redact`
+//! feature (firmware) `Redact` is the child itself.
 
 #[cfg(not(feature = "redact"))]
 pub type Redact<W> = W;
@@ -15,6 +18,35 @@ pub fn redact<W>(child: W) -> Redact<W> {
 
 #[cfg(feature = "redact")]
 pub use blurred::Redact;
+
+#[cfg(feature = "redact")]
+std::thread_local! {
+    static ENABLED: core::cell::Cell<bool> = const { core::cell::Cell::new(false) };
+}
+
+/// Every `Redact` built on this thread until the guard drops blurs its child.
+#[cfg(feature = "redact")]
+#[must_use]
+pub fn enable_on_this_thread() -> Enabled {
+    Enabled {
+        was: ENABLED.replace(true),
+        on_this_thread: core::marker::PhantomData,
+    }
+}
+
+#[cfg(feature = "redact")]
+pub struct Enabled {
+    was: bool,
+    // Dropped on another thread, it would restore that thread's switch and leave this one on.
+    on_this_thread: core::marker::PhantomData<*const ()>,
+}
+
+#[cfg(feature = "redact")]
+impl Drop for Enabled {
+    fn drop(&mut self) {
+        ENABLED.set(self.was);
+    }
+}
 
 #[cfg(feature = "redact")]
 pub fn redact<W: crate::Widget<Color = embedded_graphics::pixelcolor::Rgb565>>(
@@ -38,6 +70,7 @@ mod blurred {
 
     pub struct Redact<W> {
         child: W,
+        blur: bool,
         sharp: VecFramebuffer<Rgb565>,
         blurred: VecFramebuffer<Rgb565>,
         offset: Point,
@@ -48,6 +81,7 @@ mod blurred {
         fn clone(&self) -> Self {
             Self {
                 child: self.child.clone(),
+                blur: self.blur,
                 sharp: self.sharp.clone(),
                 blurred: self.blurred.clone(),
                 offset: self.offset,
@@ -76,6 +110,7 @@ mod blurred {
         pub fn new(child: W) -> Self {
             Self {
                 child,
+                blur: super::ENABLED.get(),
                 sharp: VecFramebuffer::new(0, 0),
                 blurred: VecFramebuffer::new(0, 0),
                 offset: Point::zero(),
@@ -87,6 +122,9 @@ mod blurred {
     impl<W: Widget<Color = Rgb565>> DynWidget for Redact<W> {
         fn set_constraints(&mut self, max_size: Size) {
             self.child.set_constraints(max_size);
+            if !self.blur {
+                return;
+            }
             let rect = self.child.sizing().dirty_rect();
             self.offset = rect.top_left;
             let (w, h) = (rect.size.width as usize, rect.size.height as usize);
@@ -131,6 +169,9 @@ mod blurred {
         where
             D: DrawTarget<Color = Rgb565>,
         {
+            if !self.blur {
+                return self.child.draw(target, current_time);
+            }
             let background = target.background_color();
             if self.needs_reblit {
                 // A child's partial redraw assumes what it drew last is still there, and that

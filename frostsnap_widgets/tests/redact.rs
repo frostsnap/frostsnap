@@ -27,6 +27,7 @@ fn render<W: Widget<Color = Rgb565>>(mut widget: W) -> VecFramebuffer<Rgb565> {
 #[test]
 fn only_the_redacted_child_is_blurred() {
     let sharp = render(Column::new((text("Network Fee"), text("0.00 000 284"))));
+    let _redacting = redact::enable_on_this_thread();
     let blurred = render(Column::new((
         text("Network Fee"),
         redact::redact(text("0.00 000 284")),
@@ -44,3 +45,31 @@ fn only_the_redacted_child_is_blurred() {
         rows(&blurred, title_rows..280)
     );
 }
+
+#[test]
+fn only_a_thread_that_enables_redaction_blurs() {
+    let amount = || redact::redact(text("0.00 000 284"));
+    let sharp = render(text("0.00 000 284"));
+
+    let redacting = redact::enable_on_this_thread();
+    let other_thread = std::thread::spawn(move || render(amount()))
+        .join()
+        .expect("the amount draws");
+    assert_eq!(other_thread.data(), sharp.data());
+    assert_ne!(render(amount()).data(), sharp.data());
+
+    drop(redacting);
+    assert_eq!(render(amount()).data(), sharp.data());
+}
+
+// The guard must restore the thread it enabled, so it can't be sent to another. An inherent const
+// on `Send` types shadows the trait's, so `IS_SEND` reads true only when `T: Send`.
+trait NotSend {
+    const IS_SEND: bool = false;
+}
+impl<T> NotSend for T {}
+struct Check<T>(core::marker::PhantomData<T>);
+impl<T: Send> Check<T> {
+    const IS_SEND: bool = true;
+}
+const _: () = assert!(Check::<bool>::IS_SEND && !Check::<redact::Enabled>::IS_SEND);
