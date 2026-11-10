@@ -417,6 +417,7 @@ impl CoordSuperWallet {
                 let confirmations = confirmation_time.as_ref().map_or(0, |confirmation| {
                     confirmation.confirmations_at_tip(chain_tip_height)
                 });
+                let first_seen = canonical_tx.tx_node.first_seen;
                 let last_seen = canonical_tx.tx_node.last_seen;
                 let prevouts =
                     self.get_prevouts(inner.input.iter().map(|txin| txin.previous_output));
@@ -426,13 +427,9 @@ impl CoordSuperWallet {
                     .chain(prevouts.values())
                     .filter_map(|txout| {
                         let spk = txout.script_pubkey.clone();
-                        self.tx_graph
-                            .index
-                            .index_of_spk(spk.clone())
-                            .filter(|((key, _), _)| *key == master_appkey)
-                            .map(|((_, _), index)| (spk, *index))
+                        Some((spk.clone(), self.spk_path(master_appkey, spk)?))
                     })
-                    .collect::<HashMap<ScriptBuf, u32>>();
+                    .collect::<HashMap<ScriptBuf, BitcoinBip32Path>>();
                 if is_mine.is_empty() {
                     None
                 } else {
@@ -441,6 +438,7 @@ impl CoordSuperWallet {
                         txid,
                         confirmation_time,
                         confirmations,
+                        first_seen,
                         last_seen,
                         prevouts,
                         is_mine,
@@ -594,11 +592,11 @@ pub struct Transaction {
     pub confirmation_time: Option<ConfirmationTime>,
     /// Confirmations against the same chain snapshot that canonicalized this transaction.
     pub confirmations: u32,
+    pub first_seen: Option<u64>,
     pub last_seen: Option<u64>,
 
     pub prevouts: HashMap<OutPoint, TxOut>,
-    /// Maps owned script pubkeys to their derivation index.
-    pub is_mine: HashMap<ScriptBuf, u32>,
+    pub is_mine: HashMap<ScriptBuf, BitcoinBip32Path>,
 }
 
 #[derive(Clone, Debug)]
@@ -618,8 +616,67 @@ impl ConfirmationTime {
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::bitcoin::send::test::chain_client;
+    use bdk_chain::TxUpdate;
     use bitcoin::key::{Secp256k1, TweakedPublicKey};
+    use bitcoin::{hashes::Hash, Amount, TxIn};
     use frostsnap_core::{schnorr_fun::fun::Point, tweak::AppTweak};
+
+    #[test]
+    fn a_pending_transaction_keeps_its_first_seen_and_owned_keychains() {
+        let network = bitcoin::Network::Bitcoin;
+        let db = Arc::new(Mutex::new(rusqlite::Connection::open_in_memory().unwrap()));
+        let (client, _handler) = chain_client(&db);
+        let master_appkey =
+            MasterAppkey::derive_from_rootkey(Point::random(&mut rand::thread_rng()));
+        let mut wallet = CoordSuperWallet::load_or_init(db, network, client).unwrap();
+        wallet.list_addresses(master_appkey);
+
+        let receive = BitcoinBip32Path::external(NormalIndex::new(3).unwrap());
+        let change = BitcoinBip32Path::internal(NormalIndex::new(3).unwrap());
+        let tx = bitcoin::Transaction {
+            version: bitcoin::transaction::Version::TWO,
+            lock_time: bitcoin::absolute::LockTime::ZERO,
+            input: vec![TxIn {
+                previous_output: OutPoint::new(Txid::from_byte_array([7; 32]), 0),
+                ..Default::default()
+            }],
+            output: [receive, change]
+                .map(|path| TxOut {
+                    value: Amount::from_sat(10_000),
+                    script_pubkey: crate::bitcoin::peek_spk(master_appkey, path),
+                })
+                .to_vec(),
+        };
+        let txid = tx.compute_txid();
+
+        for seen_at in [1_000, 2_000] {
+            let mut tx_update = TxUpdate::default();
+            tx_update.txs = vec![Arc::new(tx.clone())];
+            tx_update.seen_ats = [(txid, seen_at)].into();
+            wallet
+                .apply_update(bdk_electrum_streaming::Update {
+                    tx_update,
+                    last_active_indices: Default::default(),
+                    chain_update: None,
+                })
+                .unwrap();
+        }
+
+        let listed = wallet.list_transactions(master_appkey);
+        let listed = listed.iter().find(|t| t.txid == txid).unwrap();
+        assert_eq!(listed.first_seen, Some(1_000));
+        assert_eq!(listed.last_seen, Some(2_000));
+        assert_eq!(
+            listed.is_mine.get(&tx.output[0].script_pubkey),
+            Some(&receive)
+        );
+        assert_eq!(
+            listed.is_mine.get(&tx.output[1].script_pubkey),
+            Some(&change),
+            "change at the same index is told apart by its keychain"
+        );
+    }
 
     #[test]
     fn confirmation_count_is_derived_from_the_wallet_snapshot_tip() {
