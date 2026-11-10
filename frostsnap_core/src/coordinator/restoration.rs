@@ -1638,10 +1638,10 @@ impl RecoveringAccessStructure {
         &self,
         fingerprint: schnorr_fun::frost::Fingerprint,
     ) -> Option<SharedKey> {
-        let share_images: Vec<ShareImage> = self
+        let share_images: Vec<_> = self
             .held_shares
             .iter()
-            .map(|recover_share| recover_share.held_share.share_image)
+            .map(|recover_share| recover_share.held_share.share_image.into())
             .collect();
 
         let threshold = self.effective_threshold().map(|t| t as usize);
@@ -1650,8 +1650,7 @@ impl RecoveringAccessStructure {
         // This will try different combinations and thresholds to find a valid set
         use frost_backup::recovery::find_valid_subset;
 
-        let (_compatible_images, shared_key) =
-            find_valid_subset(&share_images, fingerprint, threshold)?;
+        let shared_key = find_valid_subset(&share_images, fingerprint, threshold)?.shared_key;
 
         shared_key.non_zero()
     }

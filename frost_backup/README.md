@@ -16,7 +16,7 @@ A Shamir secret sharing backup scheme for secp256k1 scalars that encodes shares 
 
 #### `share_index`
 
-The share index is a decimal integer prefixed `#` with in the format. The index is never `0`. 
+The share index is a decimal integer prefixed with `#`. Index `0` is the secret itself, `f(0)`; a threshold-1 key's backups are `#0`. A `#0`'s polynomial checksum depends only on the backup itself, so it is verified on decode along with the words checksum.
 
 #### Words Bit Layout
 
@@ -45,7 +45,10 @@ For the purpose of the polynomial checksum see below.
 hash: [u8;32] = SHA256(share_index || secret_scalar || polynomial_commitment)
 poly_checksum: u8 = hash[0]  // First byte (8 bits)
 ```
+
 Used to fill the last 8 bits of the 24th word (along with 3 bits from the scalar).
+
+For a `#0`, `polynomial_commitment` is always the single point `secret_scalar * G` (33 bytes), whatever the threshold. A `#0` lies on every polynomial of its key, so it commits only to itself.
 
 ### Words Checksum
 
@@ -79,6 +82,8 @@ The polynomial checksum reduces the risk of public key substitution attacks in t
 3. Malicious coordinator provides incorrect public key for the share
 4. Device derives and displays incorrect addresses
 5. User sends funds to attacker-controlled addresses
+
+A `#0` is not affected: it fixes its own public key, so its polynomial checksum is only a self-check.
 
 The attack requires specific timing (user receiving funds immediately after restoration) and is detectable through any spending operation. If successful, the attacker who controls the false public key can steal any funds sent to the incorrect addresses.
 

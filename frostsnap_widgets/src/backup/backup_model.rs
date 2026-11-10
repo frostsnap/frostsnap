@@ -304,8 +304,12 @@ impl BackupModel {
             let share_index = self.share_index.parse::<u32>().expect("must be int");
             let words_array: [&'static str; NUM_WORDS] = *words;
 
-            // Try to create ShareBackup from the entered words
-            let success = ShareBackup::from_words(share_index, words_array).ok();
+            // Entering a `#0` isn't supported yet: restoration is keyed on
+            // non-zero share images end to end, so a `#0` can't be held as a
+            // share until that changes
+            let success = ShareBackup::from_words(share_index, words_array)
+                .ok()
+                .filter(|backup| !backup.index().is_zero());
 
             ViewState {
                 row: NUM_WORDS, // Last word row

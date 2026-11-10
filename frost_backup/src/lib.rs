@@ -10,6 +10,7 @@ extern crate alloc;
 
 pub mod bip39_words;
 pub mod recovery;
+pub mod schnorr_fun_shim;
 pub mod share_backup;
 
 mod error;

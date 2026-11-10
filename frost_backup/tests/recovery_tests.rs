@@ -1,8 +1,7 @@
 mod common;
 
-use frost_backup::{recovery, ShareBackup};
+use frost_backup::{recovery, schnorr_fun_shim, schnorr_fun_shim::ShareImage, ShareBackup};
 use rand::{rngs::StdRng, SeedableRng};
-use schnorr_fun::frost::{ShareImage, SharedKey};
 use secp256kfun::prelude::*;
 
 const TEST_FINGERPRINT: schnorr_fun::frost::Fingerprint = schnorr_fun::frost::Fingerprint {
@@ -67,9 +66,9 @@ fn test_find_valid_subset() {
     // Test with all shares
     let result = recovery::find_valid_subset(&images, TEST_FINGERPRINT, None);
     assert!(result.is_some());
-    let (found_shares, found_key) = result.unwrap();
-    assert!(found_shares.len() >= 2);
-    assert_eq!(found_key.public_key(), shared_key.public_key());
+    let found = result.unwrap();
+    assert!(found.compatible.len() >= 2);
+    assert_eq!(found.shared_key.public_key(), shared_key.public_key());
 
     // Test with minimum threshold shares
     let result = recovery::find_valid_subset(&images[0..2], TEST_FINGERPRINT, None);
@@ -127,25 +126,27 @@ fn test_find_valid_subset_with_conflicting_indices() {
     let result = recovery::find_valid_subset(&images, TEST_FINGERPRINT, None);
     assert!(result.is_some());
 
-    let (found_shares, found_key) = result.unwrap();
+    let found = result.unwrap();
     // Should have at least threshold shares
-    assert!(found_shares.len() >= 3);
+    assert!(found.compatible.len() >= 3);
 
     // The found key should match the same secret (both sharings have the same secret)
-    assert_eq!(found_key.public_key(), g!(secret * G).normalize());
+    assert_eq!(found.shared_key.public_key(), g!(secret * G).normalize());
 
     // Verify that the found shares can successfully recover the secret
     // This implicitly verifies they're all from the same sharing (not mixed)
     // because mixed shares wouldn't be able to recover the secret
 
     // Count how many shares came from each sharing
-    let from_shares1 = found_shares
+    let from_shares1 = found
+        .compatible
         .iter()
-        .filter(|img| shares1.iter().any(|s| s.share_image() == **img))
+        .filter(|img| shares1.iter().any(|s| s.share_image() == (**img).into()))
         .count();
-    let from_shares2 = found_shares
+    let from_shares2 = found
+        .compatible
         .iter()
-        .filter(|img| shares2.iter().any(|s| s.share_image() == **img))
+        .filter(|img| shares2.iter().any(|s| s.share_image() == (**img).into()))
         .count();
 
     // All shares should come from one sharing or the other, not mixed
@@ -185,14 +186,15 @@ fn test_find_valid_subset_mixed_different_secrets() {
     let result = recovery::find_valid_subset(&mixed_images, TEST_FINGERPRINT, None);
     assert!(result.is_some());
 
-    let (found_shares, found_key) = result.unwrap();
-    assert!(found_shares.len() >= 2);
+    let found = result.unwrap();
+    assert!(found.compatible.len() >= 2);
 
     // The found key should correspond to either secret1 or secret2
     let secret1_key = g!(secret1 * G).normalize();
     let secret2_key = g!(secret2 * G).normalize();
+    let found_key = found.shared_key.public_key();
     assert!(
-        found_key.public_key() == secret1_key || found_key.public_key() == secret2_key,
+        found_key == secret1_key || found_key == secret2_key,
         "Found key should match one of the original secrets"
     );
 }
@@ -240,7 +242,7 @@ fn test_recover_secret_fuzzy() {
         .iter()
         .map(|s| s.share_image())
         .collect();
-    let reconstructed_key = SharedKey::from_share_images(share_images);
+    let reconstructed_key = schnorr_fun_shim::shared_key_from_share_images(share_images);
     assert_eq!(
         reconstructed_key.public_key(),
         recovered.shared_key.public_key()
@@ -278,9 +280,10 @@ fn test_find_valid_subset_threshold_one() {
         "Should be able to recover with 1-of-1 share when threshold is known"
     );
 
-    let (found_shares, found_key) = result.unwrap();
-    assert_eq!(found_shares.len(), 3);
-    assert_eq!(found_key, shared_key);
+    let found = result.unwrap();
+    assert!(found.includes_full_secret_backup);
+    assert!(found.compatible.is_empty());
+    assert_eq!(found.shared_key, shared_key);
 }
 
 #[test]
@@ -373,4 +376,159 @@ fn test_find_valid_subset_threshold_validation() {
         result.is_some(),
         "Should succeed finding threshold-3 subset even with threshold-1 share mixed in"
     );
+}
+
+fn full_secret_backup(secret: Scalar, rng: &mut StdRng) -> ShareBackup {
+    let (backups, _) = ShareBackup::generate_shares(secret, 1, 1, TEST_FINGERPRINT, rng);
+    assert!(backups[0].index().is_zero());
+    backups[0].clone()
+}
+
+fn images(backups: &[ShareBackup]) -> Vec<ShareImage> {
+    backups.iter().map(ShareBackup::share_image).collect()
+}
+
+#[test]
+fn zero_alone() {
+    let mut rng = StdRng::seed_from_u64(0);
+    let secret = s!(42);
+    let zero = full_secret_backup(secret, &mut rng);
+
+    for backups in [vec![zero.clone()], vec![zero.clone(), zero.clone()]] {
+        for threshold in [None, Some(1)] {
+            let found = recovery::find_valid_subset(&images(&backups), TEST_FINGERPRINT, threshold)
+                .unwrap();
+            assert_eq!(found.shared_key.public_key(), g!(secret * G).normalize());
+            assert!(found.includes_full_secret_backup);
+            assert!(found.compatible.is_empty());
+
+            let recovered =
+                recovery::recover_secret_fuzzy(&backups, TEST_FINGERPRINT, threshold).unwrap();
+            assert_eq!(recovered.secret, secret);
+            assert_eq!(recovered.full_secret_backup, Some(zero.clone()));
+            assert!(recovered.compatible_shares.is_empty());
+
+            let recovered = recovery::recover_secret(&backups, TEST_FINGERPRINT).unwrap();
+            assert_eq!(recovered.secret, secret);
+            assert_eq!(recovered.full_secret_backup, Some(zero.clone()));
+        }
+    }
+}
+
+#[test]
+fn zero_with_wrong_threshold() {
+    let mut rng = StdRng::seed_from_u64(0);
+    let zero = full_secret_backup(s!(42), &mut rng);
+    assert!(recovery::recover_secret_fuzzy(&[zero], TEST_FINGERPRINT, Some(2)).is_none());
+}
+
+#[test]
+fn oversized_threshold() {
+    let mut rng = StdRng::seed_from_u64(0);
+    let zero = full_secret_backup(s!(42), &mut rng);
+    assert!(recovery::find_valid_subset(&[], TEST_FINGERPRINT, Some(usize::MAX)).is_none());
+    assert!(recovery::recover_secret_fuzzy(&[zero], TEST_FINGERPRINT, Some(usize::MAX)).is_none());
+}
+
+#[test]
+fn corrupted_zero_is_refused_on_decode() {
+    let mut rng = StdRng::seed_from_u64(0);
+    let zero = full_secret_backup(s!(42), &mut rng);
+    let mut word_indices = zero.to_word_indices();
+    // Flip a poly checksum bit, then fix up the words checksum so only the
+    // poly checksum is wrong
+    word_indices[23] ^= 1;
+    let words = word_indices.map(|i| frost_backup::bip39_words::BIP39_WORDS[i as usize]);
+    let refused = (0..1 << 11).all(|words_checksum: usize| {
+        let mut words = words;
+        words[24] = frost_backup::bip39_words::BIP39_WORDS[words_checksum];
+        ShareBackup::from_words(0, words).is_err()
+    });
+    assert!(refused);
+}
+
+#[test]
+fn zero_and_one_of_a_one_of_one_key() {
+    let mut rng = StdRng::seed_from_u64(0);
+    let secret = s!(42);
+    let (zeros, shared_key) =
+        ShareBackup::generate_shares(secret, 1, 1, TEST_FINGERPRINT, &mut rng);
+    let one = ShareBackup::from_secret_share_and_shared_key(
+        schnorr_fun::frost::SecretShare {
+            index: s!(1).public(),
+            share: secret.mark_zero(),
+        },
+        &shared_key,
+    );
+    let backups = [zeros[0].clone(), one.clone()];
+
+    let recovered = recovery::recover_secret_fuzzy(&backups, TEST_FINGERPRINT, None).unwrap();
+    assert_eq!(recovered.secret, secret);
+    assert_eq!(recovered.full_secret_backup, Some(zeros[0].clone()));
+    assert_eq!(recovered.compatible_shares, vec![one.clone()]);
+
+    let found = recovery::find_valid_subset(&images(&backups), TEST_FINGERPRINT, None).unwrap();
+    assert!(found.includes_full_secret_backup);
+    assert_eq!(
+        found.compatible.into_iter().collect::<Vec<_>>(),
+        vec![one.share_image().non_zero().unwrap()]
+    );
+}
+
+#[test]
+fn two_of_three_and_zero_of_the_same_secret() {
+    let mut rng = StdRng::seed_from_u64(0);
+    let secret = s!(42);
+    let (shares, shared_key) =
+        ShareBackup::generate_shares(secret, 2, 3, TEST_FINGERPRINT, &mut rng);
+    let zero = full_secret_backup(secret, &mut rng);
+    let mut backups = shares.clone();
+    backups.push(zero.clone());
+
+    let found = recovery::find_valid_subset(&images(&backups), TEST_FINGERPRINT, None).unwrap();
+    assert_eq!(found.shared_key, shared_key);
+    assert!(found.includes_full_secret_backup);
+    assert_eq!(found.compatible.len(), 3);
+
+    let recovered = recovery::recover_secret_fuzzy(&backups, TEST_FINGERPRINT, None).unwrap();
+    assert_eq!(recovered.secret, secret);
+    assert_eq!(recovered.shared_key, shared_key);
+    assert_eq!(recovered.full_secret_backup, Some(zero));
+    assert_eq!(recovered.compatible_shares, shares);
+}
+
+#[test]
+fn one_share_of_two_of_three_and_zero_of_the_same_secret() {
+    let mut rng = StdRng::seed_from_u64(0);
+    let secret = s!(42);
+    let (shares, shared_key) =
+        ShareBackup::generate_shares(secret, 2, 3, TEST_FINGERPRINT, &mut rng);
+    let zero = full_secret_backup(secret, &mut rng);
+    let backups = [shares[0].clone(), zero.clone()];
+
+    let recovered = recovery::recover_secret_fuzzy(&backups, TEST_FINGERPRINT, None).unwrap();
+    assert_eq!(recovered.secret, secret);
+    assert_eq!(recovered.shared_key, shared_key);
+    assert_eq!(recovered.full_secret_backup, Some(zero));
+    assert_eq!(recovered.compatible_shares, vec![shares[0].clone()]);
+}
+
+#[test]
+fn two_of_three_and_zero_of_another_secret() {
+    let mut rng = StdRng::seed_from_u64(0);
+    let secret = s!(42);
+    let (shares, shared_key) =
+        ShareBackup::generate_shares(secret, 2, 3, TEST_FINGERPRINT, &mut rng);
+    let mut backups = shares.clone();
+    backups.push(full_secret_backup(s!(7), &mut rng));
+
+    let found = recovery::find_valid_subset(&images(&backups), TEST_FINGERPRINT, None).unwrap();
+    assert_eq!(found.shared_key, shared_key);
+    assert!(!found.includes_full_secret_backup);
+    assert_eq!(found.compatible.len(), 3);
+
+    let recovered = recovery::recover_secret_fuzzy(&backups, TEST_FINGERPRINT, None).unwrap();
+    assert_eq!(recovered.secret, secret);
+    assert_eq!(recovered.full_secret_backup, None);
+    assert_eq!(recovered.compatible_shares, shares);
 }
