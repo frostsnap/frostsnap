@@ -2,7 +2,6 @@ use crate::frb_generated::StreamSink;
 use flutter_rust_bridge::frb;
 use frostsnap_device_demo::{Demo, DemoKind, Gesture, HandTiming};
 use std::{
-    num::NonZeroUsize,
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc,
@@ -36,19 +35,14 @@ pub struct DeviceDemoHandTiming {
     pub hold_after_release_ms: u32,
 }
 
-/// `device` counts along the chain from the device plugged in.
 pub enum DeviceDemoEvent {
-    /// A device's whole screen as RGBA, sent only when it changed.
-    Frame {
-        device: u32,
-        pixels: Vec<u8>,
-    },
+    /// The device's whole screen as RGBA, sent only when it changed.
+    Frame(Vec<u8>),
     Gesture(DeviceDemoCue),
 }
 
-/// A gesture whose finger lands on `device` `contact_in_ms` from now.
+/// A gesture whose finger lands `contact_in_ms` from now.
 pub struct DeviceDemoCue {
-    pub device: u32,
     pub contact_in_ms: u32,
     pub gesture: DeviceDemoGesture,
 }
@@ -61,20 +55,18 @@ pub enum DeviceDemoGesture {
     },
 }
 
-/// Chained devices' screens played by a scripted finger. It runs until disposed.
+/// A device screen played by a scripted finger. It runs until disposed.
 #[frb(opaque)]
 pub struct DeviceDemo {
     kind: DemoKind,
-    devices: NonZeroUsize,
     hand: HandTiming,
     started: AtomicBool,
     stopped: Arc<AtomicBool>,
 }
 
 impl DeviceDemo {
-    /// A chain of `devices` devices, at least one.
     #[frb(sync)]
-    pub fn new(kind: DeviceDemoKind, devices: u32, hand: DeviceDemoHandTiming) -> Self {
+    pub fn new(kind: DeviceDemoKind, hand: DeviceDemoHandTiming) -> Self {
         Self {
             kind: match kind {
                 DeviceDemoKind::Sign => DemoKind::Sign,
@@ -93,7 +85,6 @@ impl DeviceDemo {
                 DeviceDemoKind::Erase => DemoKind::Erase,
                 DeviceDemoKind::Upgrade => DemoKind::Upgrade,
             },
-            devices: NonZeroUsize::new(devices as usize).unwrap_or(NonZeroUsize::MIN),
             hand: HandTiming {
                 swipe_contact_ms: hand.swipe_contact_ms,
                 swipe_after_contact_ms: hand.swipe_after_contact_ms,
@@ -104,12 +95,6 @@ impl DeviceDemo {
             started: AtomicBool::new(false),
             stopped: Arc::new(AtomicBool::new(false)),
         }
-    }
-
-    /// How many devices the chain has, which every `device` index is below.
-    #[frb(sync)]
-    pub fn devices(&self) -> u32 {
-        self.devices.get() as u32
     }
 
     #[frb(sync, type_64bit_int)]
@@ -127,17 +112,16 @@ impl DeviceDemo {
         if self.started.swap(true, Ordering::Relaxed) {
             return;
         }
-        let (kind, devices, hand) = (self.kind, self.devices, self.hand);
+        let (kind, hand) = (self.kind, self.hand);
         let stopped = self.stopped.clone();
         std::thread::spawn(move || {
-            let mut demo = Demo::new(kind, devices, hand);
+            let mut demo = Demo::new(kind, hand);
             let start = Instant::now();
             let mut next = start;
             while !stopped.load(Ordering::Relaxed) {
                 let step = demo.step(start.elapsed().as_millis() as u64);
                 let cues = step.cues.into_iter().map(|cue| {
                     DeviceDemoEvent::Gesture(DeviceDemoCue {
-                        device: cue.device as u32,
                         contact_in_ms: cue.contact_in_ms,
                         gesture: match cue.gesture {
                             Gesture::Swipe => DeviceDemoGesture::Swipe,
@@ -145,14 +129,7 @@ impl DeviceDemo {
                         },
                     })
                 });
-                let frames =
-                    step.frames
-                        .into_iter()
-                        .map(|(device, pixels)| DeviceDemoEvent::Frame {
-                            device: device as u32,
-                            pixels,
-                        });
-                for event in cues.chain(frames) {
+                for event in cues.chain(step.frame.map(DeviceDemoEvent::Frame)) {
                     if sink.add(event).is_err() {
                         return;
                     }

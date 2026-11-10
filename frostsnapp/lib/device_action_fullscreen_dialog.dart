@@ -237,11 +237,11 @@ Future<T?> showFullscreenActionDialog<T>(
     return ListenableBuilder(
       listenable: Listenable.merge([hero.changes]),
       builder: (context, _) => DeviceActionHero(
-        caseColors: [
-          for (final device in hero.chain ? needed : needed.take(1))
-            device.caseColor,
-        ],
+        caseColor: needed.first.caseColor,
         demo: hero.demo(),
+        next: hero.showNext && needed.length > 1
+            ? (caseColor: needed[1].caseColor)
+            : null,
         maxHeight: hero.maxHeight,
       ),
     );

@@ -164,7 +164,11 @@ class WalletCreateController extends ChangeNotifier {
       context: context,
       devices: devices,
       title: 'Security Check',
-      hero: DeviceActionHeroSpec(demo: _keygenDemo, changes: this, chain: true),
+      hero: DeviceActionHeroSpec(
+        demo: _keygenDemo,
+        changes: this,
+        showNext: true,
+      ),
       body: (context) => ListenableBuilder(
         listenable: this,
         builder: (context, _) {

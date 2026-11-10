@@ -4,22 +4,16 @@ import 'package:frostsnap/src/rust/api/device_demo.dart';
 
 Duration ms(int n) => Duration(milliseconds: n);
 
-DeviceDemoCue swipe({int device = 0, required int contactInMs}) =>
-    DeviceDemoCue(
-      device: device,
-      contactInMs: contactInMs,
-      gesture: const DeviceDemoGesture.swipe(),
-    );
-
-DeviceDemoCue hold({
-  int device = 0,
-  required int contactInMs,
-  required int holdMs,
-}) => DeviceDemoCue(
-  device: device,
+DeviceDemoCue swipe({required int contactInMs}) => DeviceDemoCue(
   contactInMs: contactInMs,
-  gesture: DeviceDemoGesture.hold(holdMs: holdMs),
+  gesture: const DeviceDemoGesture.swipe(),
 );
+
+DeviceDemoCue hold({required int contactInMs, required int holdMs}) =>
+    DeviceDemoCue(
+      contactInMs: contactInMs,
+      gesture: DeviceDemoGesture.hold(holdMs: holdMs),
+    );
 
 /// When the hand comes to rest after a cue at zero, to the frame.
 Duration settlesAt(DeviceDemoCue cue) {
@@ -106,23 +100,6 @@ void main() {
     };
     expect(frames.length, greaterThan(20));
     expect(track.isMovingAt(ms(999)), isTrue);
-  });
-
-  test('a cue for another device moves the hand there before its clip', () {
-    final track = HandTrack();
-    track.cue(hold(device: 0, contactInMs: 1500, holdMs: 3000), ms(0));
-    expect(track.deviceAt(ms(1000)), 0);
-
-    track.cue(hold(device: 1, contactInMs: 2400, holdMs: 3000), ms(7000));
-    expect(track.deviceAt(ms(7000)), 0);
-    expect(track.deviceAt(ms(7450)), closeTo(0.5, 0.01));
-    expect(track.deviceAt(ms(7900)), 1);
-    expect(track.isMovingAt(ms(7450)), isTrue);
-    expect(track.frameAt(ms(7450)), HandFrame.rest);
-    expect(
-      track.frameAt(ms(9400)),
-      const HandFrame(HandSheet.hold, HandTrack.holdContactFrame),
-    );
   });
 
   test('after its clip the hand rests in the pose every clip starts from', () {

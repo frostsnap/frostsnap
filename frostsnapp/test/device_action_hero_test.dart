@@ -1,14 +1,19 @@
+import 'dart:async';
+import 'dart:typed_data';
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:frostsnap/device_action_fullscreen_dialog.dart';
 import 'package:frostsnap/device_action_hero.dart';
+import 'package:frostsnap/device_demo_playback.dart';
 import 'package:frostsnap/src/rust/api/device_demo.dart';
 import 'package:frostsnap/src/rust/api/device_list.dart';
 
 import 'support/rust_lib.dart';
 
 const _hero = DeviceActionHero(
-  caseColors: [CaseColor_Orange()],
+  caseColor: CaseColor_Orange(),
   demo: DeviceDemoKind.sign(),
   maxHeight: 430,
 );
@@ -24,7 +29,7 @@ void main() {
         home: SizedBox(
           width: 400,
           child: DeviceActionHero(
-            caseColors: [CaseColor_Orange()],
+            caseColor: CaseColor_Orange(),
             demo: null,
             maxHeight: 430,
           ),
@@ -79,4 +84,31 @@ void main() {
       await tester.pumpWidget(const SizedBox());
     });
   }
+
+  test(
+    'a device the hand never touches stays on the screen it opened on',
+    () async {
+      final playback = DeviceDemoPlayback(
+        DeviceDemoKind.keygen(
+          threshold: 2,
+          nDevices: 3,
+          securityCheckCode: U8Array4(Uint8List.fromList([1, 2, 3, 4])),
+        ),
+      );
+      ui.Image? openedOn;
+      final changed = Completer<void>();
+      playback.addListener(() {
+        final screen = playback.screen;
+        openedOn ??= screen;
+        if (screen != openedOn && !changed.isCompleted) changed.complete();
+      });
+      await changed.future.timeout(const Duration(seconds: 10));
+      final first = playback.firstScreen;
+      await Future.delayed(const Duration(milliseconds: 500));
+
+      expect(playback.firstScreen, same(first));
+      expect(playback.screen, isNot(same(first)));
+      playback.dispose();
+    },
+  );
 }

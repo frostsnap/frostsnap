@@ -23,7 +23,7 @@ use frostsnap_widgets::{
     SignTxPrompt, SuperDrawTarget, Widget, WidgetList, HOLD_TO_CONFIRM_TIME_LONG_MS,
     HOLD_TO_CONFIRM_TIME_MS, HOLD_TO_CONFIRM_TIME_SHORT_MS,
 };
-use std::{num::NonZeroUsize, str::FromStr};
+use std::str::FromStr;
 
 pub const WIDTH: u32 = 240;
 pub const HEIGHT: u32 = 280;
@@ -52,16 +52,14 @@ pub enum Gesture {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Cue {
     pub gesture: Gesture,
-    /// Which device in the chain the finger lands on, counting from the one plugged in.
-    pub device: usize,
     pub contact_in_ms: u32,
 }
 
 #[derive(Default)]
 pub struct Step {
     pub cues: Vec<Cue>,
-    /// Each device's whole screen as RGBA, for only the devices whose screen changed.
-    pub frames: Vec<(usize, Vec<u8>)>,
+    /// The whole screen as RGBA, present only when it changed.
+    pub frame: Option<Vec<u8>>,
 }
 
 /// The timing of the hand clips the app plays, which the script follows so each touch lands when
@@ -81,8 +79,6 @@ pub struct HandTiming {
 }
 
 const REST_BEFORE_REPLAY_MS: u64 = 1000;
-// Added to a gesture's lead when the hand has to get to another device in the chain first.
-const TRAVEL_MS: u64 = 900;
 
 const SWIPE_X: i32 = 120;
 const SWIPE_FROM_Y: i32 = 222;
@@ -112,9 +108,6 @@ enum Action {
     Tap(Point),
     AnswerQuiz,
     Pause(u64),
-    /// The actions after this one are on this device in the chain. Until the first, it is the
-    /// plugged-in device.
-    On(usize),
 }
 
 enum Input {
@@ -129,7 +122,7 @@ enum Input {
 
 enum Event {
     Cue(Cue),
-    Input(usize, Input),
+    Input(Input),
 }
 
 /// Object-safe face of a screen widget, so every kind runs through one loop.
@@ -210,52 +203,40 @@ impl Screen for Quiz {
     }
 }
 
-struct Device {
-    screen: Box<dyn Screen>,
-    fb: VecFramebuffer<Rgb565>,
-    last_frame: Vec<u8>,
-}
-
 pub struct Demo {
     kind: DemoKind,
-    devices: Vec<Device>,
+    screen: Box<dyn Screen>,
     timeline: Vec<(u64, Event)>,
     next_event: usize,
     loop_ms: u64,
     loop_started_at: u64,
+    fb: VecFramebuffer<Rgb565>,
+    last_frame: Vec<u8>,
 }
 
 impl Demo {
-    /// `devices` is how many devices are chained, each showing `kind`'s screen. Only the
-    /// security check is confirmed on every one of them; the rest are played on the first.
-    pub fn new(kind: DemoKind, devices: NonZeroUsize, hand: HandTiming) -> Self {
-        let (timeline, loop_ms) = schedule(&script(kind, devices), hand);
+    pub fn new(kind: DemoKind, hand: HandTiming) -> Self {
+        let (timeline, loop_ms) = schedule(&script(kind), hand);
         Self {
             kind,
-            devices: (0..devices.get())
-                .map(|_| Device {
-                    screen: screen(kind),
-                    fb: VecFramebuffer::new(WIDTH as usize, HEIGHT as usize),
-                    last_frame: Vec::new(),
-                })
-                .collect(),
+            screen: screen(kind),
             timeline,
             next_event: 0,
             loop_ms,
             loop_started_at: 0,
+            fb: VecFramebuffer::new(WIDTH as usize, HEIGHT as usize),
+            last_frame: Vec::new(),
         }
     }
 
-    /// Advances the screens to `now_ms`, which must not go backwards.
+    /// Advances the screen to `now_ms`, which must not go backwards.
     pub fn step(&mut self, now_ms: u64) -> Step {
         let mut step = Step::default();
         if now_ms >= self.loop_started_at + self.loop_ms {
-            for device in &mut self.devices {
-                device.screen = screen(self.kind);
-                device.fb.clear(PALETTE.background);
-            }
+            self.screen = screen(self.kind);
             self.next_event = 0;
             self.loop_started_at = now_ms;
+            self.fb.clear(PALETTE.background);
         }
         let now = Instant::from_millis(now_ms);
         while let Some((at, event)) = self.timeline.get(self.next_event) {
@@ -264,18 +245,16 @@ impl Demo {
             }
             match event {
                 Event::Cue(cue) => step.cues.push(*cue),
-                Event::Input(device, input) => self.devices[*device].screen.input(input, now),
+                Event::Input(input) => self.screen.input(input, now),
             }
             self.next_event += 1;
         }
-        for (i, device) in self.devices.iter_mut().enumerate() {
-            device.screen.draw(&mut device.fb, now);
-            if device.fb.take_dirty() {
-                let frame = rgba(&device.fb);
-                if frame != device.last_frame {
-                    device.last_frame = frame.clone();
-                    step.frames.push((i, frame));
-                }
+        self.screen.draw(&mut self.fb, now);
+        if self.fb.take_dirty() {
+            let frame = rgba(&self.fb);
+            if frame != self.last_frame {
+                self.last_frame = frame.clone();
+                step.frame = Some(frame);
             }
         }
         step
@@ -325,7 +304,7 @@ fn screen(kind: DemoKind) -> Box<dyn Screen> {
     }
 }
 
-fn script(kind: DemoKind, devices: NonZeroUsize) -> Vec<Action> {
+fn script(kind: DemoKind) -> Vec<Action> {
     let swipes = |n: usize| core::iter::repeat_n(Action::Swipe, n);
     match kind {
         DemoKind::Sign => {
@@ -338,16 +317,9 @@ fn script(kind: DemoKind, devices: NonZeroUsize) -> Vec<Action> {
                 .collect()
         }
         DemoKind::VerifyAddress => vec![Action::Pause(10_000)],
-        DemoKind::Keygen { .. } => (0..devices.get())
-            .flat_map(|device| {
-                [
-                    Action::On(device),
-                    Action::Hold {
-                        threshold_ms: HOLD_TO_CONFIRM_TIME_MS,
-                    },
-                ]
-            })
-            .collect(),
+        DemoKind::Keygen { .. } => vec![Action::Hold {
+            threshold_ms: HOLD_TO_CONFIRM_TIME_MS,
+        }],
         // The full backup is a dozen pages; the first few show how to page through it.
         DemoKind::Backup => swipes(3).collect(),
         DemoKind::CheckBackup => {
@@ -391,99 +363,66 @@ fn script(kind: DemoKind, devices: NonZeroUsize) -> Vec<Action> {
 fn schedule(actions: &[Action], hand: HandTiming) -> (Vec<(u64, Event)>, u64) {
     let mut timeline = Vec::new();
     let mut t = 0;
-    let mut device = 0;
-    // The script replays, so the hand starts each pass where the last one left it.
-    let mut hand_at = {
-        let mut on = 0;
-        let mut last_gesture = 0;
-        for action in actions {
-            match action {
-                Action::On(d) => on = *d,
-                Action::Swipe | Action::Hold { .. } => last_gesture = on,
-                _ => {}
-            }
-        }
-        last_gesture
-    };
-    let mut cue = |t: u64, gesture, approach_ms: u64, timeline: &mut Vec<_>, device| {
-        let travel = if hand_at == device { 0 } else { TRAVEL_MS };
-        hand_at = device;
-        let contact_in_ms = travel + approach_ms;
-        timeline.push((
-            t,
-            Event::Cue(Cue {
-                gesture,
-                device,
-                contact_in_ms: contact_in_ms as u32,
-            }),
-        ));
-        t + contact_in_ms
-    };
     for action in actions {
         match *action {
             Action::Swipe => {
-                let contact = cue(
+                let contact = t + u64::from(hand.swipe_contact_ms);
+                timeline.push((
                     t,
-                    Gesture::Swipe,
-                    hand.swipe_contact_ms.into(),
-                    &mut timeline,
-                    device,
-                );
+                    Event::Cue(Cue {
+                        gesture: Gesture::Swipe,
+                        contact_in_ms: hand.swipe_contact_ms,
+                    }),
+                ));
                 timeline.push((
                     contact,
-                    Event::Input(device, Input::Press(Point::new(SWIPE_X, SWIPE_FROM_Y))),
+                    Event::Input(Input::Press(Point::new(SWIPE_X, SWIPE_FROM_Y))),
                 ));
                 let y = |j: i32| SWIPE_FROM_Y + (SWIPE_TO_Y - SWIPE_FROM_Y) * j / SWIPE_STEPS;
                 for j in 1..=SWIPE_STEPS {
                     timeline.push((
                         contact + j as u64 * FRAME_MS,
-                        Event::Input(
-                            device,
-                            Input::Drag {
-                                from_y: y(j - 1),
-                                to_y: y(j),
-                            },
-                        ),
+                        Event::Input(Input::Drag {
+                            from_y: y(j - 1),
+                            to_y: y(j),
+                        }),
                     ));
                 }
                 timeline.push((
                     contact + (SWIPE_STEPS as u64 + 1) * FRAME_MS,
-                    Event::Input(
-                        device,
-                        Input::SwipeRelease {
-                            from_y: SWIPE_TO_Y,
-                            to_y: SWIPE_TO_Y - 2,
-                        },
-                    ),
+                    Event::Input(Input::SwipeRelease {
+                        from_y: SWIPE_TO_Y,
+                        to_y: SWIPE_TO_Y - 2,
+                    }),
                 ));
                 t = contact + u64::from(hand.swipe_after_contact_ms);
             }
             Action::Hold { threshold_ms } => {
                 let ms = (threshold_ms + 100).max(hand.hold_press_ms);
-                let contact = cue(
+                let contact = t + u64::from(hand.hold_contact_ms);
+                timeline.push((
                     t,
-                    Gesture::Hold { ms },
-                    hand.hold_contact_ms.into(),
-                    &mut timeline,
-                    device,
-                );
-                timeline.push((contact, Event::Input(device, Input::Press(HOLD_BUTTON))));
+                    Event::Cue(Cue {
+                        gesture: Gesture::Hold { ms },
+                        contact_in_ms: hand.hold_contact_ms,
+                    }),
+                ));
+                timeline.push((contact, Event::Input(Input::Press(HOLD_BUTTON))));
                 let release = contact + ms as u64;
-                timeline.push((release, Event::Input(device, Input::Release(HOLD_BUTTON))));
+                timeline.push((release, Event::Input(Input::Release(HOLD_BUTTON))));
                 t = release + u64::from(hand.hold_after_release_ms);
             }
             Action::Tap(point) => {
-                timeline.push((t, Event::Input(device, Input::Press(point))));
+                timeline.push((t, Event::Input(Input::Press(point))));
                 t += TAP_MS;
-                timeline.push((t, Event::Input(device, Input::Release(point))));
+                timeline.push((t, Event::Input(Input::Release(point))));
             }
             Action::AnswerQuiz => {
-                timeline.push((t, Event::Input(device, Input::PressRightAnswer)));
+                timeline.push((t, Event::Input(Input::PressRightAnswer)));
                 t += TAP_MS;
-                timeline.push((t, Event::Input(device, Input::ReleaseAnswer)));
+                timeline.push((t, Event::Input(Input::ReleaseAnswer)));
             }
             Action::Pause(ms) => t += ms,
-            Action::On(d) => device = d,
         }
     }
     (timeline, t + REST_BEFORE_REPLAY_MS)
@@ -528,10 +467,6 @@ mod test {
         hold_after_release_ms: 2433,
     };
 
-    fn n(devices: usize) -> NonZeroUsize {
-        NonZeroUsize::new(devices).expect("a test chain has a device")
-    }
-
     const KINDS: [DemoKind; 8] = [
         DemoKind::Sign,
         DemoKind::VerifyAddress,
@@ -543,34 +478,30 @@ mod test {
         DemoKind::Upgrade,
     ];
 
-    fn play(screens: &mut [&mut dyn Screen], actions: &[Action]) {
+    fn play(screen: &mut dyn Screen, actions: &[Action]) {
         let (timeline, loop_ms) = schedule(actions, HAND);
         let mut fb = VecFramebuffer::new(WIDTH as usize, HEIGHT as usize);
         let mut events = timeline.iter().peekable();
         for now_ms in (0..loop_ms).step_by(FRAME_MS as usize) {
             let now = Instant::from_millis(now_ms);
             while let Some((_, event)) = events.next_if(|(at, _)| *at <= now_ms) {
-                if let Event::Input(device, input) = event {
-                    screens[*device].input(input, now);
+                if let Event::Input(input) = event {
+                    screen.input(input, now);
                 }
             }
-            for screen in screens.iter_mut() {
-                screen.draw(&mut fb, now);
-            }
+            screen.draw(&mut fb, now);
         }
     }
 
     #[test]
     fn each_cue_leads_its_touch_by_contact_in_ms() {
         for kind in KINDS {
-            let (timeline, _) = schedule(&script(kind, n(3)), HAND);
+            let (timeline, _) = schedule(&script(kind), HAND);
             for (i, (at, event)) in timeline.iter().enumerate() {
                 if let Event::Cue(cue) = event {
                     let (press_at, _) = timeline[i + 1..]
                         .iter()
-                        .find(|(_, e)| {
-                            matches!(e, Event::Input(d, Input::Press(_)) if *d == cue.device)
-                        })
+                        .find(|(_, e)| matches!(e, Event::Input(Input::Press(_))))
                         .expect("every cue has a touch");
                     assert_eq!(*press_at, at + cue.contact_in_ms as u64, "{kind:?}");
                 }
@@ -579,66 +510,24 @@ mod test {
     }
 
     #[test]
-    fn the_security_check_is_confirmed_down_the_chain_one_device_at_a_time() {
-        let (timeline, _) = schedule(&script(KEYGEN, n(3)), HAND);
-        let touches: Vec<_> = timeline
-            .iter()
-            .filter_map(|(_, event)| match event {
-                Event::Input(device, Input::Press(_)) => Some((*device, true)),
-                Event::Input(device, Input::Release(_)) => Some((*device, false)),
-                _ => None,
-            })
-            .collect();
-        assert_eq!(
-            touches,
-            [
-                (0, true),
-                (0, false),
-                (1, true),
-                (1, false),
-                (2, true),
-                (2, false)
-            ]
-        );
-
-        let cues: Vec<_> = timeline
-            .iter()
-            .filter_map(|(_, event)| match event {
-                Event::Cue(cue) => Some((cue.device, cue.contact_in_ms as u64)),
-                _ => None,
-            })
-            .collect();
-        // Every hold has to get to its device first, the first one back from the end of the chain.
-        let lead = TRAVEL_MS + u64::from(HAND.hold_contact_ms);
-        assert_eq!(cues, [(0, lead), (1, lead), (2, lead)]);
-
-        let (one_device, _) = schedule(&script(KEYGEN, n(1)), HAND);
-        assert!(matches!(
-            one_device[0].1,
-            Event::Cue(Cue { contact_in_ms, .. }) if contact_in_ms == HAND.hold_contact_ms
-        ));
-    }
-
-    #[test]
     fn the_hold_screens_confirm() {
         let mut sign = Plain(sized(SignTxPrompt::new_with_seed(
             placeholder_sign_prompt(),
             0,
         )));
-        play(&mut [&mut sign], &script(DemoKind::Sign, n(1)));
+        play(&mut sign, &script(DemoKind::Sign));
         assert!(sign.0.is_confirmed());
 
-        let new_keygen = || Plain(sized(KeygenCheck::new((2, 3), [0; 4])));
-        let (mut first, mut second) = (new_keygen(), new_keygen());
-        play(&mut [&mut first, &mut second], &script(KEYGEN, n(2)));
-        assert!(first.0.is_confirmed() && second.0.is_confirmed());
+        let mut keygen = Plain(sized(KeygenCheck::new((2, 3), [0; 4])));
+        play(&mut keygen, &script(KEYGEN));
+        assert!(keygen.0.is_confirmed());
 
         let mut erase = Plain(sized(EraseDevice::new()));
-        play(&mut [&mut erase], &script(DemoKind::Erase, n(1)));
+        play(&mut erase, &script(DemoKind::Erase));
         assert!(erase.0.is_confirmed());
 
         let mut upgrade = Plain(sized(FirmwareUpgradeConfirm::new([0; 32], 1)));
-        play(&mut [&mut upgrade], &script(DemoKind::Upgrade, n(1)));
+        play(&mut upgrade, &script(DemoKind::Upgrade));
         assert!(upgrade.0.is_confirmed());
     }
 
@@ -652,33 +541,33 @@ mod test {
         for _ in 0..26 {
             actions.extend([Action::AnswerQuiz, Action::Pause(1400)]);
         }
-        play(&mut [&mut quiz], &actions);
+        play(&mut quiz, &actions);
         assert!(quiz.screen.is_verified());
     }
 
     #[test]
     fn every_kind_replays_and_sends_only_changed_screens() {
         for kind in KINDS {
-            let mut demo = Demo::new(kind, n(2), HAND);
-            let mut frames = [0; 2];
-            let mut previous: [Option<Vec<u8>>; 2] = Default::default();
+            let mut demo = Demo::new(kind, HAND);
+            let mut frames = 0;
+            let mut previous: Option<Vec<u8>> = None;
             for now_ms in (0..demo.loop_ms * 2).step_by(FRAME_MS as usize) {
-                for (device, frame) in demo.step(now_ms).frames {
+                if let Some(frame) = demo.step(now_ms).frame {
                     assert_eq!(frame.len(), (WIDTH * HEIGHT * 4) as usize);
-                    assert_ne!(previous[device].as_ref(), Some(&frame), "{kind:?}");
-                    previous[device] = Some(frame);
-                    frames[device] += 1;
+                    assert_ne!(previous.as_ref(), Some(&frame), "{kind:?}");
+                    previous = Some(frame);
+                    frames += 1;
                 }
             }
-            assert!(frames.iter().all(|&n| n > 0), "{kind:?}");
+            assert!(frames > 0, "{kind:?}");
         }
     }
 
     fn frame_at(kind: DemoKind, at_ms: u64) -> Vec<u8> {
-        let mut demo = Demo::new(kind, n(1), HAND);
+        let mut demo = Demo::new(kind, HAND);
         let mut last = Vec::new();
         for now_ms in (0..=at_ms).step_by(FRAME_MS as usize) {
-            if let Some((_, frame)) = demo.step(now_ms).frames.pop() {
+            if let Some(frame) = demo.step(now_ms).frame {
                 last = frame;
             }
         }

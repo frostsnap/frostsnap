@@ -14,7 +14,7 @@ class DeviceActionHeroSpec {
     required this.demo,
     this.changes,
     this.maxHeight = 430,
-    this.chain = false,
+    this.showNext = false,
   });
 
   /// The device's own screen for this action, played by a hand on the plugged-in device. It is
@@ -23,29 +23,30 @@ class DeviceActionHeroSpec {
 
   final Listenable? changes;
 
-  /// Draw every connected device that still needs to act, in the order they are chained, rather
-  /// than only the first.
-  final bool chain;
+  /// Draw the next needed device in the chain peeking out behind the first, still on the screen
+  /// it opened on: the hand only shows the first, and the rest are done the same way.
+  final bool showNext;
 
   /// The hero never grows past this. It also shrinks to what the dialog's own content leaves
   /// free, so the content is never cut.
   final double maxHeight;
 }
 
-/// Devices in these case colours, daisy-chained from this phone or computer and seen from straight
-/// above, playing [demo] with a hand.
+/// A device in [caseColor] plugged into this phone or computer, seen from straight above, playing
+/// [demo] with a hand, with [next] (if any) daisy-chained behind it.
 class DeviceActionHero extends StatefulWidget {
   const DeviceActionHero({
     super.key,
-    required this.caseColors,
+    required this.caseColor,
     required this.demo,
     required this.maxHeight,
+    this.next,
   });
 
-  /// Never empty.
-  final List<CaseColor?> caseColors;
+  final CaseColor? caseColor;
   final DeviceDemoKind? demo;
   final double maxHeight;
+  final ({CaseColor? caseColor})? next;
 
   @override
   State<DeviceActionHero> createState() => _DeviceActionHeroState();
@@ -61,8 +62,7 @@ class _DeviceActionHeroState extends State<DeviceActionHero>
   DeviceDemoPlayback? _play() {
     final demo = widget.demo;
     if (demo == null) return null;
-    return DeviceDemoPlayback(demo, devices: widget.caseColors.length)
-      ..addListener(_wakeHand);
+    return DeviceDemoPlayback(demo)..addListener(_wakeHand);
   }
 
   bool get _handMoving => _playback?.handMoving ?? false;
@@ -88,8 +88,7 @@ class _DeviceActionHeroState extends State<DeviceActionHero>
   @override
   void didUpdateWidget(DeviceActionHero old) {
     super.didUpdateWidget(old);
-    if (old.demo != widget.demo ||
-        old.caseColors.length != widget.caseColors.length) {
+    if (old.demo != widget.demo) {
       _playback?.dispose();
       _playback = _play();
     }
@@ -107,28 +106,34 @@ class _DeviceActionHeroState extends State<DeviceActionHero>
   @override
   Widget build(BuildContext context) {
     final playback = _playback;
-    final devices = widget.caseColors.length;
+    final next = widget.next;
+    final chained = next != null;
     final scene = Platform.isAndroid || Platform.isIOS
-        ? _phoneScene(devices)
-        : _computerScene(devices);
+        ? _phoneScene()
+        : _computerScene(chained);
 
-    final chain = [
-      for (final (i, caseColor) in widget.caseColors.indexed)
-        _TopDownDevice(
-          caseColor: caseColor,
-          plugHidden: i > 0,
-          screen: playback == null
-              ? null
-              : ListenableBuilder(
-                  listenable: playback,
-                  builder: (context, _) => RawImage(
-                    image: playback.screen(i),
-                    fit: BoxFit.fill,
-                    filterQuality: FilterQuality.medium,
-                  ),
-                ),
-        ),
-    ];
+    Widget? screen(ui.Image? Function(DeviceDemoPlayback) image) =>
+        playback == null
+        ? null
+        : ListenableBuilder(
+            listenable: playback,
+            builder: (context, _) => RawImage(
+              image: image(playback),
+              fit: BoxFit.fill,
+              filterQuality: FilterQuality.medium,
+            ),
+          );
+    final first = _TopDownDevice(
+      caseColor: widget.caseColor,
+      screen: screen((playback) => playback.screen),
+    );
+    final second = next == null
+        ? null
+        : _TopDownDevice(
+            caseColor: next.caseColor,
+            screen: screen((playback) => playback.firstScreen),
+            plugHidden: true,
+          );
     final hand = playback == null
         ? const SizedBox()
         : FutureBuilder(
@@ -165,9 +170,9 @@ class _DeviceActionHeroState extends State<DeviceActionHero>
                 child: SizedBox.fromSize(
                   size: crop.size,
                   child: Stack(
-                    // A tall chain is narrower than the hero, and the arm reaches past the crop.
+                    // The arm reaches past the crop where the hero is wider than it.
                     clipBehavior: Clip.none,
-                    children: scene.layers(at, chain, hand),
+                    children: scene.layers(at, first, second, hand),
                   ),
                 ),
               ),
@@ -191,28 +196,12 @@ class _HandPainter extends CustomPainter {
     final frame = playback.handFrame;
     final sheet = frame == null ? null : sheets?[frame.sheet];
     if (frame == null || sheet == null) return;
-    // Both scenes draw the hand in the plugged-in device's frame, where the chain runs down.
-    final rect = Offset(0, playback.handDevice * _bodyLength) & size;
-    canvas.saveLayer(rect, Paint());
     canvas.drawImageRect(
       sheet,
       frame.sheet.cell(frame.index),
-      rect,
+      Offset.zero & size,
       Paint()..filterQuality = FilterQuality.medium,
     );
-    // The clip's frame cuts the wrist off, which would show as an edge partway along a chain.
-    canvas.drawRect(
-      rect,
-      Paint()
-        ..blendMode = BlendMode.dstIn
-        ..shader = const LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [Colors.black, Colors.transparent],
-          stops: [0.55, 0.95],
-        ).createShader(rect),
-    );
-    canvas.restore();
   }
 
   @override
@@ -243,11 +232,16 @@ class _Scene {
 
   final Rect crop;
   final Gradient fade;
-  final List<Widget> Function(_Place at, List<Widget> chain, Widget hand)
+  final List<Widget> Function(
+    _Place at,
+    Widget first,
+    Widget? second,
+    Widget hand,
+  )
   layers;
 }
 
-_Scene _phoneScene(int devices) {
+_Scene _phoneScene() {
   const shellScale = 1.77;
   const shellSize = Size(560 * shellScale, 1120 * shellScale);
   const screen = Rect.fromLTWH(
@@ -260,24 +254,23 @@ _Scene _phoneScene(int devices) {
     279.5 * shellScale - 180,
     1011 * shellScale + 3 - _bodyTop,
   );
-  final crop = Rect.fromLTWH(200, 1560, 590, 860 + (devices - 1) * _bodyLength);
   return _Scene(
-    crop: crop,
+    crop: const Rect.fromLTWH(200, 1560, 590, 860),
     // The hand comes up from below, so the bottom fades as well as the phone above.
-    fade: LinearGradient(
+    fade: const LinearGradient(
       begin: Alignment.topCenter,
       end: Alignment.bottomCenter,
-      colors: const [
+      colors: [
         Colors.transparent,
         Colors.black,
         Colors.black,
         Colors.transparent,
       ],
-      stops: [0, 138 / crop.height, 1 - 224 / crop.height, 1],
+      stops: [0, 0.16, 0.74, 1],
     ),
-    layers: (at, chain, hand) => [
-      for (final (i, link) in chain.indexed)
-        at(device + Offset(0, i * _bodyLength), link),
+    layers: (at, first, second, hand) => [
+      at(device, first),
+      if (second != null) at(device + const Offset(0, _bodyLength), second),
       // The shell's screen is transparent. Covering it also hides the plug inside the phone.
       at(
         screen.topLeft,
@@ -311,7 +304,7 @@ _Scene _phoneScene(int devices) {
   );
 }
 
-_Scene _computerScene(int devices) {
+_Scene _computerScene(bool chained) {
   const laptopScale = 1.236;
   const laptop = Offset(500, 0);
   const laptopEdge = 458 * laptopScale;
@@ -323,20 +316,21 @@ _Scene _computerScene(int devices) {
   );
   Offset topLeft(Offset c) =>
       c - Offset(_deviceSize.height / 2, _deviceSize.width / 2);
-  final chainLength = (devices - 1) * _bodyLength;
-  final crop = Rect.fromLTWH(560 - chainLength, 330, 1100 + chainLength, 600);
   return _Scene(
-    crop: crop,
-    // The hand comes in from the left, along the chain.
+    crop: chained
+        ? const Rect.fromLTWH(420, 330, 1240, 600)
+        : const Rect.fromLTWH(560, 330, 1100, 600),
+    // The hand comes in from the left, as does the chain.
     fade: LinearGradient(
       colors: const [Colors.transparent, Colors.black],
-      stops: [0, 165 / crop.width],
+      stops: [0, chained ? 0.3 : 0.15],
     ),
-    layers: (at, chain, hand) => [
-      for (final (i, device) in chain.indexed)
+    layers: (at, first, second, hand) => [
+      at(topLeft(centre), RotatedBox(quarterTurns: 1, child: first)),
+      if (second != null)
         at(
-          topLeft(centre - Offset(i * _bodyLength, 0)),
-          RotatedBox(quarterTurns: 1, child: device),
+          topLeft(centre - const Offset(_bodyLength, 0)),
+          RotatedBox(quarterTurns: 1, child: second),
         ),
       // Seen from above, the plug runs into the laptop's side under its top deck.
       at(
