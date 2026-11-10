@@ -211,6 +211,7 @@ impl SignItem {
             AppTweak::TestMessage => Message::new("frostsnap-test", &self.message[..]),
             AppTweak::Bitcoin(_) => Message::raw(&self.message[..]),
             AppTweak::Nostr => Message::raw(&self.message[..]),
+            AppTweak::SpContact => Message::new("frostsnap-sp-contact", &self.message[..]),
         }
     }
 }

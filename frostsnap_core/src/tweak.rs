@@ -134,6 +134,7 @@ pub enum AppTweak {
     TestMessage,
     Bitcoin(BitcoinBip32Path),
     Nostr,
+    SpContact,
 }
 
 #[derive(
@@ -335,6 +336,7 @@ impl AppTweak {
             AppTweak::Bitcoin { .. } => AppTweakKind::Bitcoin,
             AppTweak::Nostr => AppTweakKind::Nostr,
             AppTweak::TestMessage => AppTweakKind::TestMessage,
+            AppTweak::SpContact => AppTweakKind::SpContact,
         }
     }
 
@@ -352,6 +354,7 @@ impl AppTweak {
             }
             AppTweak::Nostr => appkey.into_key().into_xonly(),
             AppTweak::TestMessage => appkey.into_key().into_xonly(),
+            AppTweak::SpContact => appkey.into_key().into_xonly(),
         }
     }
 }
@@ -361,6 +364,7 @@ pub enum AppTweakKind {
     Bitcoin = 0,
     TestMessage = 1,
     Nostr = 2,
+    SpContact = 3,
 }
 
 impl AppTweakKind {
