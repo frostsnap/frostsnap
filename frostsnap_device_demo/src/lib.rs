@@ -389,8 +389,8 @@ fn script(kind: DemoKind) -> Vec<Action> {
             };
             let mut actions = vec![Action::Pause(1200)];
             for (x, y, after) in [
+                // Hardly anyone has ten or more devices, so the key number is one digit.
                 (41, 147, 0),
-                (120, 93, 0),
                 (195, 255, 380),
                 (90, 82, 0),
                 (30, 182, 380),
@@ -763,7 +763,7 @@ mod test {
             "receive address #7"
         );
 
-        let typing_key_number = frame_at(DemoKind::EnterBackup, 3000);
+        let typing_key_number = frame_at(DemoKind::EnterBackup, 2200);
         assert!(
             // Above the cursor, which is drawn sharp under the text.
             !has_sharp_edges(&typing_key_number, (0, 6, 110, 34)),
@@ -774,7 +774,7 @@ mod test {
             "backspace"
         );
 
-        let typing_word = frame_at(DemoKind::EnterBackup, 5600);
+        let typing_word = frame_at(DemoKind::EnterBackup, 4600);
         assert!(
             // Above the cursor, which is drawn sharp under the text.
             !has_sharp_edges(&typing_word, (0, 6, 110, 34)),
