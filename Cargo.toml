@@ -12,7 +12,6 @@ members = [
     "frost_backup",
     "frostsnap_fonts",
     "frostsnap_widgets",
-    "frostsnap_device_demo",
     "tools/widget_simulator",
     "tools/stack_check",
     "cst816s",
@@ -33,7 +32,6 @@ default-members = [
     "frost_backup",
     "frostsnap_fonts",
     "frostsnap_widgets",
-    "frostsnap_device_demo",
     "frostsnapp/desktop_camera",
     "macros",
     "tools/stack_check",
@@ -57,7 +55,6 @@ frostsnap_device = { path = "device" }
 frostsnap_embedded = { path = "frostsnap_embedded", default-features = false }
 frostsnap_fonts = { path = "frostsnap_fonts", default-features = false }
 frostsnap_widgets = { path = "frostsnap_widgets", default-features = false }
-frostsnap_device_demo = { path = "frostsnap_device_demo" }
 frostsnap_macros = { path = "macros", default-features = false }
 frost_backup = { path = "frost_backup", features = ["bincode"], default-features = false }
 frostsnap_cst816s = { path = "cst816s", default-features = false }

@@ -1,5 +1,6 @@
 pub mod api;
 mod coordinator;
+mod device_demo;
 mod device_list;
 #[allow(clippy::all)]
 mod frb_generated;

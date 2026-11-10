@@ -19,6 +19,7 @@ import 'package:frostsnap/bullet_list.dart';
 import 'package:frostsnap/copy_feedback.dart';
 import 'package:frostsnap/src/rust/api/bitcoin.dart';
 import 'package:frostsnap/src/rust/api/device_demo.dart';
+import 'package:frostsnap/src/rust/lib.dart';
 import 'package:frostsnap/src/rust/api/device_list.dart';
 import 'package:frostsnap/src/rust/api/firmware.dart';
 import 'package:frostsnap/src/rust/api/keygen.dart';

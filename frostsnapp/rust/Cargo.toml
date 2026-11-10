@@ -11,7 +11,8 @@ anyhow = "1"
 base64 = "0.22"
 frostsnap_coordinator = { workspace = true }
 frostsnap_core = { workspace = true }
-frostsnap_device_demo = { workspace = true }
+frostsnap_widgets = { workspace = true, features = ["std", "redact"] }
+embedded-graphics.workspace = true
 lazy_static = "1.4"
 tracing-subscriber = { version = "0.3" }
 tracing = { workspace = true, features = ["std"] }

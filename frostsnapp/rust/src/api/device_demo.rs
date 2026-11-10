@@ -1,6 +1,6 @@
+use crate::device_demo::{self, Demo, DemoKind, Gesture, HandTiming};
 use crate::frb_generated::StreamSink;
 use flutter_rust_bridge::frb;
-use frostsnap_device_demo::{Demo, DemoKind, Gesture, HandTiming};
 use std::{
     num::NonZeroU32,
     sync::{
@@ -111,12 +111,12 @@ impl DeviceDemo {
 
     #[frb(sync, type_64bit_int)]
     pub fn width() -> usize {
-        frostsnap_device_demo::WIDTH as usize
+        device_demo::WIDTH as usize
     }
 
     #[frb(sync, type_64bit_int)]
     pub fn height() -> usize {
-        frostsnap_device_demo::HEIGHT as usize
+        device_demo::HEIGHT as usize
     }
 
     /// Plays the demo into `sink`. Only the first call plays; a demo is played once.
