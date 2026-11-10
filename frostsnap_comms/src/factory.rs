@@ -25,7 +25,8 @@ frostsnap_core::impl_fromstr_deserialize! {
     }
 }
 
-pub fn pad_message_for_rsa(message_digest: &[u8]) -> PaddedMessageBlock {
+/// Pads a SHA-256 digest for RSA PKCS#1 v1.5 signing.
+pub fn pad_message_for_rsa(message_digest: &[u8; 32]) -> PaddedMessageBlock {
     // Hard-code the ASN.1 DigestInfo prefix for SHA-256
     const SHA256_ASN1_PREFIX: &[u8] = &[
         0x30, 0x31, 0x30, 0x0d, 0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x01,
