@@ -13,6 +13,19 @@ use frostsnap_coordinator::{
     verify_address::VerifyAddressProtocolState,
 };
 
+/// Where a [`Broadcast`](crate::api::broadcast::Broadcast) sends each value. The app's sinks are
+/// Dart's [`StreamSink`]s; tests substitute their own.
+pub trait BroadcastSink<T> {
+    /// Returns `false` if the value could not be delivered.
+    fn deliver(&self, value: T) -> bool;
+}
+
+impl<T: SseEncode> BroadcastSink<T> for StreamSink<T> {
+    fn deliver(&self, value: T) -> bool {
+        self.add(value).is_ok()
+    }
+}
+
 // we need to wrap it so we can impl it on foreign FRB type. You can't do a single generic impl. Try
 // it if you don't believe me.
 pub struct SinkWrap<T>(pub StreamSink<T>);

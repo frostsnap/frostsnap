@@ -1,186 +1,118 @@
-import 'package:flutter/material.dart';
-import 'package:flutter_test/flutter_test.dart';
-import 'package:frostsnap/src/rust/api/broadcast_test_fixtures.dart';
+import 'dart:ffi';
 
-import 'support/rust_lib.dart';
+import 'package:ffi/ffi.dart';
+import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:frostsnap/stream_ext.dart';
 
 const _settle = Duration(milliseconds: 50);
 const _cancelDeadline = Duration(seconds: 1);
 
-class _StreamBuilderHost extends StatefulWidget {
-  const _StreamBuilderHost(this.owner, {super.key});
-  final TestBroadcast owner;
-  @override
-  State<_StreamBuilderHost> createState() => _StreamBuilderHostState();
+/// The prefix of `Dart_CObject` (dart_native_api.h) that an int64 message uses.
+final class _Int64CObject extends Struct {
+  @Int32()
+  external int type;
+  @Int64()
+  external int value;
 }
 
-class _StreamBuilderHostState extends State<_StreamBuilderHost> {
-  int _rebuildTick = 0;
-  void forceRebuild() => setState(() => _rebuildTick++);
+const _kInt64 = 3;
 
+final _postCObject = NativeApi.postCObject
+    .asFunction<int Function(int port, Pointer<Dart_CObject> message)>();
+
+/// Posts to a port the way Rust does, returning false once the port is closed.
+bool _postInteger(int port, int value) => using((arena) {
+  final message = arena<_Int64CObject>();
+  message.ref
+    ..type = _kInt64
+    ..value = value;
+  return _postCObject(port, message.cast()) != 0;
+});
+
+class _IntCodec extends DcoCodec<int, Object> {
+  const _IntCodec()
+    : super(decodeSuccessData: _decodeInt, decodeErrorData: null);
+
+  static int _decodeInt(dynamic raw) => raw as int;
+
+  // The fake posts bare ints, not the `[action, data]` lists frb's Rust side sends.
   @override
-  Widget build(BuildContext context) => Column(
-    children: [
-      Text('$_rebuildTick'),
-      StreamBuilder<void>(
-        stream: widget.owner.broadcast().watch(),
-        builder: (context, _) => const SizedBox.shrink(),
-      ),
-    ],
+  int decodeObject(dynamic raw) => decodeSuccessData(raw);
+}
+
+/// Stands in for a Rust `Broadcast<i32>`, posting to each sink's port as Rust would.
+class _FakeBroadcast {
+  final ports = <int, int>{};
+  var _nextId = 0;
+  Object? detachError;
+
+  int get subscriberCount => ports.length;
+
+  Stream<int> watch() => rustBroadcastStream<int>(
+    attach: (sink) {
+      final id = _nextId++;
+      ports[id] = int.parse(sink.setupAndSerialize(codec: const _IntCodec()));
+      return id;
+    },
+    detach: (id) {
+      if (detachError != null) throw detachError!;
+      // Rust posts a close message when it drops the sink, and frb's stream only finishes
+      // cancelling once a message wakes it.
+      _postInteger(ports.remove(id)!, -1);
+    },
   );
-}
 
-void expectConsecutive(List<int> ticks) {
-  for (var i = 1; i < ticks.length; i++) {
-    expect(ticks[i], ticks[0] + i, reason: 'tick #$i after ${ticks[i - 1]}');
+  void add(int value) {
+    for (final port in ports.values) {
+      _postInteger(port, value);
+    }
   }
 }
 
 void main() {
-  setUpAll(initRustLibForTests);
+  test('two listeners: cancelling the newer leaves the older', () async {
+    final bcast = _FakeBroadcast();
+    final a = <int>[];
+    final b = <int>[];
+    final subA = bcast.watch().listen(a.add);
+    final subB = bcast.watch().listen(b.add);
+    expect(bcast.subscriberCount, 2);
 
-  test('cancel completes promptly and detaches the Rust sink', () async {
-    final owner = TestBroadcast.create();
-    final received = <void>[];
-    final sub = owner.broadcast().watch().listen(received.add);
-
-    owner.fire();
+    bcast.add(1);
     await Future.delayed(_settle);
-    expect(received.length, 1);
-    expect(owner.subscriberCount(), 1);
+    expect(a, [1]);
+    expect(b, [1]);
 
-    await sub.cancel().timeout(_cancelDeadline);
-    expect(owner.subscriberCount(), 0);
+    await subB.cancel().timeout(_cancelDeadline);
+    expect(bcast.subscriberCount, 1);
 
-    owner.fire();
+    bcast.add(2);
     await Future.delayed(_settle);
-    expect(received.length, 1, reason: 'no events after cancel');
+    expect(a, [1, 2], reason: 'remaining listener still receives');
+    expect(b, [1], reason: 'cancelled listener gets nothing');
+
+    await subA.cancel().timeout(_cancelDeadline);
+    expect(bcast.subscriberCount, 0);
   });
 
-  test(
-    'two listeners on one Broadcast: cancelling one leaves the other',
-    () async {
-      final owner = TestBroadcast.create();
-      final a = <void>[];
-      final b = <void>[];
-      final subA = owner.broadcast().watch().listen(a.add);
-      final subB = owner.broadcast().watch().listen(b.add);
-      expect(owner.subscriberCount(), 2);
+  test('nothing attaches before listen', () {
+    final bcast = _FakeBroadcast();
+    bcast.watch();
+    expect(bcast.subscriberCount, 0);
+  });
 
-      owner.fire();
-      await Future.delayed(_settle);
-      expect(a.length, 1);
-      expect(b.length, 1);
+  test('a throwing detach fails the cancel and still closes the port', () async {
+    final bcast = _FakeBroadcast();
+    final sub = bcast.watch().listen((_) {});
+    final port = bcast.ports.values.single;
 
-      await subA.cancel().timeout(_cancelDeadline);
-      expect(owner.subscriberCount(), 1);
+    bcast.detachError = StateError('poisoned');
+    await expectLater(sub.cancel(), throwsA(bcast.detachError));
 
-      owner.fire();
-      await Future.delayed(_settle);
-      expect(a.length, 1, reason: 'cancelled listener gets nothing');
-      expect(b.length, 2, reason: 'remaining listener still receives');
-
-      await subB.cancel().timeout(_cancelDeadline);
-      expect(owner.subscriberCount(), 0);
-    },
-  );
-
-  test('nothing registers in Rust before listen', () async {
-    final owner = TestBroadcast.create();
-    owner.broadcast().watch();
+    // Still attached in Rust, so its next add is what wakes frb's stream to finish closing.
+    bcast.add(1);
     await Future.delayed(_settle);
-    expect(owner.subscriberCount(), 0);
-  });
-
-  test('BehaviorBroadcast: a new listener gets the current value', () async {
-    final owner = TestBehaviorBroadcast.create(initial: 0);
-    owner.add(value: 42);
-    final received = <int>[];
-    final sub = owner.broadcast().watch().listen(received.add);
-    await Future.delayed(_settle);
-    expect(received, [42]);
-    await sub.cancel().timeout(_cancelDeadline);
-    expect(owner.subscriberCount(), 0);
-  });
-
-  test(
-    'BehaviorBroadcast: the current value, then later adds, in order',
-    () async {
-      final owner = TestBehaviorBroadcast.create(initial: 1);
-      final received = <int>[];
-      final sub = owner.broadcast().watch().listen(received.add);
-      for (var i = 2; i < 20; i++) {
-        owner.add(value: i);
-      }
-      await Future.delayed(_settle);
-      expect(received, List.generate(19, (i) => i + 1));
-      await sub.cancel();
-    },
-  );
-
-  test('values added from another Rust thread arrive in order', () async {
-    final ticker = TestTicker.create(intervalMs: 50);
-    final received = <int>[];
-    final sub = ticker.broadcast().watch().listen(received.add);
-
-    await Future.delayed(const Duration(milliseconds: 300));
-    expect(received.length, greaterThanOrEqualTo(3));
-    expectConsecutive(received);
-    expect(ticker.subscriberCount(), 1);
-
-    await sub.cancel().timeout(_cancelDeadline);
-    expect(ticker.subscriberCount(), 0);
-    final atCancel = received.length;
-    await Future.delayed(const Duration(milliseconds: 150));
-    expect(received.length, atCancel);
-    ticker.dispose();
-  });
-
-  test('streams of different broadcasts are independent', () async {
-    final fast = TestTicker.create(intervalMs: 20);
-    final slow = TestTicker.create(intervalMs: 100);
-    final fastTicks = <int>[];
-    final slowTicks = <int>[];
-    final fastSub = fast.broadcast().watch().listen(fastTicks.add);
-    final slowSub = slow.broadcast().watch().listen(slowTicks.add);
-
-    await Future.delayed(const Duration(milliseconds: 400));
-    expect(slowTicks.length, lessThan(fastTicks.length));
-    expectConsecutive(fastTicks);
-    expectConsecutive(slowTicks);
-
-    await fastSub.cancel().timeout(_cancelDeadline);
-    expect(fast.subscriberCount(), 0);
-    expect(slow.subscriberCount(), 1);
-    final slowAtFastCancel = slowTicks.length;
-    await Future.delayed(const Duration(milliseconds: 250));
-    expect(slowTicks.length, greaterThan(slowAtFastCancel));
-
-    await slowSub.cancel().timeout(_cancelDeadline);
-    expect(slow.subscriberCount(), 0);
-    fast.dispose();
-    slow.dispose();
-  });
-
-  testWidgets('a StreamBuilder rebuilt with a fresh watch() leaks no sinks', (
-    tester,
-  ) async {
-    final owner = TestBroadcast.create();
-    final hostKey = GlobalKey<_StreamBuilderHostState>();
-    await tester.pumpWidget(
-      MaterialApp(home: _StreamBuilderHost(owner, key: hostKey)),
-    );
-    await tester.pumpAndSettle();
-    expect(owner.subscriberCount(), 1);
-
-    for (var i = 0; i < 5; i++) {
-      hostKey.currentState!.forceRebuild();
-      await tester.pumpAndSettle();
-      expect(owner.subscriberCount(), 1, reason: 'after rebuild #${i + 1}');
-    }
-
-    await tester.pumpWidget(const SizedBox.shrink());
-    await tester.pumpAndSettle();
-    expect(owner.subscriberCount(), 0);
+    expect(_postInteger(port, 2), isFalse, reason: 'port is closed');
   });
 }
