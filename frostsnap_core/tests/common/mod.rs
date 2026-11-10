@@ -135,6 +135,13 @@ pub trait Env {
                     .unwrap();
                 run.extend_from_device(from, sign_ack);
             }
+            DeviceToUserMessage::SpContactEcdhRequest { phase } => {
+                let ack = run
+                    .device(from)
+                    .sp_contact_ecdh_ack(*phase, &mut TestDeviceKeyGen, rng)
+                    .unwrap();
+                run.extend_from_device(from, ack);
+            }
             DeviceToUserMessage::Restoration(restoration) => {
                 use frostsnap_core::device::restoration::ToUserRestoration::*;
                 match *restoration {

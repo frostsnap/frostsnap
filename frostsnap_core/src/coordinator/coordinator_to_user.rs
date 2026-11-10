@@ -30,6 +30,10 @@ pub enum CoordinatorToUserSigningMessage {
         session_id: SignSessionId,
         signatures: Vec<EncodedSignature>,
     },
+    GotSpContactEcdhShare {
+        session_id: crate::message::signing::SpContactSessionId,
+        from: DeviceId,
+    },
 }
 
 #[derive(Clone, Debug)]

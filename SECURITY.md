@@ -116,6 +116,9 @@ Anything that breaks the security model. Concretely, that model is:
      check code is **identical on every device**.
    - **At signing:** every destination and amount the device lists, and the fee. The device itemises what
      leaves the wallet; on an ordinary send a single change output back to you is deliberately not listed.
+   - **When adding a silent payment contact:** the name and the full address the device shows, against what
+     the recipient gave you. A later send to that contact shows the name and address the wallet signed then,
+     so this check is what protects it.
 
    The security of the system and the process depends on you verifying checks like these. If an attack works
    only because you skipped one, that is not a break in the model: the check was what would have caught it. An

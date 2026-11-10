@@ -1,7 +1,8 @@
 use crate::device_nonces::{self, AbSlots, MemoryNonceSlot, NonceStreamSlot};
 use crate::nonce_stream::CoordNonceStreamState;
+use crate::silent_payments::{self, SpContactDetails};
 use crate::symmetric_encryption::Ciphertext;
-use crate::tweak::{self, Xpub};
+use crate::tweak::{self, BitcoinAccount, Xpub};
 use crate::{
     bitcoin_transaction, message::*, AccessStructureId, AccessStructureKind, AccessStructureRef,
     ActionError, CheckedSignTask, CoordShareDecryptionContrib, Error, KeyId, KeygenId, Kind,
@@ -28,6 +29,29 @@ pub mod restoration;
 mod secret_derivation;
 pub use device_to_user::*;
 pub use keygen::{KeyGenPhase1, KeyGenPhase2, KeyGenPhase3, KeyGenPhase4};
+
+/// A request to add a contact, awaiting the user's confirmation of its name and address.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SpContactEcdhPhase {
+    session_id: signing::SpContactSessionId,
+    rootkey: Point,
+    access_structure_ref: AccessStructureRef,
+    coord_share_decryption_contrib: CoordShareDecryptionContrib,
+    encrypted_secret_share: EncryptedSecretShare,
+    details: SpContactDetails,
+    network: bitcoin::Network,
+    address: String,
+}
+
+impl SpContactEcdhPhase {
+    pub fn name(&self) -> &str {
+        &self.details.name
+    }
+
+    pub fn address(&self) -> &str {
+        &self.address
+    }
+}
 pub use secret_derivation::*;
 
 /// The number of nonces the device will give out at a time.
@@ -265,6 +289,149 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
         DeviceId::new(self.keypair().public_key())
     }
 
+    fn recv_sp_contact_ecdh_request(
+        &self,
+        message: &CoordinatorToDeviceMessage,
+        request: signing::RequestSpContactEcdh,
+    ) -> MessageResult<Vec<DeviceSend>> {
+        let signing::RequestSpContactEcdh {
+            session_id,
+            rootkey,
+            access_structure_id,
+            share_index,
+            coord_share_decryption_contrib,
+            details,
+        } = request;
+        let key_id = KeyId::from_rootkey(rootkey);
+        let key_data = self.keys.get(&key_id).ok_or_else(|| {
+            Error::signer_invalid_message(message, format!("device doesn't have key for {key_id}"))
+        })?;
+        let KeyPurpose::Bitcoin(network) = key_data.purpose else {
+            return Err(Error::signer_invalid_message(
+                message,
+                "silent payment contact for a key that is not a bitcoin key",
+            ));
+        };
+        if !details.has_valid_name() {
+            return Err(Error::signer_invalid_message(
+                message,
+                "silent payment contact has an invalid name",
+            ));
+        }
+        let address = details.recipient.address(network).ok_or_else(|| {
+            Error::signer_invalid_message(message, "silent payment contact has no address")
+        })?;
+        let access_structure_data = key_data
+            .access_structures
+            .get(&access_structure_id)
+            .ok_or_else(|| {
+                Error::signer_invalid_message(
+                    message,
+                    format!(
+                        "this device is not part of that access structure: {access_structure_id}"
+                    ),
+                )
+            })?;
+        let encrypted_secret_share =
+            *access_structure_data
+                .shares
+                .get(&share_index)
+                .ok_or_else(|| {
+                    Error::signer_invalid_message(
+                        message,
+                        "device doesn't have the share requested",
+                    )
+                })?;
+
+        let phase = SpContactEcdhPhase {
+            session_id,
+            rootkey,
+            access_structure_ref: AccessStructureRef {
+                key_id,
+                access_structure_id,
+            },
+            coord_share_decryption_contrib,
+            encrypted_secret_share,
+            details,
+            network,
+            address,
+        };
+        Ok(vec![DeviceSend::ToUser(Box::new(
+            DeviceToUserMessage::SpContactEcdhRequest {
+                phase: Box::new(phase),
+            },
+        ))])
+    }
+
+    /// The user has confirmed the contact: answer with this device's share of `x * B_scan`.
+    // Never inlined: inlined into `DeviceLoop::poll` it pushes that frame past the stack budget.
+    #[inline(never)]
+    pub fn sp_contact_ecdh_ack(
+        &mut self,
+        phase: SpContactEcdhPhase,
+        symm_keygen: &mut impl DeviceSecretDerivation,
+        rng: &mut impl rand_core::RngCore,
+    ) -> Result<Vec<DeviceSend>, ActionError> {
+        let SpContactEcdhPhase {
+            session_id,
+            rootkey,
+            access_structure_ref,
+            coord_share_decryption_contrib,
+            encrypted_secret_share,
+            details,
+            network,
+            ..
+        } = phase;
+
+        let my_index = encrypted_secret_share.share_image.index;
+        let symmetric_key = symm_keygen.get_share_encryption_key(
+            access_structure_ref,
+            my_index,
+            coord_share_decryption_contrib,
+        );
+        let secret_share = encrypted_secret_share
+            .ciphertext
+            .decrypt(symmetric_key)
+            .ok_or_else(|| {
+                ActionError::StateInconsistent("couldn't decrypt secret share".into())
+            })?;
+        let root_paired_secret_share = Xpub::from_rootkey(PairedSecretShare::new_unchecked(
+            SecretShare {
+                index: my_index,
+                share: secret_share,
+            },
+            rootkey,
+        ));
+        let app_paired_secret_share = root_paired_secret_share.rootkey_to_master_appkey();
+        let account_secret_share =
+            BitcoinAccount::default().derive_account_key(&app_paired_secret_share);
+        let account_share = account_secret_share
+            .key()
+            .secret_share()
+            .share
+            .non_zero()
+            .ok_or_else(|| ActionError::StateInconsistent("account share is zero".into()))?;
+
+        let digest = details.digest(network);
+        let share = silent_payments::prove_ecdh_share(
+            my_index,
+            account_share,
+            details.recipient.scan_key,
+            &digest,
+            rng,
+        )
+        .ok_or_else(|| {
+            ActionError::StateInconsistent("couldn't prove silent payment ECDH share".into())
+        })?;
+
+        Ok(vec![DeviceSend::ToCoordinator(Box::new(
+            DeviceToCoordinatorMessage::Signing(signing::DeviceSigning::SpContactEcdhShare {
+                session_id,
+                share: Box::new(share),
+            }),
+        ))])
+    }
+
     fn recv_sign_request(
         &mut self,
         message: &CoordinatorToDeviceMessage,
@@ -293,6 +460,7 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
             access_structure_id,
             ..
         } = &group_sign_req;
+
         let coord_req_nonces = device_sign_req.nonces;
 
         let access_structure_data = key_data
@@ -398,6 +566,9 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
                     device_sign_req,
                 } = *request_sign;
                 self.recv_sign_request(&message, group_sign_req, device_sign_req)
+            }
+            Signing(signing::CoordinatorSigning::RequestSpContactEcdh(request)) => {
+                self.recv_sp_contact_ecdh_request(&message, *request)
             }
             ScreenVerify(screen_verify::ScreenVerify::VerifyAddress {
                 master_appkey,

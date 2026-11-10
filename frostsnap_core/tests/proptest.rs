@@ -653,6 +653,7 @@ impl Env for ProptestEnv {
                 CoordinatorToUserSigningMessage::Signed { session_id, .. } => {
                     self.finished_signatures.insert(session_id);
                 }
+                CoordinatorToUserSigningMessage::GotSpContactEcdhShare { .. } => {}
             },
             _ => { /* nothing needs doing */ }
         }
@@ -680,6 +681,9 @@ impl Env for ProptestEnv {
                     .entry(phase.session_id)
                     .or_default()
                     .insert(from, *phase);
+            }
+            SpContactEcdhRequest { .. } => {
+                // TODO: proptest adding contacts
             }
             Restoration(_msg) => {
                 // TODO: proptest restoration

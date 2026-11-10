@@ -2,8 +2,12 @@ use crate::{
     coord_nonces::{NonceCache, NotEnoughNonces},
     device::{KeyPurpose, NONCE_BATCH_SIZE},
     map_ext::*,
-    message::{signing::OpenNonceStreams, *},
+    message::{
+        signing::{OpenNonceStreams, RequestSpContactEcdh, SpContactSessionId},
+        *,
+    },
     nonce_stream::{CoordNonceStreamState, NonceStreamId, SigningReqSubSegment},
+    silent_payments::{verify_contact_shares, EcdhShare, SpContactDetails},
     symmetric_encryption::{Ciphertext, SymmetricKey},
     tweak::Xpub,
     AccessStructureId, AccessStructureKind, AccessStructureRef, ActionError,
@@ -52,8 +56,20 @@ pub struct FrostCoordinator {
     active_signing_sessions: BTreeMap<SignSessionId, ActiveSignSession>,
     active_sign_session_order: Vec<SignSessionId>,
     finished_signing_sessions: BTreeMap<SignSessionId, FinishedSignSession>,
+    /// Contacts being added. In memory only, so that ECDH shares and proofs never reach the
+    /// append-only mutation log: an interrupted ceremony starts again.
+    sp_contact_sessions: BTreeMap<SpContactSessionId, SpContactSession>,
     restoration: restoration::State,
     pub keygen_fingerprint: schnorr_fun::frost::Fingerprint,
+}
+
+/// One run of adding a contact, before the wallet signs it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SpContactSession {
+    pub access_structure_ref: AccessStructureRef,
+    pub details: SpContactDetails,
+    pub requested: BTreeSet<DeviceId>,
+    pub shares: BTreeMap<DeviceId, EcdhShare>,
 }
 
 #[derive(Debug, Clone, bincode::Encode, bincode::Decode, PartialEq)]
@@ -309,6 +325,8 @@ impl FrostCoordinator {
                 self.keys.remove(&key_id)?;
                 self.key_order.retain(|&entry| entry != key_id);
                 self.restoration.clear_up_key_deletion(key_id);
+                self.sp_contact_sessions
+                    .retain(|_, session| session.access_structure_ref.key_id != key_id);
                 let sessions_to_delete = self
                     .active_signing_sessions
                     .iter()
@@ -865,6 +883,22 @@ impl FrostCoordinator {
                 }
             }
             DeviceToCoordinatorMessage::Signing(
+                crate::message::signing::DeviceSigning::SpContactEcdhShare { session_id, share },
+            ) => {
+                self.check_sp_contact_share(from, session_id, &share)
+                    .map_err(|reason| Error::coordinator_invalid_message(message_kind, reason))?;
+                self.sp_contact_sessions
+                    .get_mut(&session_id)
+                    .expect("just checked")
+                    .shares
+                    .insert(from, *share);
+                Ok(vec![CoordinatorSend::ToUser(
+                    CoordinatorToUserMessage::Signing(
+                        CoordinatorToUserSigningMessage::GotSpContactEcdhShare { session_id, from },
+                    ),
+                )])
+            }
+            DeviceToCoordinatorMessage::Signing(
                 crate::message::signing::DeviceSigning::SignatureShare {
                     session_id,
                     ref signature_shares,
@@ -1140,6 +1174,146 @@ impl FrostCoordinator {
             });
         }
         Ok(key_data)
+    }
+
+    /// Starts adding the contact `details`: asks `devices`, a threshold or more of the access
+    /// structure, to confirm it and answer with their share of the ECDH. Their answers arrive as
+    /// [`CoordinatorToUserSigningMessage::GotSpContactEcdhShare`].
+    pub fn start_sp_contact(
+        &mut self,
+        access_structure_ref: AccessStructureRef,
+        details: SpContactDetails,
+        devices: &BTreeSet<DeviceId>,
+        encryption_key: SymmetricKey,
+        rng: &mut impl rand_core::RngCore,
+    ) -> Result<(SpContactSessionId, Vec<CoordinatorSend>), StartSignError> {
+        let key_data = self.check_signing_devices(access_structure_ref, devices)?;
+        if !matches!(key_data.purpose, KeyPurpose::Bitcoin(_)) {
+            return Err(StartSignError::SignTask(crate::SignTaskError::WrongPurpose));
+        }
+        if !details.has_valid_name() {
+            return Err(StartSignError::SignTask(
+                crate::SignTaskError::SilentPaymentInvalidContactName,
+            ));
+        }
+
+        let mut session_id = [0u8; 32];
+        rng.fill_bytes(&mut session_id);
+        let session_id = SpContactSessionId(session_id);
+        self.sp_contact_sessions.insert(
+            session_id,
+            SpContactSession {
+                access_structure_ref,
+                details,
+                requested: devices.clone(),
+                shares: Default::default(),
+            },
+        );
+
+        let sends = devices
+            .iter()
+            .map(|device_id| self.request_sp_contact_ecdh(session_id, *device_id, encryption_key))
+            .collect::<Result<_, _>>();
+        if sends.is_err() {
+            self.sp_contact_sessions.remove(&session_id);
+        }
+        Ok((session_id, sends?))
+    }
+
+    /// The ECDH request for one device of a session. A device keeps nothing from an earlier request
+    /// beyond the user's approval, so asking again is safe.
+    pub fn request_sp_contact_ecdh(
+        &self,
+        session_id: SpContactSessionId,
+        device_id: DeviceId,
+        encryption_key: SymmetricKey,
+    ) -> Result<CoordinatorSend, StartSignError> {
+        let session = self
+            .sp_contact_sessions
+            .get(&session_id)
+            .ok_or(StartSignError::NoSuchSpContactSession)?;
+        if !session.requested.contains(&device_id) {
+            return Err(StartSignError::DeviceNotPartOfKey { device_id });
+        }
+        let share_index = *self
+            .get_access_structure(session.access_structure_ref)
+            .ok_or(StartSignError::NoSuchAccessStructure)?
+            .device_to_share_index
+            .get(&device_id)
+            .ok_or(StartSignError::DeviceNotPartOfKey { device_id })?;
+        let AccessStructureRef {
+            key_id,
+            access_structure_id,
+        } = session.access_structure_ref;
+        let (rootkey, coord_share_decryption_contrib) = self
+            .keys
+            .get(&key_id)
+            .ok_or(StartSignError::UnknownKey { key_id })?
+            .complete_key
+            .coord_share_decryption_contrib(access_structure_id, device_id, encryption_key)
+            .ok_or(StartSignError::CouldntDecryptRootKey)?;
+        Ok(CoordinatorSend::ToDevice {
+            message: CoordinatorToDeviceMessage::Signing(
+                crate::message::signing::CoordinatorSigning::RequestSpContactEcdh(Box::new(
+                    RequestSpContactEcdh {
+                        session_id,
+                        rootkey,
+                        access_structure_id,
+                        share_index,
+                        coord_share_decryption_contrib,
+                        details: session.details.clone(),
+                    },
+                )),
+            ),
+            destinations: [device_id].into(),
+        })
+    }
+
+    pub fn sp_contact_session(&self, session_id: SpContactSessionId) -> Option<&SpContactSession> {
+        self.sp_contact_sessions.get(&session_id)
+    }
+
+    pub fn cancel_sp_contact(&mut self, session_id: SpContactSessionId) {
+        self.sp_contact_sessions.remove(&session_id);
+    }
+
+    fn check_sp_contact_share(
+        &self,
+        from: DeviceId,
+        session_id: SpContactSessionId,
+        share: &EcdhShare,
+    ) -> Result<(), String> {
+        let session = self
+            .sp_contact_sessions
+            .get(&session_id)
+            .ok_or("got a contact ECDH share for a session we don't have")?;
+        if !session.requested.contains(&from) {
+            return Err("device was not asked for a contact ECDH share".into());
+        }
+        if session.shares.contains_key(&from) {
+            return Err("device already sent its contact ECDH share".into());
+        }
+        let access_structure = self
+            .get_access_structure(session.access_structure_ref)
+            .ok_or("contact session has no access structure")?;
+        if access_structure.device_to_share_index.get(&from) != Some(&share.share_index) {
+            return Err("contact ECDH share is not for this device's share index".into());
+        }
+        let network = self.sp_contact_network(session.access_structure_ref.key_id)?;
+        verify_contact_shares(
+            &access_structure.app_shared_key(),
+            &session.details,
+            network,
+            core::slice::from_ref(share),
+        )
+        .map_err(String::from)
+    }
+
+    fn sp_contact_network(&self, key_id: KeyId) -> Result<bitcoin::Network, String> {
+        match self.keys.get(&key_id).map(|key| key.purpose) {
+            Some(KeyPurpose::Bitcoin(network)) => Ok(network),
+            _ => Err("a contact needs a bitcoin key".into()),
+        }
     }
 
     /// Opens the signing session for `sign_task`, whose nonces are already reserved for each device
@@ -1588,6 +1762,7 @@ impl FrostCoordinator {
 
     pub fn clear_tmp_data(&mut self) {
         self.pending_keygens.clear();
+        self.sp_contact_sessions.clear();
         self.restoration.clear_tmp_data();
     }
 
@@ -1889,6 +2064,7 @@ pub enum StartSignError {
     SignTask(SignTaskError),
     NoSuchAccessStructure,
     CouldntDecryptRootKey,
+    NoSuchSpContactSession,
 }
 
 impl fmt::Display for StartSignError {
@@ -1905,6 +2081,9 @@ impl fmt::Display for StartSignError {
             }
             StartSignError::CantSignInState { in_state } => {
                 write!(f, "Can't sign in state {in_state}")
+            }
+            StartSignError::NoSuchSpContactSession => {
+                write!(f, "That contact is no longer being added")
             }
             StartSignError::NotEnoughNoncesForDevice(not_enough_nonces) => not_enough_nonces.fmt(f),
             StartSignError::DeviceNotPartOfKey { device_id } => {
