@@ -142,19 +142,6 @@ impl SuperWallet {
         }
     }
 
-    pub fn search_for_address(
-        &self,
-        master_appkey: MasterAppkey,
-        address_str: String,
-        start: u32,
-        stop: u32,
-    ) -> Option<AddressInfo> {
-        self.inner
-            .lock()
-            .unwrap()
-            .search_for_address(master_appkey, address_str, start, stop)
-    }
-
     /// How this wallet names `address_str` if it derives it — "Receive #3", "Change #2" —
     /// or `None` when the address is not ours, not this network's, or not an address.
     /// The wording is core's, the same the device's own footnote is built from, so one

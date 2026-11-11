@@ -1,3 +1,5 @@
+pub mod address_input;
+pub mod address_search;
 pub mod chain_sync;
 mod handler_state;
 pub mod outgoing;
