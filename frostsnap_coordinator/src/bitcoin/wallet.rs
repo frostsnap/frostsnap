@@ -14,7 +14,7 @@ use frostsnap_core::{
     MasterAppkey,
 };
 use std::{
-    collections::HashMap,
+    collections::{BTreeSet, HashMap},
     ops::RangeBounds,
     str::FromStr,
     sync::{Arc, Mutex},
@@ -220,7 +220,28 @@ impl CoordSuperWallet {
             drop(db);
 
             // again in case it found something tell electrum that it's got to start looking further.
-            self.resync_monitoring();
+            // This is the chain source's first sight of the key, so provide it with
+            // `expected_spk_txids` so that evictions (e.g. a tx dropped while we were offline)
+            // can be detected against the local tx set.
+            // bdk_electrum_streaming only takes expected txids per keychain (`track_descriptor`).
+            let mut expected = HashMap::<KeychainId, Vec<(ScriptBuf, Txid)>>::new();
+            for (spk, txid) in self.tx_graph.list_expected_spk_txids(
+                self.chain.as_ref(),
+                self.chain.tip().block_id(),
+                ((master_appkey, BitcoinAccountKeychain::external()), 0)
+                    ..=(
+                        (master_appkey, BitcoinAccountKeychain::internal()),
+                        u32::MAX,
+                    ),
+            ) {
+                let &(keychain_id, _) = self
+                    .tx_graph
+                    .index
+                    .index_of_spk(spk.clone())
+                    .expect("listed spks are indexed");
+                expected.entry(keychain_id).or_default().push((spk, txid));
+            }
+            self.resync_monitoring(expected);
         }
     }
 
@@ -230,17 +251,26 @@ impl CoordSuperWallet {
     /// client. This saves server bandwidth but if we find something further out
     /// than electrum is looking we have to tell it about it.
     ///
-    /// Free to over-call, at the message level and not merely the state level: a tracked window only
-    /// ever widens, and only scripts it does not already hold become subscribe requests. A wallet
-    /// with nothing far out generates no traffic.
-    fn resync_monitoring(&self) {
+    /// Cheap to over-call: a tracked window only ever widens, and only scripts it does not already
+    /// hold become subscribe requests.
+    ///
+    /// The chain source keeps its expected txids current from server histories, so
+    /// `expected_spk_txids` should only hold txids it has never seen: those of a newly tracked key.
+    fn resync_monitoring(
+        &self,
+        mut expected_spk_txids: HashMap<KeychainId, Vec<(ScriptBuf, Txid)>>,
+    ) {
         for (keychain_id, _) in self.tx_graph.index.keychains() {
             let next_index = self
                 .tx_graph
                 .index
                 .last_revealed_index(keychain_id)
                 .map_or(0, |lr| lr + 1);
-            self.chain_client.monitor_keychain(keychain_id, next_index);
+            self.chain_client.monitor_keychain(
+                keychain_id,
+                next_index,
+                expected_spk_txids.remove(&keychain_id).unwrap_or_default(),
+            );
         }
     }
 
@@ -384,6 +414,14 @@ impl CoordSuperWallet {
         found_address_derivation
     }
 
+    pub(super) fn master_appkeys(&self) -> BTreeSet<MasterAppkey> {
+        self.tx_graph
+            .index
+            .keychains()
+            .map(|((master_appkey, _), _)| master_appkey)
+            .collect()
+    }
+
     pub fn list_transactions(&mut self, master_appkey: MasterAppkey) -> Vec<Transaction> {
         self.lazily_initialize_key(master_appkey);
         let chain_tip = self.chain.tip();
@@ -475,7 +513,7 @@ impl CoordSuperWallet {
         // A frontier can only move by revealing, which lands in the changeset, so `changed` covers
         // every case worth signalling.
         if changed {
-            self.resync_monitoring();
+            self.resync_monitoring(HashMap::new());
         }
         Ok(changed)
     }
