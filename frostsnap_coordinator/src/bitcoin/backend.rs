@@ -1,14 +1,45 @@
 //! The chain source a wallet follows.
 
-use super::{
-    chain_sync::{ChainClient, ChainStatus},
-    compact_filters::node::FilterClient,
-    wallet::KeychainId,
-};
+use super::{chain_sync::ChainClient, compact_filters::node::FilterClient, wallet::KeychainId};
 use crate::Sink;
 use anyhow::{anyhow, Result};
 use bdk_chain::bitcoin;
 use std::collections::BTreeMap;
+
+/// Status of the chain source: shared lifecycle plus backend-specific detail.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ChainStatus {
+    pub state: ChainStatusState,
+    pub detail: ChainStatusDetail,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum ChainStatusState {
+    Idle,
+    Connecting,
+    Connected,
+    Disconnected,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum ChainStatusDetail {
+    Electrum(ElectrumStatus),
+    CompactFilters(FilterStatus),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct ElectrumStatus {
+    pub primary_url: String,
+    pub backup_url: String,
+    pub on_backup: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FilterStatus {
+    pub peers: u32,
+    /// Fraction of the requested filter range checked, from 0 to 1.
+    pub progress: f32,
+}
 
 /// The chain source a `CoordSuperWallet` follows.
 #[derive(Clone)]

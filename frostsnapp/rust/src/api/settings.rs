@@ -3,9 +3,10 @@ use bitcoin::constants::genesis_block;
 use bitcoin::Network as BitcoinNetwork;
 use flutter_rust_bridge::frb;
 use frostsnap_coordinator::bitcoin::backend::ChainBackend;
+pub use frostsnap_coordinator::bitcoin::backend::FilterStatus;
 use frostsnap_coordinator::bitcoin::chain_sync::{ChainClient, ElectrumConfig, SUPPORTED_NETWORKS};
 pub use frostsnap_coordinator::bitcoin::chain_sync::{
-    ChainStatus, ChainStatusState, ConnectionResult,
+    ChainStatus, ChainStatusDetail, ChainStatusState, ConnectionResult, ElectrumStatus,
 };
 pub use frostsnap_coordinator::bitcoin::tofu::verifier::UntrustedCertificate;
 use frostsnap_coordinator::persist::Persisted;
@@ -426,10 +427,27 @@ impl ElectrumSettings {
 
 #[frb(mirror(ChainStatus))]
 pub struct _ChainStatus {
+    pub state: ChainStatusState,
+    pub detail: ChainStatusDetail,
+}
+
+#[frb(mirror(ChainStatusDetail))]
+pub enum _ChainStatusDetail {
+    Electrum(ElectrumStatus),
+    CompactFilters(FilterStatus),
+}
+
+#[frb(mirror(ElectrumStatus))]
+pub struct _ElectrumStatus {
     pub primary_url: String,
     pub backup_url: String,
     pub on_backup: bool,
-    pub state: ChainStatusState,
+}
+
+#[frb(mirror(FilterStatus))]
+pub struct _FilterStatus {
+    pub peers: u32,
+    pub progress: f32,
 }
 
 #[frb(mirror(ChainStatusState))]
