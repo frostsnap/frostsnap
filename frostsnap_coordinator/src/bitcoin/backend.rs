@@ -2,10 +2,11 @@
 
 use super::{
     chain_sync::{ChainClient, ChainStatus},
+    compact_filters::node::FilterClient,
     wallet::KeychainId,
 };
 use crate::Sink;
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use bdk_chain::bitcoin;
 use std::collections::BTreeMap;
 
@@ -13,6 +14,7 @@ use std::collections::BTreeMap;
 #[derive(Clone)]
 pub enum ChainBackend {
     Electrum(ChainClient),
+    CompactFilters(FilterClient),
 }
 
 impl From<ChainClient> for ChainBackend {
@@ -21,11 +23,18 @@ impl From<ChainClient> for ChainBackend {
     }
 }
 
+impl From<FilterClient> for ChainBackend {
+    fn from(client: FilterClient) -> Self {
+        ChainBackend::CompactFilters(client)
+    }
+}
+
 impl ChainBackend {
     /// Track `keychain` through `next_index` plus the source's lookahead.
     pub fn monitor_keychain(&self, keychain: KeychainId, next_index: u32) {
         match self {
             ChainBackend::Electrum(client) => client.monitor_keychain(keychain, next_index),
+            ChainBackend::CompactFilters(client) => client.monitor_keychain(keychain, next_index),
         }
     }
 
@@ -33,6 +42,7 @@ impl ChainBackend {
     pub fn broadcast(&self, transaction: bitcoin::Transaction) -> Result<bitcoin::Txid> {
         match self {
             ChainBackend::Electrum(client) => client.broadcast(transaction),
+            ChainBackend::CompactFilters(client) => client.broadcast(transaction),
         }
     }
 
@@ -43,6 +53,9 @@ impl ChainBackend {
     ) -> Result<BTreeMap<usize, bitcoin::FeeRate>> {
         match self {
             ChainBackend::Electrum(client) => client.estimate_fee(target_blocks),
+            ChainBackend::CompactFilters(client) => {
+                client.estimate_fee(&target_blocks.into_iter().collect::<Vec<_>>())
+            }
         }
     }
 
@@ -50,6 +63,7 @@ impl ChainBackend {
     pub fn set_status_sink(&self, sink: Box<dyn Sink<ChainStatus>>) {
         match self {
             ChainBackend::Electrum(client) => client.set_status_sink(sink),
+            ChainBackend::CompactFilters(client) => client.set_status_sink(sink),
         }
     }
 
@@ -57,6 +71,7 @@ impl ChainBackend {
     pub fn reconnect(&self) {
         match self {
             ChainBackend::Electrum(client) => client.reconnect(),
+            ChainBackend::CompactFilters(client) => client.reconnect(),
         }
     }
 
@@ -64,6 +79,9 @@ impl ChainBackend {
     pub fn electrum(&self) -> Result<&ChainClient> {
         match self {
             ChainBackend::Electrum(client) => Ok(client),
+            ChainBackend::CompactFilters(_) => Err(anyhow!(
+                "this network is using compact block filters, which have no Electrum server to set"
+            )),
         }
     }
 }
