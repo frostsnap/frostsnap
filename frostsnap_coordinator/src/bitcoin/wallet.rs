@@ -245,6 +245,14 @@ impl CoordSuperWallet {
         }
     }
 
+    /// Look for a key's past transactions, for a wallet that may have been used before it was
+    /// added here. A wallet generated here has none, so it never needs this.
+    pub fn find_history(&mut self, master_appkey: MasterAppkey) {
+        self.lazily_initialize_key(master_appkey);
+        self.resync_monitoring();
+        self.chain_client.find_history();
+    }
+
     pub fn list_addresses(&mut self, master_appkey: MasterAppkey) -> Vec<AddressInfo> {
         self.lazily_initialize_key(master_appkey);
         let keychain = BitcoinAccountKeychain::external();

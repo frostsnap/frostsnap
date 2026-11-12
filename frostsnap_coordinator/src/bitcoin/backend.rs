@@ -106,6 +106,16 @@ impl ChainBackend {
         }
     }
 
+    /// Look again for the past transactions of the keychains being monitored, for a wallet that
+    /// may have history from before it was added here, such as a recovered one.
+    pub fn find_history(&self) {
+        match self {
+            // Monitoring a script already fetches its whole history.
+            ChainBackend::Electrum(_) => {}
+            ChainBackend::CompactFilters(client) => client.find_history(),
+        }
+    }
+
     /// The Electrum client, for the settings only Electrum has.
     pub fn electrum(&self) -> Result<&ChainClient> {
         match self {
