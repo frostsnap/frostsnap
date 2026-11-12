@@ -1,5 +1,6 @@
 pub mod backend;
 pub mod chain_sync;
+pub mod compact_filters;
 mod handler_state;
 pub mod outgoing;
 pub mod psbt;
