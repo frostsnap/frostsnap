@@ -1,5 +1,7 @@
 //! Compact block filter matching for the BIP157 backend.
 
+pub mod node;
+
 use super::wallet::{KeychainId, WalletIndexer};
 use bdk_chain::{
     bitcoin::{Block, OutPoint, ScriptBuf, Transaction},
@@ -92,6 +94,21 @@ impl WatchSet {
             self.spks.insert(spk, (keychain, index));
         }
         window.end = end;
+    }
+
+    /// Take in a fresh snapshot of the wallet without giving up what scanning found since. The
+    /// wallet applies those finds on another thread, so its snapshot can trail this set.
+    pub fn merge(&mut self, fresh: WatchSet) {
+        self.spks.extend(fresh.spks);
+        self.owned.extend(fresh.owned);
+        for (keychain, window) in fresh.windows {
+            match self.windows.get_mut(&keychain) {
+                Some(ours) => ours.end = ours.end.max(window.end),
+                None => {
+                    self.windows.insert(keychain, window);
+                }
+            }
+        }
     }
 
     pub fn is_empty(&self) -> bool {
@@ -522,6 +539,32 @@ mod test {
                     .unwrap_or_else(|| panic!("payment to index {index} was missed"));
                 assert_eq!(update.last_active_indices.get(&external), Some(&index));
             }
+        }
+
+        /// The wallet has not applied what the scan found when it sends a refresh, so its snapshot
+        /// still has the old window. Taking it in must not narrow the window back.
+        #[test]
+        fn merge_keeps_window_moved_since_the_snapshot() {
+            let (wallet, _handler, master_appkey) = wallet();
+            let (external, last) = external_window(&wallet, master_appkey);
+            let mut watch = WatchSet::from_indexer(&wallet.tx_graph.index, MATCH_LOOKAHEAD);
+            let first = tx(
+                &[OutPoint::null()],
+                &[(script(&wallet, external, last), 1_000)],
+            );
+            assert!(watch.scan_block(&block(vec![first]), 1).is_some());
+            watch.merge(WatchSet::from_indexer(
+                &wallet.tx_graph.index,
+                MATCH_LOOKAHEAD,
+            ));
+            let next = tx(
+                &[OutPoint::null()],
+                &[(script(&wallet, external, last + 40), 1_000)],
+            );
+            assert!(
+                watch.scan_block(&block(vec![next]), 2).is_some(),
+                "the stale snapshot narrowed the window"
+            );
         }
     }
 }
