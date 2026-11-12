@@ -287,18 +287,26 @@ impl Transaction {
 
     /// Computes the net change in our owned balance: owned outputs minus owned inputs.
     ///
-    /// Returns `None` if any owned input is missing a previous output.
+    /// An input whose previous output we don't hold is not ours: the wallet keeps every
+    /// transaction that pays it. A chain source that never fetches a payer's coins (compact
+    /// filters) leaves those unknown.
     #[frb(sync, type_64bit_int)]
-    pub fn balance_delta(&self) -> Option<i64> {
+    pub fn balance_delta(&self) -> i64 {
         let owned_inputs_sum: i64 = self
-            .sum_inputs(&self.is_mine)?
+            .inner
+            .input
+            .iter()
+            .filter_map(|txin| self.prevouts.get(&txin.previous_output))
+            .filter(|prevout| self.is_mine.contains_key(prevout.script_pubkey.as_script()))
+            .map(|prevout| prevout.value.to_sat())
+            .sum::<u64>()
             .try_into()
             .expect("net spent value must convert to i64");
         let owned_outputs_sum: i64 = self
             .sum_outputs(&self.is_mine)
             .try_into()
             .expect("net created value must convert to i64");
-        Some(owned_outputs_sum.saturating_sub(owned_inputs_sum))
+        owned_outputs_sum.saturating_sub(owned_inputs_sum)
     }
 
     /// Computes the transaction fee as the difference between total input and output value.
@@ -935,5 +943,35 @@ mod test {
     fn parse_imported_psbt_rejects_a_file_that_is_not_a_psbt() {
         assert!(parse_imported_psbt(b"not a PSBT").is_err());
         assert!(parse_imported_psbt(&[0xFFu8; 1024]).is_err());
+    }
+
+    /// Some chain sources do not supply coins for previous outputs.
+    /// These transactions still have an interpretable net balance.
+    #[test]
+    fn balance_delta_ignores_inputs_with_unknown_prevouts() {
+        let ours = ScriptBuf::from_bytes([&[0x51u8, 0x20][..], &[0xaa; 32][..]].concat());
+        let inner = RTransaction {
+            version: bitcoin::transaction::Version::TWO,
+            lock_time: bitcoin::absolute::LockTime::ZERO,
+            input: vec![bitcoin::TxIn {
+                previous_output: outpoint(0),
+                ..Default::default()
+            }],
+            output: vec![TxOut {
+                value: Amount::from_sat(70_000),
+                script_pubkey: ours.clone(),
+            }],
+        };
+        let tx = Transaction {
+            txid: inner.compute_txid().to_string(),
+            inner,
+            confirmation_time: None,
+            confirmations: 0,
+            last_seen: None,
+            prevouts: HashMap::new(),
+            is_mine: HashMap::from([(ours, 0)]),
+            feerate: None,
+        };
+        assert_eq!(tx.balance_delta(), 70_000);
     }
 }
