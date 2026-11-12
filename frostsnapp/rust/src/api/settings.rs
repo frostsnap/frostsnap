@@ -2,6 +2,7 @@ use anyhow::{anyhow, Result};
 use bitcoin::constants::genesis_block;
 use bitcoin::Network as BitcoinNetwork;
 use flutter_rust_bridge::frb;
+use frostsnap_coordinator::bitcoin::backend::ChainBackend;
 use frostsnap_coordinator::bitcoin::chain_sync::{ChainClient, ElectrumConfig, SUPPORTED_NETWORKS};
 pub use frostsnap_coordinator::bitcoin::chain_sync::{
     ChainStatus, ChainStatusState, ConnectionResult,
@@ -24,7 +25,7 @@ use super::super_wallet::SuperWallet;
 pub struct Settings {
     settings: Persisted<RSettings>,
     db: Arc<Mutex<rusqlite::Connection>>,
-    chain_clients: HashMap<BitcoinNetwork, ChainClient>,
+    chain_clients: HashMap<BitcoinNetwork, ChainBackend>,
 
     #[allow(unused)]
     app_directory: PathBuf,
@@ -33,6 +34,17 @@ pub struct Settings {
     developer_settings_stream: Option<StreamSink<DeveloperSettings>>,
     display_settings_stream: Option<StreamSink<DisplaySettings>>,
     electrum_settings_stream: Option<StreamSink<ElectrumSettings>>,
+}
+
+/// The network's Electrum client, or an error if it follows the chain some other way.
+fn electrum_client(
+    chain_clients: &HashMap<BitcoinNetwork, ChainBackend>,
+    network: BitcoinNetwork,
+) -> Result<&ChainClient> {
+    chain_clients
+        .get(&network)
+        .ok_or_else(|| anyhow!("network not supported {}", network))?
+        .electrum()
 }
 
 macro_rules! settings_impl {
@@ -89,6 +101,7 @@ impl Settings {
                 trusted_certificates,
                 db.clone(),
             );
+            let chain_api = ChainBackend::Electrum(chain_api);
             let super_wallet =
                 SuperWallet::load_or_new(&app_directory, network, chain_api.clone())?;
             // FIXME: the dependency relationship here is overly convoluted.
@@ -199,10 +212,7 @@ impl Settings {
         url: String,
         is_backup: bool,
     ) -> Result<ConnectionResult> {
-        let chain_api = self
-            .chain_clients
-            .get(&network)
-            .ok_or_else(|| anyhow!("network not supported {}", network))?;
+        let chain_api = electrum_client(&self.chain_clients, network)?;
 
         match chain_api.check_and_set_electrum_server_url(url.clone(), is_backup)? {
             ConnectionResult::Success => {
@@ -240,10 +250,7 @@ impl Settings {
         is_backup: bool,
     ) -> Result<ConnectionResult> {
         // Use message-passing to trust the certificate
-        let chain_api = self
-            .chain_clients
-            .get(&network)
-            .ok_or_else(|| anyhow!("network not supported {}", network))?;
+        let chain_api = electrum_client(&self.chain_clients, network)?;
 
         // Send the trust certificate message - the backend will handle persistence
         chain_api.trust_certificate(server_url.clone(), certificate);
@@ -279,10 +286,7 @@ impl Settings {
             Ok(())
         })?;
 
-        let chain_api = self
-            .chain_clients
-            .get(&network)
-            .ok_or_else(|| anyhow!("network not supported {}", network))?;
+        let chain_api = electrum_client(&self.chain_clients, network)?;
 
         chain_api.set_urls(primary, backup);
 
@@ -301,10 +305,7 @@ impl Settings {
             Ok(())
         })?;
 
-        let chain_api = self
-            .chain_clients
-            .get(&network)
-            .ok_or_else(|| anyhow!("network not supported {}", network))?;
+        let chain_api = electrum_client(&self.chain_clients, network)?;
 
         chain_api.set_enabled(enabled);
 
@@ -313,10 +314,7 @@ impl Settings {
     }
 
     pub fn connect_to(&self, network: BitcoinNetwork, use_backup: bool) -> Result<()> {
-        let chain_api = self
-            .chain_clients
-            .get(&network)
-            .ok_or_else(|| anyhow!("network not supported {}", network))?;
+        let chain_api = electrum_client(&self.chain_clients, network)?;
 
         chain_api.connect_to(use_backup);
         Ok(())
