@@ -39,11 +39,42 @@ impl FromStr for ElectrumEnabled {
     }
 }
 
+/// Which chain source follows the chain for a network; Electrum is the default.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ChainSource {
+    #[default]
+    Electrum,
+    /// BIP157 compact block filters.
+    CompactFilters,
+}
+
+impl std::fmt::Display for ChainSource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ChainSource::Electrum => write!(f, "electrum"),
+            ChainSource::CompactFilters => write!(f, "compact_filters"),
+        }
+    }
+}
+
+impl FromStr for ChainSource {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "electrum" => Ok(ChainSource::Electrum),
+            "compact_filters" => Ok(ChainSource::CompactFilters),
+            _ => Err(anyhow::anyhow!("invalid chain source value: {s}")),
+        }
+    }
+}
+
 #[derive(Default)]
 pub struct Settings {
     pub electrum_servers: BTreeMap<bitcoin::Network, String>,
     pub backup_electrum_servers: BTreeMap<bitcoin::Network, String>,
     pub electrum_enabled: BTreeMap<bitcoin::Network, ElectrumEnabled>,
+    pub chain_source: BTreeMap<bitcoin::Network, ChainSource>,
     pub developer_mode: bool,
     pub hide_balance: bool,
 }
@@ -109,6 +140,19 @@ impl Settings {
         self.mutate(Mutation::SetElectrumEnabled { network, enabled }, mutations)
     }
 
+    pub fn get_chain_source(&self, network: bitcoin::Network) -> ChainSource {
+        self.chain_source.get(&network).copied().unwrap_or_default()
+    }
+
+    pub fn set_chain_source(
+        &mut self,
+        network: bitcoin::Network,
+        source: ChainSource,
+        mutations: &mut Vec<Mutation>,
+    ) {
+        self.mutate(Mutation::SetChainSource { network, source }, mutations)
+    }
+
     fn mutate(&mut self, mutation: Mutation, mutations: &mut Vec<Mutation>) {
         self.apply_mutation(mutation.clone());
         mutations.push(mutation);
@@ -130,6 +174,9 @@ impl Settings {
             }
             Mutation::SetElectrumEnabled { network, enabled } => {
                 self.electrum_enabled.insert(network, enabled);
+            }
+            Mutation::SetChainSource { network, source } => {
+                self.chain_source.insert(network, source);
             }
         }
     }
@@ -154,6 +201,10 @@ pub enum Mutation {
     SetElectrumEnabled {
         network: bitcoin::Network,
         enabled: ElectrumEnabled,
+    },
+    SetChainSource {
+        network: bitcoin::Network,
+        source: ChainSource,
     },
 }
 
@@ -257,6 +308,26 @@ impl Persist<rusqlite::Connection> for Settings {
                             }
                         }
                     }
+                    source if source.starts_with("chain_source_") => {
+                        let network = source.strip_prefix("chain_source_").unwrap();
+                        match (
+                            bitcoin::Network::from_str(network),
+                            ChainSource::from_str(&value),
+                        ) {
+                            (Ok(network), Ok(source)) => {
+                                Mutation::SetChainSource { network, source }
+                            }
+                            _ => {
+                                event!(
+                                    Level::WARN,
+                                    key = key,
+                                    value = value,
+                                    "invalid chain_source setting",
+                                );
+                                continue;
+                            }
+                        }
+                    }
                     _ => {
                         event!(
                             Level::WARN,
@@ -332,9 +403,68 @@ impl Persist<rusqlite::Connection> for Settings {
                         params![format!("electrum_enabled_{}", network), enabled.to_string()],
                     )?;
                 }
+                Mutation::SetChainSource { network, source } => {
+                    event!(
+                        Level::DEBUG,
+                        network = network.to_string(),
+                        source = source.to_string(),
+                        "set chain source for network"
+                    );
+                    conn.execute(
+                        "INSERT OR REPLACE INTO fs_app_global_settings (key, value) VALUES (?1, ?2)",
+                        params![format!("chain_source_{}", network), source.to_string()],
+                    )?;
+                }
             }
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::persist::Persist;
+
+    const NETWORK: bitcoin::Network = bitcoin::Network::Bitcoin;
+
+    fn store() -> rusqlite::Connection {
+        let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+        Settings::migrate(&mut conn).unwrap();
+        conn
+    }
+
+    fn round_trip(settings: &Settings, mutations: Vec<Mutation>) -> Settings {
+        let mut conn = store();
+        settings.persist_update(&mut conn, mutations).unwrap();
+        Settings::load(&mut conn, ()).unwrap()
+    }
+
+    #[test]
+    fn chain_source_defaults_to_electrum() {
+        let mut conn = store();
+        let loaded = Settings::load(&mut conn, ()).unwrap();
+        assert_eq!(loaded.get_chain_source(NETWORK), ChainSource::Electrum);
+    }
+
+    #[test]
+    fn chain_source_is_per_network() {
+        let mut settings = Settings::default();
+        let mut mutations = vec![];
+        settings.set_chain_source(
+            bitcoin::Network::Signet,
+            ChainSource::CompactFilters,
+            &mut mutations,
+        );
+        let loaded = round_trip(&settings, mutations);
+        assert_eq!(
+            loaded.get_chain_source(bitcoin::Network::Signet),
+            ChainSource::CompactFilters
+        );
+        assert_eq!(
+            loaded.get_chain_source(bitcoin::Network::Bitcoin),
+            ChainSource::Electrum
+        );
     }
 }
