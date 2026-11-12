@@ -150,6 +150,17 @@ class WalletHome extends StatelessWidget {
                 onWalletRecovered: (accessStructureRef) async {
                   walletListController.selectWallet(accessStructureRef.keyId);
 
+                  // Unlike a wallet made here, a recovered one may have been paid before.
+                  final frostKey = coord.getFrostKey(
+                    keyId: accessStructureRef.keyId,
+                  );
+                  final network = frostKey?.bitcoinNetwork();
+                  if (frostKey != null && network != null) {
+                    await SettingsContext.of(context)!.settings
+                        .getSuperWallet(network: network)
+                        .findHistory(masterAppkey: frostKey.masterAppkey());
+                  }
+
                   final accessStructure = coord.getAccessStructure(
                     asRef: accessStructureRef,
                   )!; // we just made this access structure

@@ -109,6 +109,11 @@ impl SuperWallet {
         self.chain_sync.reconnect();
     }
 
+    /// Look for a recovered wallet's past transactions. A wallet generated here has none.
+    pub fn find_history(&self, master_appkey: MasterAppkey) {
+        self.inner.lock().unwrap().find_history(master_appkey);
+    }
+
     #[frb(sync)]
     pub fn next_address(&self, master_appkey: MasterAppkey) -> AddressInfo {
         self.inner
