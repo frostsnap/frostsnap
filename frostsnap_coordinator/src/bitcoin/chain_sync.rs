@@ -35,6 +35,7 @@ use tokio::sync::watch;
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 use tracing::{event, Level};
 
+pub use super::backend::{ChainStatus, ChainStatusDetail, ChainStatusState, ElectrumStatus};
 use crate::persist::Persisted;
 use crate::settings::ElectrumEnabled;
 use crate::Sink;
@@ -419,7 +420,7 @@ impl ConnectionHandler {
         rt.block_on(conn_loop.drive());
     }
 
-    fn handle_wallet_updates<SW, F>(
+    pub(super) fn handle_wallet_updates<SW, F>(
         super_wallet: SW,
         update_recv: mpsc::UnboundedReceiver<Update<KeychainId>>,
         mut action: F,
@@ -724,23 +725,6 @@ impl ConnLoop {
         };
         conn_result.map(|_| ())
     }
-}
-
-#[derive(Clone, PartialEq, Eq)]
-pub struct ChainStatus {
-    pub primary_url: String,
-    pub backup_url: String,
-    pub on_backup: bool,
-    pub state: ChainStatusState,
-}
-
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum ChainStatusState {
-    /// No connection has been attempted yet
-    Idle,
-    Connecting,
-    Connected,
-    Disconnected,
 }
 
 #[cfg(test)]

@@ -1,6 +1,8 @@
 use tokio::sync::watch;
 
-use super::chain_sync::{ChainStatus, ChainStatusState, ElectrumConfig};
+use super::chain_sync::{
+    ChainStatus, ChainStatusDetail, ChainStatusState, ElectrumConfig, ElectrumStatus,
+};
 use crate::Sink;
 
 /// The connection's observable lifecycle phase — the single source of truth for status.
@@ -66,10 +68,12 @@ impl StatusTracker {
     fn project(&self) -> ChainStatus {
         let config = self.config_rx.borrow();
         ChainStatus {
-            primary_url: config.primary.clone(),
-            backup_url: config.backup.clone(),
-            on_backup: self.phase.on_backup(),
             state: self.phase.state(),
+            detail: ChainStatusDetail::Electrum(ElectrumStatus {
+                primary_url: config.primary.clone(),
+                backup_url: config.backup.clone(),
+                on_backup: self.phase.on_backup(),
+            }),
         }
     }
 
@@ -106,6 +110,14 @@ impl StatusTracker {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn electrum(status: &ChainStatus) -> &ElectrumStatus {
+        match &status.detail {
+            ChainStatusDetail::Electrum(electrum) => electrum,
+            #[allow(unreachable_patterns)]
+            other => panic!("the Electrum tracker projected {other:?}"),
+        }
+    }
     use crate::settings::ElectrumEnabled;
     use std::sync::{Arc, Mutex};
 
@@ -142,7 +154,10 @@ mod tests {
         t.set_phase(ConnPhase::Idle);
 
         let log = log.lock().unwrap();
-        let observed: Vec<_> = log.iter().map(|s| (s.state, s.on_backup)).collect();
+        let observed: Vec<_> = log
+            .iter()
+            .map(|s| (s.state, electrum(s).on_backup))
+            .collect();
         assert_eq!(
             observed,
             vec![
@@ -153,8 +168,8 @@ mod tests {
                 (ChainStatusState::Idle, false),
             ]
         );
-        assert_eq!(log[1].primary_url, "tcp://p:1");
-        assert_eq!(log[1].backup_url, "tcp://b:1");
+        assert_eq!(electrum(&log[1]).primary_url, "tcp://p:1");
+        assert_eq!(electrum(&log[1]).backup_url, "tcp://b:1");
     }
 
     #[test]
@@ -167,7 +182,7 @@ mod tests {
             t.set_disconnected();
             let status = log.lock().unwrap().last().unwrap().clone();
             assert_eq!(status.state, ChainStatusState::Disconnected);
-            assert_eq!(status.on_backup, on_backup);
+            assert_eq!(electrum(&status).on_backup, on_backup);
         }
     }
 
@@ -188,6 +203,9 @@ mod tests {
         tx.send_modify(|c| c.primary = "tcp://p:2".into());
         t.refresh(); // urls changed → emit
         assert_eq!(log.lock().unwrap().len(), base + 2);
-        assert_eq!(log.lock().unwrap().last().unwrap().primary_url, "tcp://p:2");
+        assert_eq!(
+            electrum(log.lock().unwrap().last().unwrap()).primary_url,
+            "tcp://p:2"
+        );
     }
 }

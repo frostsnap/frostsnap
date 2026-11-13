@@ -1,4 +1,4 @@
-use super::{chain_sync::ChainClient, multi_x_descriptor_for_account};
+use super::{backend::ChainBackend, multi_x_descriptor_for_account};
 use crate::persist::Persisted;
 use anyhow::{anyhow, Context, Result};
 use bdk_chain::{
@@ -7,6 +7,7 @@ use bdk_chain::{
     indexer::keychain_txout::{self, KeychainTxOutIndex},
     local_chain,
     miniscript::{Descriptor, DescriptorPublicKey},
+    spk_client::FullScanResponse,
     CanonicalizationParams, ChainPosition, CheckPoint, ConfirmationBlockTime, Merge,
 };
 use frostsnap_core::{
@@ -49,7 +50,7 @@ pub type WalletIndexedTxGraphChangeSet =
 pub struct CoordSuperWallet {
     pub(super) tx_graph: Persisted<WalletIndexedTxGraph>,
     pub(super) chain: Persisted<local_chain::LocalChain>,
-    pub(super) chain_client: ChainClient,
+    pub(super) chain_client: ChainBackend,
     pub network: bitcoin::Network,
     pub(super) db: Arc<Mutex<rusqlite::Connection>>,
 }
@@ -58,7 +59,7 @@ impl CoordSuperWallet {
     pub fn load_or_init(
         db: Arc<Mutex<rusqlite::Connection>>,
         network: bitcoin::Network,
-        chain_client: ChainClient,
+        chain_client: impl Into<ChainBackend>,
     ) -> anyhow::Result<Self> {
         Self::load_or_init_with_lookahead(db, network, chain_client, LOOKAHEAD)
     }
@@ -72,7 +73,7 @@ impl CoordSuperWallet {
     pub fn load_or_init_with_lookahead(
         db: Arc<Mutex<rusqlite::Connection>>,
         network: bitcoin::Network,
-        chain_client: ChainClient,
+        chain_client: impl Into<ChainBackend>,
         lookahead: u32,
     ) -> anyhow::Result<Self> {
         event!(
@@ -93,7 +94,7 @@ impl CoordSuperWallet {
         Ok(Self {
             tx_graph,
             chain,
-            chain_client,
+            chain_client: chain_client.into(),
             db,
             network,
         })
@@ -242,6 +243,14 @@ impl CoordSuperWallet {
                 .map_or(0, |lr| lr + 1);
             self.chain_client.monitor_keychain(keychain_id, next_index);
         }
+    }
+
+    /// Look for a key's past transactions, for a wallet that may have been used before it was
+    /// added here. A wallet generated here has none, so it never needs this.
+    pub fn find_history(&mut self, master_appkey: MasterAppkey) {
+        self.lazily_initialize_key(master_appkey);
+        self.resync_monitoring();
+        self.chain_client.find_history();
     }
 
     pub fn list_addresses(&mut self, master_appkey: MasterAppkey) -> Vec<AddressInfo> {
@@ -452,7 +461,7 @@ impl CoordSuperWallet {
 
     pub fn apply_update(
         &mut self,
-        update: bdk_electrum_streaming::Update<KeychainId>,
+        update: FullScanResponse<KeychainId, ConfirmationBlockTime>,
     ) -> Result<bool> {
         let mut db = self.db.lock().unwrap();
         let changed = self

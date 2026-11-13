@@ -2,14 +2,16 @@ use anyhow::{anyhow, Result};
 use bitcoin::constants::genesis_block;
 use bitcoin::Network as BitcoinNetwork;
 use flutter_rust_bridge::frb;
+use frostsnap_coordinator::bitcoin::backend::ChainBackend;
+pub use frostsnap_coordinator::bitcoin::backend::FilterStatus;
 use frostsnap_coordinator::bitcoin::chain_sync::{ChainClient, ElectrumConfig, SUPPORTED_NETWORKS};
 pub use frostsnap_coordinator::bitcoin::chain_sync::{
-    ChainStatus, ChainStatusState, ConnectionResult,
+    ChainStatus, ChainStatusDetail, ChainStatusState, ConnectionResult, ElectrumStatus,
 };
 pub use frostsnap_coordinator::bitcoin::tofu::verifier::UntrustedCertificate;
 use frostsnap_coordinator::persist::Persisted;
-pub use frostsnap_coordinator::settings::ElectrumEnabled;
 use frostsnap_coordinator::settings::Settings as RSettings;
+pub use frostsnap_coordinator::settings::{ChainSource, ElectrumEnabled};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -24,7 +26,7 @@ use super::super_wallet::SuperWallet;
 pub struct Settings {
     settings: Persisted<RSettings>,
     db: Arc<Mutex<rusqlite::Connection>>,
-    chain_clients: HashMap<BitcoinNetwork, ChainClient>,
+    chain_clients: HashMap<BitcoinNetwork, ChainBackend>,
 
     #[allow(unused)]
     app_directory: PathBuf,
@@ -33,6 +35,59 @@ pub struct Settings {
     developer_settings_stream: Option<StreamSink<DeveloperSettings>>,
     display_settings_stream: Option<StreamSink<DisplaySettings>>,
     electrum_settings_stream: Option<StreamSink<ElectrumSettings>>,
+}
+
+/// The callback both chain sources use to push freshly-seen transactions at the UI.
+fn tx_sink(
+    super_wallet: &SuperWallet,
+) -> impl FnMut(frostsnap_core::MasterAppkey, Vec<frostsnap_coordinator::bitcoin::wallet::Transaction>)
+       + Send
+       + 'static {
+    let wallet_streams = super_wallet.wallet_streams.clone();
+    move |master_appkey, txs| {
+        let wallet_streams = wallet_streams.lock().unwrap();
+        if let Some(stream) = wallet_streams.get(&master_appkey) {
+            if let Err(err) = stream.add(txs.into()) {
+                tracing::error!(
+                    {
+                        master_appkey = master_appkey.to_redacted_string(),
+                        err = err.to_string(),
+                    },
+                    "Failed to add txs to stream"
+                );
+            }
+        }
+    }
+}
+
+fn build_compact_filters(
+    app_directory: &PathBuf,
+    network: BitcoinNetwork,
+) -> Result<(ChainBackend, SuperWallet)> {
+    use frostsnap_coordinator::bitcoin::compact_filters::node::{self, FilterConfig};
+    let (client, handler) = node::new(FilterConfig::new(network))?;
+    let chain_api = ChainBackend::CompactFilters(client);
+    let super_wallet = SuperWallet::load_or_new(app_directory, network, chain_api.clone())?;
+    thread::spawn({
+        let super_wallet = super_wallet.clone();
+        move || {
+            if let Err(err) = handler.run(super_wallet.inner.clone(), tx_sink(&super_wallet)) {
+                tracing::error!(err = err.to_string(), "compact filter node stopped");
+            }
+        }
+    });
+    Ok((chain_api, super_wallet))
+}
+
+/// The network's Electrum client, or an error if it follows the chain some other way.
+fn electrum_client(
+    chain_clients: &HashMap<BitcoinNetwork, ChainBackend>,
+    network: BitcoinNetwork,
+) -> Result<&ChainClient> {
+    chain_clients
+        .get(&network)
+        .ok_or_else(|| anyhow!("network not supported {}", network))?
+        .electrum()
 }
 
 macro_rules! settings_impl {
@@ -67,6 +122,14 @@ impl Settings {
         let mut chain_apis = HashMap::new();
 
         for network in SUPPORTED_NETWORKS {
+            // The chain source is read once here; a change takes effect at the next launch.
+            if persisted.get_chain_source(network) == ChainSource::CompactFilters {
+                let (chain_api, super_wallet) = build_compact_filters(&app_directory, network)?;
+                loaded_wallets.insert(network, super_wallet);
+                chain_apis.insert(network, chain_api);
+                continue;
+            }
+
             let electrum_config = ElectrumConfig {
                 enabled: persisted.get_electrum_enabled(network),
                 primary: persisted.get_electrum_server(network),
@@ -89,30 +152,13 @@ impl Settings {
                 trusted_certificates,
                 db.clone(),
             );
+            let chain_api = ChainBackend::Electrum(chain_api);
             let super_wallet =
                 SuperWallet::load_or_new(&app_directory, network, chain_api.clone())?;
             // FIXME: the dependency relationship here is overly convoluted.
             thread::spawn({
                 let super_wallet = super_wallet.clone();
-                move || {
-                    conn_handler.run(super_wallet.inner.clone(), {
-                        let wallet_streams = super_wallet.wallet_streams.clone();
-                        move |master_appkey, txs| {
-                            let wallet_streams = wallet_streams.lock().unwrap();
-                            if let Some(stream) = wallet_streams.get(&master_appkey) {
-                                if let Err(err) = stream.add(txs.into()) {
-                                    tracing::error!(
-                                        {
-                                            master_appkey = master_appkey.to_redacted_string(),
-                                            err = err.to_string(),
-                                        },
-                                        "Failed to add txs to stream"
-                                    );
-                                }
-                            }
-                        }
-                    })
-                }
+                move || conn_handler.run(super_wallet.inner.clone(), tx_sink(&super_wallet))
             });
             loaded_wallets.insert(network, super_wallet);
             chain_apis.insert(network, chain_api);
@@ -199,10 +245,7 @@ impl Settings {
         url: String,
         is_backup: bool,
     ) -> Result<ConnectionResult> {
-        let chain_api = self
-            .chain_clients
-            .get(&network)
-            .ok_or_else(|| anyhow!("network not supported {}", network))?;
+        let chain_api = electrum_client(&self.chain_clients, network)?;
 
         match chain_api.check_and_set_electrum_server_url(url.clone(), is_backup)? {
             ConnectionResult::Success => {
@@ -240,10 +283,7 @@ impl Settings {
         is_backup: bool,
     ) -> Result<ConnectionResult> {
         // Use message-passing to trust the certificate
-        let chain_api = self
-            .chain_clients
-            .get(&network)
-            .ok_or_else(|| anyhow!("network not supported {}", network))?;
+        let chain_api = electrum_client(&self.chain_clients, network)?;
 
         // Send the trust certificate message - the backend will handle persistence
         chain_api.trust_certificate(server_url.clone(), certificate);
@@ -279,10 +319,7 @@ impl Settings {
             Ok(())
         })?;
 
-        let chain_api = self
-            .chain_clients
-            .get(&network)
-            .ok_or_else(|| anyhow!("network not supported {}", network))?;
+        let chain_api = electrum_client(&self.chain_clients, network)?;
 
         chain_api.set_urls(primary, backup);
 
@@ -301,10 +338,7 @@ impl Settings {
             Ok(())
         })?;
 
-        let chain_api = self
-            .chain_clients
-            .get(&network)
-            .ok_or_else(|| anyhow!("network not supported {}", network))?;
+        let chain_api = electrum_client(&self.chain_clients, network)?;
 
         chain_api.set_enabled(enabled);
 
@@ -312,11 +346,24 @@ impl Settings {
         Ok(())
     }
 
+    /// Configured chain source; changes apply at the next launch.
+    #[frb(sync)]
+    pub fn get_chain_source(&self, network: BitcoinNetwork) -> ChainSource {
+        self.settings.get_chain_source(network)
+    }
+
+    /// Choose the chain source for a network.
+    pub fn set_chain_source(&mut self, network: BitcoinNetwork, source: ChainSource) -> Result<()> {
+        let mut db = self.db.lock().unwrap();
+        self.settings.mutate2(&mut *db, |settings, update| {
+            settings.set_chain_source(network, source, update);
+            Ok(())
+        })?;
+        Ok(())
+    }
+
     pub fn connect_to(&self, network: BitcoinNetwork, use_backup: bool) -> Result<()> {
-        let chain_api = self
-            .chain_clients
-            .get(&network)
-            .ok_or_else(|| anyhow!("network not supported {}", network))?;
+        let chain_api = electrum_client(&self.chain_clients, network)?;
 
         chain_api.connect_to(use_backup);
         Ok(())
@@ -380,10 +427,27 @@ impl ElectrumSettings {
 
 #[frb(mirror(ChainStatus))]
 pub struct _ChainStatus {
+    pub state: ChainStatusState,
+    pub detail: ChainStatusDetail,
+}
+
+#[frb(mirror(ChainStatusDetail))]
+pub enum _ChainStatusDetail {
+    Electrum(ElectrumStatus),
+    CompactFilters(FilterStatus),
+}
+
+#[frb(mirror(ElectrumStatus))]
+pub struct _ElectrumStatus {
     pub primary_url: String,
     pub backup_url: String,
     pub on_backup: bool,
-    pub state: ChainStatusState,
+}
+
+#[frb(mirror(FilterStatus))]
+pub struct _FilterStatus {
+    pub peers: u32,
+    pub progress: f32,
 }
 
 #[frb(mirror(ChainStatusState))]
@@ -416,4 +480,11 @@ pub enum _ElectrumEnabled {
     All,
     PrimaryOnly,
     None,
+}
+
+/// Dart mirror of `ChainSource`; keep variants in step.
+#[frb(mirror(ChainSource))]
+pub enum _ChainSource {
+    Electrum,
+    CompactFilters,
 }
