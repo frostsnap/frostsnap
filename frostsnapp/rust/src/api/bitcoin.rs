@@ -107,26 +107,43 @@ impl BitcoinNetworkExt for BitcoinNetwork {
     fn validate_destination_address(&self, uri: &str) -> Result<SendToRecipient, String> {
         let uri = uri.trim();
 
-        // Try parsing as BIP21 URI first
-        if let Ok(parsed) = uri.parse::<bip21::Uri<bitcoin::address::NetworkUnchecked>>() {
+        // The scheme is case-insensitive, and QR codes often carry "BITCOIN:" because uppercase
+        // packs smaller. `get` rather than a slice: the bip21 crate slices its first eight bytes
+        // unchecked and panics when that cuts a multi-byte character, so never hand it one.
+        let is_bip21_uri = uri
+            .get(..8)
+            .is_some_and(|scheme| scheme.eq_ignore_ascii_case("bitcoin:"));
+
+        if is_bip21_uri {
+            // Input with the scheme can never parse as a plain address, so a failure here is
+            // the error to show. The crate's outer error only says "invalid BIP21 URI"; the
+            // detail is in the inner one.
+            let parsed = uri
+                .parse::<bip21::Uri<bitcoin::address::NetworkUnchecked>>()
+                .map_err(|e| {
+                    let detail = match e {
+                        bip21::de::Error::Uri(uri_err) => uri_err.to_string(),
+                        bip21::de::Error::Extras(never) => match never {},
+                    };
+                    format!("Invalid BIP21 URI: {detail}")
+                })?;
             let amount = parsed.amount.map(|amt| amt.to_sat());
             let address = parsed
                 .address
                 .require_network(*self)
                 .map_err(|e| format!("Wrong network: {}", e))?;
-            Ok(SendToRecipient { address, amount })
-        } else {
-            // Not a URI -- try as plain address
-            let address = bitcoin::Address::from_str(uri)
-                // Rust-bitcoin ParseError is generally inappropriate "legacy address base58 string"
-                .map_err(|_| "Invalid address".to_string())?
-                .require_network(*self)
-                .map_err(|e| format!("Wrong network: {}", e))?;
-            Ok(SendToRecipient {
-                address,
-                amount: None,
-            })
+            return Ok(SendToRecipient { address, amount });
         }
+
+        let address = bitcoin::Address::from_str(uri)
+            // Rust-bitcoin ParseError is generally inappropriate "legacy address base58 string"
+            .map_err(|_| "Invalid address".to_string())?
+            .require_network(*self)
+            .map_err(|e| format!("Wrong network: {}", e))?;
+        Ok(SendToRecipient {
+            address,
+            amount: None,
+        })
     }
 
     #[frb(sync)]
@@ -935,5 +952,37 @@ mod test {
     fn parse_imported_psbt_rejects_a_file_that_is_not_a_psbt() {
         assert!(parse_imported_psbt(b"not a PSBT").is_err());
         assert!(parse_imported_psbt(&[0xFFu8; 1024]).is_err());
+    }
+
+    // The BIP173 test vector: the address of private key 1, so nobody's funds.
+    const TESTNET_ADDR: &str = "tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx";
+
+    /// A "bitcoin:" URI can never parse as a plain address, so falling back to that path
+    /// used to hide every URI problem behind "Invalid address".
+    #[test]
+    fn a_bip21_uri_with_an_unknown_required_param_names_it() {
+        let uri = format!("bitcoin:{TESTNET_ADDR}?req-somethingnew=1");
+        let err = BitcoinNetwork::Signet
+            .validate_destination_address(&uri)
+            .unwrap_err();
+        assert!(err.contains("req-somethingnew"), "got: {err}");
+    }
+
+    #[test]
+    fn a_bip21_uri_with_a_bad_amount_says_so() {
+        let uri = format!("bitcoin:{TESTNET_ADDR}?amount=lots");
+        let err = BitcoinNetwork::Signet
+            .validate_destination_address(&uri)
+            .unwrap_err();
+        assert!(err.to_lowercase().contains("amount"), "got: {err}");
+    }
+
+    /// The bip21 crate panics when its eighth byte falls inside a multi-byte character.
+    /// Pasted text can contain one (here a ratio colon), so it must come back as an error.
+    #[test]
+    fn a_multi_byte_character_across_the_scheme_boundary_is_an_error_not_a_panic() {
+        assert!(BitcoinNetwork::Signet
+            .validate_destination_address("bitcoin\u{2236}x")
+            .is_err());
     }
 }
