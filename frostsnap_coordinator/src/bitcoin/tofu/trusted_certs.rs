@@ -15,12 +15,51 @@ pub struct TrustedCertificate {
     pub added_at: i64, // Unix timestamp
 }
 
+/// The host name a trusted certificate is pinned to, with its case folded.
+///
+/// Host names are case-insensitive, so `Electrum.Frostsn.App` and `electrum.frostsn.app` have to
+/// land on the same entry: otherwise the first spelling gets an entry of its own and quietly
+/// side-steps the pin on the second. Folding lives in the only ordinary constructor, so a lookup
+/// added later cannot forget to do it. There is deliberately no `Borrow<str>` impl: it would let
+/// `HashMap::get` take a bare `&str` and skip the constructor again.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct TrustKey(String);
+
+impl TrustKey {
+    pub fn new(host: impl AsRef<str>) -> Self {
+        Self(host.as_ref().to_ascii_lowercase())
+    }
+
+    /// A key read back from the database, kept exactly as it was stored.
+    ///
+    /// The in-memory key has to match the row it came from. `persist_update` does
+    /// `INSERT OR REPLACE` keyed by this value, so lowercasing on load would write a new row and
+    /// orphan the original, and `remove_certificate` would never delete it. A row stored before
+    /// canonicalisation therefore stays unreachable and the user is prompted once more, which is
+    /// the safe direction.
+    fn from_stored(stored: String) -> Self {
+        Self(stored)
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for TrustKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct TrustedCertificates {
     /// The network this certificate store is for
     network: bitcoin::Network,
-    /// Maps server_url -> trusted certificate
-    certificates: HashMap<String, TrustedCertificate>,
+    /// Maps trust key -> trusted certificate. An entry persisted before host names were
+    /// canonicalised keeps its stored case and so is never found again: the user gets prompted
+    /// once more, which is the safe direction.
+    certificates: HashMap<TrustKey, TrustedCertificate>,
 }
 
 #[derive(Debug, Clone)]
@@ -28,11 +67,11 @@ pub enum CertificateMutation {
     Add {
         network: bitcoin::Network,
         certificate: CertificateDer<'static>,
-        server_url: String,
+        server_url: TrustKey,
     },
     Remove {
         network: bitcoin::Network,
-        server_url: String,
+        server_url: TrustKey,
     },
 }
 
@@ -75,7 +114,7 @@ impl TrustedCertificates {
     pub fn add_certificate(
         &mut self,
         cert: CertificateDer<'static>,
-        server_url: String,
+        server_url: TrustKey,
         mutations: &mut Vec<CertificateMutation>,
     ) {
         // HashMap will automatically replace any existing entry
@@ -91,7 +130,7 @@ impl TrustedCertificates {
 
     pub fn remove_certificate(
         &mut self,
-        server_url: String,
+        server_url: TrustKey,
         mutations: &mut Vec<CertificateMutation>,
     ) {
         self.mutate(
@@ -107,21 +146,20 @@ impl TrustedCertificates {
     pub fn find_certificate_by_fingerprint(
         &self,
         fingerprint: &str,
-    ) -> Option<(&str, &TrustedCertificate)> {
+    ) -> Option<(&TrustKey, &TrustedCertificate)> {
         self.certificates
             .iter()
             .find(|(_, cert)| cert.certificate.sha256_fingerprint() == fingerprint)
-            .map(|(url, cert)| (url.as_str(), cert))
     }
 
-    pub fn get_all_certificates(&self) -> Vec<(String, TrustedCertificate)> {
+    pub fn get_all_certificates(&self) -> Vec<(TrustKey, TrustedCertificate)> {
         self.certificates
             .iter()
             .map(|(url, cert)| (url.clone(), cert.clone()))
             .collect()
     }
 
-    pub fn get_certificate_for_server(&self, server_url: &str) -> Option<&CertificateDer<'_>> {
+    pub fn get_certificate_for_server(&self, server_url: &TrustKey) -> Option<&CertificateDer<'_>> {
         self.certificates.get(server_url).map(|tc| &tc.certificate)
     }
 
@@ -218,7 +256,9 @@ impl Persist<rusqlite::Connection> for TrustedCertificates {
                         cert.added_at
                     );
                     // Directly insert to preserve the original added_at timestamp
-                    trusted_certs.certificates.insert(server_url, cert);
+                    trusted_certs
+                        .certificates
+                        .insert(TrustKey::from_stored(server_url), cert);
                 }
                 Err(e) => {
                     tracing::warn!("Failed to load trusted certificate: {:?}", e);
@@ -257,7 +297,7 @@ impl Persist<rusqlite::Connection> for TrustedCertificates {
                          VALUES (?1, ?2, ?3, ?4)",
                         params![
                             network.to_string(),
-                            server_url,
+                            server_url.as_str(),
                             certificate.as_ref(),
                             added_at
                         ],
@@ -275,7 +315,7 @@ impl Persist<rusqlite::Connection> for TrustedCertificates {
 
                     let rows_affected = conn.execute(
                         "DELETE FROM fs_trusted_certificates WHERE network = ?1 AND server_url = ?2",
-                        params![network.to_string(), server_url],
+                        params![network.to_string(), server_url.as_str()],
                     )?;
 
                     if rows_affected == 0 {
@@ -316,7 +356,7 @@ mod tests {
         let mut mutations = Vec::new();
         store.add_certificate(
             cert.clone(),
-            "test.example.com:443".to_string(),
+            TrustKey::new("test.example.com:443"),
             &mut mutations,
         );
 
@@ -328,7 +368,7 @@ mod tests {
         assert_eq!(loaded_store.certificates.len(), initial_count + 1);
         assert!(loaded_store
             .certificates
-            .contains_key("test.example.com:443"));
+            .contains_key(&TrustKey::new("test.example.com:443")));
 
         Ok(())
     }
@@ -346,14 +386,14 @@ mod tests {
         let mut mutations = Vec::new();
         store.add_certificate(
             cert.clone(),
-            "test.example.com:443".to_string(),
+            TrustKey::new("test.example.com:443"),
             &mut mutations,
         );
         store.persist_update(&mut conn, mutations)?;
 
         // Remove by server URL
         let mut mutations = Vec::new();
-        store.remove_certificate("test.example.com:443".to_string(), &mut mutations);
+        store.remove_certificate(TrustKey::new("test.example.com:443"), &mut mutations);
         store.persist_update(&mut conn, mutations)?;
 
         // Verify it's removed
@@ -373,7 +413,9 @@ mod tests {
             TrustedCertificates::migrate(&mut conn)?;
             let store1 = TrustedCertificates::load(&mut conn, bitcoin::Network::Bitcoin)?;
             assert_eq!(store1.certificates.len(), 1);
-            assert!(store1.certificates.contains_key(ELECTRUM_FROSTSN_APP_URL));
+            assert!(store1
+                .certificates
+                .contains_key(&TrustKey::new(ELECTRUM_FROSTSN_APP_URL)));
         }
 
         // Second initialization - should NOT insert again
@@ -382,7 +424,9 @@ mod tests {
             TrustedCertificates::migrate(&mut conn)?;
             let store2 = TrustedCertificates::load(&mut conn, bitcoin::Network::Bitcoin)?;
             assert_eq!(store2.certificates.len(), 1);
-            assert!(store2.certificates.contains_key(ELECTRUM_FROSTSN_APP_URL));
+            assert!(store2
+                .certificates
+                .contains_key(&TrustKey::new(ELECTRUM_FROSTSN_APP_URL)));
 
             // Verify there's still only one row in the database
             let count: i64 =
@@ -405,17 +449,19 @@ mod tests {
         let add_mutation = CertificateMutation::Add {
             network: bitcoin::Network::Bitcoin,
             certificate: cert.clone(),
-            server_url: "test.example.com:443".to_string(),
+            server_url: TrustKey::new("test.example.com:443"),
         };
 
         assert!(store.apply_mutation(&add_mutation));
         assert_eq!(store.certificates.len(), initial_count + 1);
-        assert!(store.certificates.contains_key("test.example.com:443"));
+        assert!(store
+            .certificates
+            .contains_key(&TrustKey::new("test.example.com:443")));
 
         // Test remove mutation
         let remove_mutation = CertificateMutation::Remove {
             network: bitcoin::Network::Bitcoin,
-            server_url: "test.example.com:443".to_string(),
+            server_url: TrustKey::new("test.example.com:443"),
         };
 
         assert!(store.apply_mutation(&remove_mutation));
