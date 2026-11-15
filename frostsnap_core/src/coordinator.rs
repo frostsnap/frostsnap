@@ -728,7 +728,7 @@ impl FrostCoordinator {
                                 )
                             })?;
 
-                        // contributers are the devices plus one coordinator
+                        // contributors are the devices plus one coordinator
                         if state.certifier.is_finished() {
                             let certified_keygen = state.certifier
                                 .finish()
@@ -901,7 +901,7 @@ impl FrostCoordinator {
                     if !session.parties().contains(signer_index) {
                         return Err(Error::coordinator_invalid_message(
                             message_kind,
-                            "Signer was not a particpant for this session",
+                            "Signer was not a participant for this session",
                         ));
                     }
 

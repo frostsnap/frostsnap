@@ -183,7 +183,7 @@ pub trait Kind {
     fn kind(&self) -> &'static str;
 }
 
-/// The hash of a threshold access structure for a particualr key
+/// The hash of a threshold access structure for a particular key
 #[derive(Clone, Copy, PartialEq, Ord, PartialOrd, Eq, Hash)]
 pub struct AccessStructureId(pub [u8; 32]);
 
