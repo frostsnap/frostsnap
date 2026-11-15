@@ -64,11 +64,11 @@ impl ConfirmationTarget {
 pub struct ConfirmationEstimates {
     /// Unix timestamp of last refresh.
     pub last_refresh: u64,
-    /// 1 confirmation.
+    /// Rate to confirm within 3 blocks.
     pub low: f32,
-    /// 2 confirmations.
+    /// Rate to confirm within 2 blocks.
     pub medium: f32,
-    /// 3 confirmations.
+    /// Rate to confirm within 1 block.
     pub high: f32,
 }
 
@@ -213,21 +213,25 @@ impl BuildTxState {
         }
         self._trigger_changed();
 
-        let estimates = self._refresh_confirmation_estimates()?;
+        let estimates = self._refresh_confirmation_estimates();
 
         self.is_refreshing.store(false, Ordering::Release);
         self._trigger_changed();
 
-        Ok(Some(estimates))
+        estimates.map(Some)
     }
 
     fn _refresh_confirmation_estimates(&self) -> anyhow::Result<ConfirmationEstimates> {
-        let estimates = self.super_wallet.estimate_fee(vec![3, 2, 1])?;
+        let estimates = self.super_wallet.estimate_fee(vec![1, 2, 3])?;
+        // Sorted by target, and a target the server has no estimate for is left out.
+        let [(1, high), (2, medium), (3, low)] = estimates[..] else {
+            anyhow::bail!("incomplete fee estimates: {estimates:?}");
+        };
         let confirmation_estimates = ConfirmationEstimates {
             last_refresh: std::time::UNIX_EPOCH.elapsed()?.as_secs(),
-            low: estimates[0].1 as _,
-            medium: estimates[1].1 as _,
-            high: estimates[2].1 as _,
+            low: low as _,
+            medium: medium as _,
+            high: high as _,
         };
         let mut inner = self.inner.write().unwrap();
         if inner.confirmation_estimates != Some(confirmation_estimates) {
@@ -245,13 +249,13 @@ impl BuildTxState {
             ConfirmationTarget::High => return Some(1),
             ConfirmationTarget::Custom(feerate) => {
                 let targets = inner.confirmation_estimates?;
-                if feerate <= targets.high {
+                if feerate >= targets.high {
                     return Some(1);
                 }
-                if feerate <= targets.medium {
+                if feerate >= targets.medium {
                     return Some(2);
                 }
-                if feerate <= targets.low {
+                if feerate >= targets.low {
                     return Some(3);
                 }
                 return None;
