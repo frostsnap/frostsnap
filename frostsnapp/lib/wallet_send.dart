@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:frostsnap/camera/camera.dart';
 import 'package:frostsnap/contexts.dart';
 import 'package:flutter/services.dart';
@@ -7,7 +9,6 @@ import 'package:frostsnap/id_ext.dart';
 import 'package:frostsnap/maybe_fullscreen_dialog.dart';
 import 'package:frostsnap/snackbar.dart';
 import 'package:frostsnap/src/rust/api.dart';
-import 'package:frostsnap/src/rust/api/broadcast.dart';
 import 'package:frostsnap/src/rust/api/send.dart';
 import 'package:frostsnap/src/rust/api/signing.dart';
 import 'package:frostsnap/src/rust/api/super_wallet.dart';
@@ -49,7 +50,7 @@ class WalletSendPage extends StatefulWidget {
 class _WalletSendPageState extends State<WalletSendPage> {
   static const sectionPadding = EdgeInsets.fromLTRB(16.0, 0.0, 16.0, 8.0);
 
-  late final UnitBroadcastSubscription sub;
+  late final StreamSubscription<void> _changesSub;
 
   late final ScrollController scrollController;
   late final BuildTxState state;
@@ -81,8 +82,9 @@ class _WalletSendPageState extends State<WalletSendPage> {
     if (state.confirmationEstimates() == null)
       state.refreshConfirmationEstimates();
 
-    sub = state.subscribe();
-    sub.start().listen((_) => mounted ? setState(() {}) : null);
+    _changesSub = state.changes().watch().listen(
+      (_) => mounted ? setState(() {}) : null,
+    );
 
     addrController = AddressInputController(state);
     addrController.controller.addListener(_onRecipientTextChanged);
@@ -132,7 +134,7 @@ class _WalletSendPageState extends State<WalletSendPage> {
   void dispose() {
     amountController.dispose();
     addrController.dispose();
-    sub.dispose();
+    _changesSub.cancel();
     state.dispose();
     if (widget.scrollController == null) scrollController.dispose();
     super.dispose();
