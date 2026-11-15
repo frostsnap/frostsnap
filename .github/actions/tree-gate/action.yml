@@ -1,0 +1,73 @@
+name: "Tree gate"
+description: "Looks up, or records, that this workflow already passed on the tree under test"
+inputs:
+  record:
+    description: "'true' records the pass instead of looking it up"
+    required: false
+    default: "false"
+  needs:
+    description: "toJSON(needs) of the recording job; recording fails unless it covers every other job"
+    required: false
+    default: "{}"
+outputs:
+  skip:
+    description: "'true' when this workflow already passed on this tree"
+    value: ${{ steps.lookup.outputs.cache-hit == 'true' }}
+
+runs:
+  using: "composite"
+  steps:
+    # A fork PR can save any cache key into its own PR scope from a workflow it edited, then
+    # force-push a tree that would fail, so only pushers who could already write here are trusted.
+    # A re-run attempt bypasses the gate so a full run can always be forced.
+    - id: key
+      if: >-
+        (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository)
+        && (inputs.record == 'true' || github.run_attempt == '1')
+      shell: bash
+      env:
+        WORKFLOW: ${{ github.workflow }}
+      # Keyed on the tree, not the commit, so re-signing (new hashes, same content) still hits. On
+      # pull_request HEAD is GitHub's merge commit, so the base is part of the key.
+      run: echo "key=ci-pass-${WORKFLOW// /-}-$(git rev-parse 'HEAD^{tree}')" >> "$GITHUB_OUTPUT"
+    - id: lookup
+      if: steps.key.outputs.key && inputs.record != 'true'
+      uses: actions/cache/restore@v4
+      with:
+        path: .ci-pass
+        key: ${{ steps.key.outputs.key }}
+    - if: steps.lookup.outputs.cache-hit == 'true'
+      shell: bash
+      run: echo "Already passed on this tree in $(cat .ci-pass)" | tee -a "$GITHUB_STEP_SUMMARY"
+    # A job left out of needs could fail while the pass is still recorded, and every later run on
+    # this tree would then skip it.
+    - if: steps.key.outputs.key && inputs.record == 'true'
+      shell: bash
+      env:
+        NEEDS: ${{ inputs.needs }}
+        WORKFLOW_REF: ${{ github.workflow_ref }}
+        RECORDING_JOB: ${{ github.job }}
+      run: |
+        workflow_file="${WORKFLOW_REF#"$GITHUB_REPOSITORY/"}"
+        workflow_file="${workflow_file%@*}"
+        jobs=$(yq '.jobs | keys | .[]' "$workflow_file")
+        needed=$(jq -r 'keys[]' <<<"$NEEDS")
+        if [ -z "$jobs" ]; then
+          echo "::error::no jobs found in $workflow_file"
+          exit 1
+        fi
+        missing=$(comm -23 \
+          <(grep -vxF -e tree-gate -e "$RECORDING_JOB" <<<"$jobs" | sort) \
+          <(sort <<<"$needed"))
+        if [ -n "$missing" ]; then
+          echo "::error::$RECORDING_JOB must need every job; missing: ${missing//$'\n'/ }"
+          exit 1
+        fi
+    - if: steps.key.outputs.key && inputs.record == 'true'
+      shell: bash
+      run: echo "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" > .ci-pass
+    - if: steps.key.outputs.key && inputs.record == 'true'
+      uses: actions/cache/save@v4
+      with:
+        path: .ci-pass
+        key: ${{ steps.key.outputs.key }}
