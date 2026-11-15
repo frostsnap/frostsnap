@@ -1,20 +1,19 @@
+import 'package:frostsnap/device_selector.dart';
 import 'package:frostsnap/camera/camera.dart';
 import 'package:frostsnap/contexts.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'package:frostsnap/global.dart';
-import 'package:frostsnap/id_ext.dart';
 import 'package:frostsnap/maybe_fullscreen_dialog.dart';
 import 'package:frostsnap/snackbar.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/broadcast.dart';
 import 'package:frostsnap/src/rust/api/send.dart';
+import 'package:frostsnap/src/rust/api/signer_selection.dart';
 import 'package:frostsnap/src/rust/api/signing.dart';
 import 'package:frostsnap/src/rust/api/super_wallet.dart';
 import 'package:frostsnap/src/rust/api/transaction.dart';
 import 'package:frostsnap/theme.dart';
-import 'package:frostsnap/device_colors.dart';
-import 'package:frostsnap/genuine_badge.dart';
 import 'package:frostsnap/wallet.dart';
 import 'package:frostsnap/wallet_send_controllers.dart';
 import 'package:frostsnap/wallet_send_feerate_picker.dart';
@@ -53,6 +52,7 @@ class _WalletSendPageState extends State<WalletSendPage> {
 
   late final ScrollController scrollController;
   late final BuildTxState state;
+  late final SignerSelection selection;
 
   /// The coin selection confirming the amount produced. Reserves nothing; committing it (the
   /// "Sign transaction" tap) is what allocates the change address.
@@ -75,9 +75,9 @@ class _WalletSendPageState extends State<WalletSendPage> {
     state = widget.buildTx();
 
     // We only support one access structure for now.
-    state.setAccessId(
-      accessId: state.accessStructures().first.accessStructureId(),
-    );
+    final accessStructure = state.accessStructures().first;
+    state.setAccessId(accessId: accessStructure.accessStructureId());
+    selection = coord.signerSelection(accessStructure: accessStructure);
     if (state.confirmationEstimates() == null)
       state.refreshConfirmationEstimates();
 
@@ -483,15 +483,6 @@ class _WalletSendPageState extends State<WalletSendPage> {
       ),
     );
 
-    final accessStruct = state.accessStruct()!;
-    final threshold = accessStruct.threshold();
-    final selectedDevices = state.selectedSigners();
-    final remaining = threshold - selectedDevices.length;
-    final signers = state.availableSigners().sortByKeyShareIndex(
-      accessStruct,
-      (signer) => signer.$1,
-    );
-
     final signersInputCard = Card.outlined(
       color: cardColor,
       shape: cardShape(context),
@@ -499,57 +490,24 @@ class _WalletSendPageState extends State<WalletSendPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          ListTile(
-            dense: true,
-            title: Text('Select Signers'),
-            trailing: Text('${threshold} required'),
-          ),
-          Column(
-            children: signers.map((device) {
-              final (id, name) = device;
-              final nonces = coord.noncesAvailable(id: id);
-              final isSelected = state.isSignerSelected(dId: id);
-
-              if (nonces == 0) state.deselectSigner(dId: id);
-
-              return CheckboxListTile(
-                value: isSelected,
-                onChanged: remaining > 0 || isSelected
-                    ? (selected) => selected ?? false
-                          ? state.selectSigner(dId: id)
-                          : state.deselectSigner(dId: id)
-                    : null,
-                secondary: CaseAccent(
-                  id: id,
-                  builder: (context, accent) => Icon(Icons.key, color: accent),
-                ),
-                title: Row(
-                  spacing: 8,
-                  children: [
-                    Expanded(
-                      child: Text(
-                        name ?? '<unknown>',
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    GenuineBadge.forDeviceId(id),
-                  ],
-                ),
-                subtitle: nonces == 0
-                    ? Text(
-                        'no nonces remaining or too many signing sessions',
-                        style: TextStyle(color: theme.colorScheme.error),
-                      )
-                    : null,
-              );
-            }).toList(),
+          DeviceSelectorList(
+            selection: selection,
+            title: 'Select Signers',
+            trailing: '${selection.threshold()} required',
           ),
           Padding(
             padding: const EdgeInsets.all(12.0),
-            child: FilledButton(
-              onPressed: remaining == 0 ? () => signersDone(context) : null,
-              child: Text(
-                remaining > 0 ? 'Select ${remaining} more' : 'Sign transaction',
+            child: SignerSelectionBuilder(
+              selection: selection,
+              builder: (context) => FilledButton(
+                onPressed: selection.remaining() == 0
+                    ? () => signersDone(context)
+                    : null,
+                child: Text(
+                  selection.remaining() > 0
+                      ? 'Select ${selection.remaining()} more'
+                      : 'Sign transaction',
+                ),
               ),
             ),
           ),
@@ -662,7 +620,7 @@ class _WalletSendPageState extends State<WalletSendPage> {
           signingParams: StartSigning(
             accessStructureRef: access.accessStructureRef(),
             unsignedTx: unsignedTx,
-            devices: state.selectedSigners().toList(),
+            devices: selection.selected(),
           ),
         ),
       ),

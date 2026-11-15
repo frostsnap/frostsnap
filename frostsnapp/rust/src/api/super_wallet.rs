@@ -17,7 +17,6 @@ pub use frostsnap_coordinator::verify_address::VerifyAddressProtocolState;
 
 use frostsnap_core::bitcoin_transaction::TransactionTemplate;
 use frostsnap_core::{DeviceId, KeyId, MasterAppkey};
-use std::collections::HashSet;
 use std::str::FromStr;
 use std::sync::atomic::AtomicBool;
 use std::sync::RwLock;
@@ -244,7 +243,6 @@ impl SuperWallet {
             .blocking_read()
             .get_frost_key(master_appkey.key_id())?;
         let state = BuildTxState {
-            coord,
             super_wallet: self.clone(),
             frost_key,
             broadcast: Broadcast::default(),
@@ -254,7 +252,6 @@ impl SuperWallet {
                 confirmation_target: super::transaction::ConfirmationTarget::default(),
                 recipients: Vec::new(),
                 access_id: None,
-                signers: HashSet::new(),
             })),
         };
         Some(state)

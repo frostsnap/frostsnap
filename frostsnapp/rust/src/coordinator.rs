@@ -75,6 +75,27 @@ pub struct FfiCoordinator {
 
 type Signal = Box<dyn Sink<()>>;
 
+pub(crate) struct SignerDevice {
+    pub id: DeviceId,
+    pub name: Option<String>,
+    pub share_index: ShareIndex,
+    pub nonces: u32,
+}
+
+pub(crate) struct Signers {
+    pub threshold: u16,
+    pub devices: Vec<SignerDevice>,
+}
+
+fn best_nonce_stream(coordinator: &FrostCoordinator, id: DeviceId) -> u32 {
+    coordinator
+        .nonces_available(id)
+        .values()
+        .copied()
+        .max()
+        .unwrap_or(0)
+}
+
 impl FfiCoordinator {
     pub fn new(
         db: Arc<Mutex<rusqlite::Connection>>,
@@ -487,14 +508,33 @@ impl FfiCoordinator {
     }
 
     pub fn nonces_available(&self, id: DeviceId) -> u32 {
-        self.coordinator
-            .lock()
-            .unwrap()
-            .nonces_available(id)
-            .values()
-            .copied()
-            .max()
-            .unwrap_or(0)
+        best_nonce_stream(&self.coordinator.lock().unwrap(), id)
+    }
+
+    pub(crate) fn signers(&self, access_structure: &CoordAccessStructure) -> Signers {
+        let mut shares: Vec<_> = access_structure.iter_shares().collect();
+        shares.sort_by_key(|&(_, share_index)| share_index);
+        let nonces: Vec<_> = {
+            let coordinator = self.coordinator.lock().unwrap();
+            shares
+                .iter()
+                .map(|&(id, _)| best_nonce_stream(&coordinator, id))
+                .collect()
+        };
+        let device_names = self.device_names.lock().unwrap();
+        Signers {
+            threshold: access_structure.threshold(),
+            devices: shares
+                .into_iter()
+                .zip(nonces)
+                .map(|((id, share_index), nonces)| SignerDevice {
+                    id,
+                    name: device_names.get(id),
+                    share_index,
+                    nonces,
+                })
+                .collect(),
+        }
     }
 
     pub fn nonce_replenish_request(&self, devices: BTreeSet<DeviceId>) -> NonceReplenishRequest {
@@ -530,16 +570,17 @@ impl FfiCoordinator {
         task: WireSignTask,
         sink: impl Sink<SigningState>,
     ) -> anyhow::Result<()> {
-        let mut coordinator = self.coordinator.lock().unwrap();
-        let session_id =
-            coordinator.staged_mutate(&mut self.db.lock().unwrap(), |coordinator| {
+        let session_id = self.coordinator.lock().unwrap().staged_mutate(
+            &mut self.db.lock().unwrap(),
+            |coordinator| {
                 Ok(coordinator.start_sign(
                     access_structure_ref,
                     task,
                     &devices,
                     &mut rand::thread_rng(),
                 )?)
-            })?;
+            },
+        )?;
 
         let signals = self.signing_session_signals.clone();
         let sink = sink.inspect(move |_| {

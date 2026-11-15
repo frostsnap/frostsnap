@@ -7,8 +7,9 @@ import 'package:flutter/material.dart';
 import 'package:frostsnap/camera/camera.dart';
 import 'package:frostsnap/contexts.dart';
 import 'package:frostsnap/copy_feedback.dart';
+import 'package:frostsnap/device_selector.dart';
+import 'package:frostsnap/global.dart';
 import 'package:frostsnap/maybe_fullscreen_dialog.dart';
-import 'package:frostsnap/sign_message.dart';
 import 'package:frostsnap/snackbar.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/qr.dart';
@@ -31,9 +32,11 @@ class LoadPsbtPage extends StatefulWidget {
 
 class LoadPsbtPageState extends State<LoadPsbtPage> {
   String? fileContents;
-  Set<DeviceId> selectedDevices = <DeviceId>{};
+  late final accessStructure = widget.wallet.frostKey()!.accessStructures()[0];
+  late final selection = coord.signerSelection(
+    accessStructure: accessStructure,
+  );
   SignedTx? signedTx;
-  final selectorKey = Key('key-selector');
 
   Future<bool> tryStartSigningPsbt(
     BuildContext context,
@@ -94,12 +97,9 @@ class LoadPsbtPageState extends State<LoadPsbtPage> {
             psbtMan: psbtMan,
             psbt: psbt,
             signingParams: StartSigning(
-              accessStructureRef: wallet
-                  .frostKey()!
-                  .accessStructures()[0]
-                  .accessStructureRef(),
+              accessStructureRef: accessStructure.accessStructureRef(),
               unsignedTx: unsignedTx,
-              devices: selectedDevices.toList(),
+              devices: selection.selected(),
             ),
           ),
         ),
@@ -111,11 +111,8 @@ class LoadPsbtPageState extends State<LoadPsbtPage> {
 
   @override
   Widget build(BuildContext context) {
-    final frostKey = widget.wallet.frostKey()!;
-    final accessStructure = frostKey.accessStructures()[0];
-    final enoughSelected =
-        selectedDevices.length == accessStructure.threshold();
-    final scanPsbtButton = TextButton.icon(
+    final threshold = selection.threshold();
+    Widget scanPsbtButton(bool enoughSelected) => TextButton.icon(
       onPressed: !enoughSelected
           ? null
           : () async {
@@ -135,7 +132,7 @@ class LoadPsbtPageState extends State<LoadPsbtPage> {
     );
     // ...
 
-    final loadPsbtFileButton = TextButton.icon(
+    Widget loadPsbtFileButton(bool enoughSelected) => TextButton.icon(
       onPressed: !enoughSelected
           ? null
           : () async {
@@ -162,19 +159,10 @@ class LoadPsbtPageState extends State<LoadPsbtPage> {
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
           child: Text(
-            'Select ${accessStructure.threshold()} device${accessStructure.threshold() > 1 ? "s" : ""} to sign with.',
+            'Select $threshold device${threshold > 1 ? "s" : ""} to sign with.',
           ),
         ),
-        SigningDeviceSelector(
-          key: selectorKey,
-          initialSet: selectedDevices,
-          frostKey: frostKey,
-          onChanged: (selected) {
-            setState(() {
-              selectedDevices = selected;
-            });
-          },
-        ),
+        DeviceSelectorList(selection: selection),
       ],
     );
 
@@ -205,10 +193,19 @@ class LoadPsbtPageState extends State<LoadPsbtPage> {
           Divider(height: 1),
           Padding(
             padding: const EdgeInsets.all(16.0),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              spacing: 8,
-              children: [scanPsbtButton, loadPsbtFileButton],
+            child: SignerSelectionBuilder(
+              selection: selection,
+              builder: (context) {
+                final enoughSelected = selection.remaining() == 0;
+                return Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  spacing: 8,
+                  children: [
+                    scanPsbtButton(enoughSelected),
+                    loadPsbtFileButton(enoughSelected),
+                  ],
+                );
+              },
             ),
           ),
         ],
