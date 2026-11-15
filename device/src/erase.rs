@@ -1,3 +1,4 @@
+use crate::flash::HEADER_SECTORS;
 use crate::ui::{self, UserInteraction};
 use alloc::boxed::Box;
 use frostsnap_comms::{CommsMisc, DeviceSendBody};
@@ -12,13 +13,17 @@ pub struct Erase {
 }
 
 /// Erase state machine. We split the erase into two phases so we can send confirmation after the
-/// first sector is erased. This proves to the coordinator that data destruction has begun and it's
+/// header is erased. This proves to the coordinator that data destruction has begun and it's
 /// safe to remove the device from access structures, even if the device loses power before
 /// completing the full erase.
+///
+/// The header is an A/B slot, so *both* of its sectors must go before confirming: with only one
+/// erased, the other still reads as a valid header and the device would boot with its old
+/// identity and shares intact instead of resuming the erase.
 enum State {
     /// Show progress bar, transition to ErasingFirst
     Initial,
-    /// Erase first sector, send confirmation, transition to ErasingRest
+    /// Erase the header sectors, send confirmation, transition to ErasingRest
     ErasingFirst,
     /// Erase remaining sectors in a blocking loop with progress updates, then reset
     ErasingRest,
@@ -59,9 +64,11 @@ impl Erase {
                 ErasePoll::Pending
             }
             State::ErasingFirst => {
-                partition.erase_sector(0).expect("failed to erase sector");
+                partition
+                    .erase_sectors(0, HEADER_SECTORS)
+                    .expect("failed to erase header sectors");
                 ui.set_workflow(ui::Workflow::EraseProgress {
-                    progress: Frac::from_ratio(1, self.n_sectors),
+                    progress: Frac::from_ratio(HEADER_SECTORS, self.n_sectors),
                 });
                 self.state = State::ErasingRest;
                 ErasePoll::SendConfirmation(Box::new(DeviceSendBody::Misc(
@@ -69,7 +76,7 @@ impl Erase {
                 )))
             }
             State::ErasingRest => {
-                let mut sector = 1u32;
+                let mut sector = HEADER_SECTORS;
                 while sector < self.n_sectors {
                     let count = CHUNK_SIZE.min(self.n_sectors - sector);
                     partition

@@ -53,6 +53,9 @@ impl Header {
     }
 }
 
+/// Number of sectors at the front of NVS holding the header's A and B slots.
+pub const HEADER_SECTORS: u32 = 2;
+
 pub struct FlashHeader<'a, S> {
     ab: AbSlot<'a, S>,
 }
