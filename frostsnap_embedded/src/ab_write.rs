@@ -12,9 +12,18 @@ pub const ABWRITE_BINCODE_CONFIG: bincode::config::Configuration<
 /// `[SLOT_MAGIC][index][len][value: len bytes][crc32]`
 ///
 /// Older firmware wrote `[index][value]` with no checksum. Those slots start
-/// with their index, which counts up from 0 by one per write, so it can never
-/// reach this value within the erase endurance of the flash.
+/// with their index instead. See [`LEGACY_INDEX_LIMIT`] for telling them apart.
 const SLOT_MAGIC: u32 = 0xAB51_0701;
+/// Legacy indexes count up from 0 by one per write. Each write erases the slot,
+/// so flash erase endurance (~100k cycles) keeps them far below this.
+///
+/// A first word at or above it is not a legacy slot. In particular, power loss
+/// while programming [`SLOT_MAGIC`] can leave a partially programmed word:
+/// programming only clears bits, so the word keeps every bit set in
+/// `SLOT_MAGIC`, including the top one, and is always at least `1 << 31`. It
+/// must be treated as a torn write, not as a very new legacy slot, or the next
+/// write would erase the only good slot first.
+const LEGACY_INDEX_LIMIT: u32 = 1 << 24;
 /// magic, index and len, one `u32` each
 const HEADER_LEN: u32 = 12;
 const CRC_LEN: u32 = 4;
@@ -55,9 +64,10 @@ impl<'a, S: NorFlash> AbSlot<'a, S> {
         T: bincode::Encode,
     {
         let states = self.states();
-        // Count indexes from interrupted writes too so the index never goes
-        // backwards.
-        let next_index = match states.iter().filter_map(SlotState::index).max() {
+        // Only readable slots count. A torn slot's index was never committed,
+        // so reusing it is harmless, and it may be partially programmed into a
+        // much larger number.
+        let next_index = match states.iter().filter_map(SlotState::readable_index).max() {
             Some(index) => {
                 let next_index = index + 1;
                 if next_index == u32::MAX {
@@ -121,26 +131,17 @@ enum SlotState {
         index: u32,
         len: u32,
     },
-    /// Checksummed layout that failed verification: the write was interrupted.
-    /// The index is kept (if it reached flash) so it is never reused.
-    Torn {
-        index: Option<u32>,
-    },
+    /// Not a complete write: the checksum doesn't verify or the first word is
+    /// neither the magic nor a plausible legacy index. Power was lost while
+    /// writing it.
+    Torn,
 }
 
 impl SlotState {
-    fn index(&self) -> Option<u32> {
-        match *self {
-            SlotState::Empty => None,
-            SlotState::Legacy { index } | SlotState::Committed { index, .. } => Some(index),
-            SlotState::Torn { index } => index,
-        }
-    }
-
     fn readable_index(&self) -> Option<u32> {
         match *self {
             SlotState::Legacy { index } | SlotState::Committed { index, .. } => Some(index),
-            SlotState::Empty | SlotState::Torn { .. } => None,
+            SlotState::Empty | SlotState::Torn => None,
         }
     }
 }
@@ -162,14 +163,10 @@ impl<S: NorFlash> Slot<'_, S> {
         match first {
             u32::MAX => SlotState::Empty,
             SLOT_MAGIC => {
-                let index = (index != u32::MAX).then_some(index);
-                let torn = SlotState::Torn { index };
-                let Some(index) = index else {
-                    return torn;
-                };
-                // also rejects an unwritten (0xffffffff) length
-                if len > self.flash.size() - HEADER_LEN - CRC_LEN {
-                    return torn;
+                // Partially programmed index or length words are caught by the
+                // checksum. These just reject values we can't use.
+                if index == u32::MAX || len > self.flash.size() - HEADER_LEN - CRC_LEN {
+                    return SlotState::Torn;
                 }
 
                 let mut digest = CRC.digest();
@@ -190,12 +187,13 @@ impl<S: NorFlash> Slot<'_, S> {
                 if digest.finalize() == u32::from_le_bytes(stored_crc) {
                     SlotState::Committed { index, len }
                 } else {
-                    torn
+                    SlotState::Torn
                 }
             }
-            legacy_index => SlotState::Legacy {
+            legacy_index if legacy_index < LEGACY_INDEX_LIMIT => SlotState::Legacy {
                 index: legacy_index,
             },
+            _ => SlotState::Torn,
         }
     }
 
@@ -216,7 +214,7 @@ impl<S: NorFlash> Slot<'_, S> {
             )
             .ok()
             .map(|slot_value| slot_value.value),
-            SlotState::Empty | SlotState::Torn { .. } => None,
+            SlotState::Empty | SlotState::Torn => None,
         }
     }
 
@@ -506,6 +504,158 @@ mod test {
                 assert!(committed_index(&ab) > Some(5));
                 assert_both_committed(&ab);
             }
+        }
+    }
+
+    /// Flash that loses power after `ops_left` more erases or writes: later
+    /// ones silently do nothing, as if the device had switched off.
+    struct PowerCutFlash {
+        inner: TestNorFlash,
+        ops_left: Option<usize>,
+    }
+
+    impl PowerCutFlash {
+        fn new() -> Self {
+            Self {
+                inner: TestNorFlash::new(),
+                ops_left: None,
+            }
+        }
+
+        fn power_on(&mut self) -> bool {
+            match &mut self.ops_left {
+                None => true,
+                Some(0) => false,
+                Some(n) => {
+                    *n -= 1;
+                    true
+                }
+            }
+        }
+    }
+
+    impl embedded_storage::nor_flash::ErrorType for PowerCutFlash {
+        type Error = core::convert::Infallible;
+    }
+
+    impl embedded_storage::nor_flash::ReadNorFlash for PowerCutFlash {
+        const READ_SIZE: usize = 1;
+
+        fn read(&mut self, offset: u32, bytes: &mut [u8]) -> Result<(), Self::Error> {
+            self.inner.read(offset, bytes)
+        }
+
+        fn capacity(&self) -> usize {
+            self.inner.capacity()
+        }
+    }
+
+    impl NorFlash for PowerCutFlash {
+        const WRITE_SIZE: usize = TestNorFlash::WRITE_SIZE;
+        const ERASE_SIZE: usize = TestNorFlash::ERASE_SIZE;
+
+        fn erase(&mut self, from: u32, to: u32) -> Result<(), Self::Error> {
+            if self.power_on() {
+                self.inner.erase(from, to)?;
+            }
+            Ok(())
+        }
+
+        fn write(&mut self, offset: u32, bytes: &[u8]) -> Result<(), Self::Error> {
+            if self.power_on() {
+                self.inner.write(offset, bytes)?;
+            }
+            Ok(())
+        }
+    }
+
+    /// What power loss part way through programming the magic word can leave:
+    /// programming only clears bits, so every bit set in `SLOT_MAGIC` is still
+    /// set and some of the bits it clears may not be yet.
+    fn partial_magics() -> Vec<u32> {
+        let cleared_bits = (0..32).filter(|bit| SLOT_MAGIC & (1 << bit) == 0);
+        // one bit left to clear (e.g. 0xab510703), and only one bit cleared so far
+        cleared_bits
+            .clone()
+            .map(|bit| SLOT_MAGIC | (1 << bit))
+            .chain(cleared_bits.map(|bit| !(1u32 << bit)))
+            .collect()
+    }
+
+    /// Review of #635: a torn magic word must not be mistaken for a newer
+    /// legacy slot. If it were, the next write would erase the only good slot
+    /// first, and power loss right after that erase would leave nothing
+    /// readable. Cut power at every step of that next write and check a value
+    /// is always readable. Run from both checksummed and legacy slots.
+    #[test]
+    fn torn_magic_then_interrupted_write_keeps_a_readable_slot() {
+        for legacy in [false, true] {
+            for torn_slot in [0, 1] {
+                for partial_magic in partial_magics() {
+                    for ops in 0.. {
+                        let flash = RefCell::new(PowerCutFlash::new());
+                        let ab = AbSlot::new(FlashPartition::new(&flash, 0, 2, "ab-test"));
+                        if legacy {
+                            write_legacy(&ab.slots[0], 1, 200u32);
+                            write_legacy(&ab.slots[1], 1, 200u32);
+                        } else {
+                            ab.write(&200u32);
+                            ab.write(&200u32);
+                        }
+
+                        let slot = &ab.slots[torn_slot].flash;
+                        slot.erase_all().unwrap();
+                        slot.nor_write(0, &partial_magic.to_le_bytes()).unwrap();
+                        let context = format!(
+                            "legacy={legacy} slot {torn_slot} magic {partial_magic:#x}, \
+                             power cut after {ops} ops"
+                        );
+                        assert_eq!(ab.read::<u32>(), Some(200), "{context}");
+
+                        flash.borrow_mut().ops_left = Some(ops);
+                        ab.write(&300u32);
+                        let finished = flash.borrow().ops_left != Some(0);
+                        flash.borrow_mut().ops_left = None;
+
+                        let value = ab.read::<u32>();
+                        assert!(
+                            value == Some(200) || value == Some(300),
+                            "{context}: read {value:?}"
+                        );
+
+                        ab.write(&400u32);
+                        assert_eq!(ab.read::<u32>(), Some(400), "{context}");
+                        assert_both_committed(&ab);
+
+                        if finished {
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// A partially programmed index word in a torn slot can read as a huge
+    /// number. It must not be used to pick the next index, or the next write
+    /// could hit the "written too many times" panic.
+    #[test]
+    fn torn_index_is_not_reused_for_the_next_index() {
+        for torn_slot in [0, 1] {
+            let flash = RefCell::new(TestNorFlash::new());
+            let ab = AbSlot::new(FlashPartition::new(&flash, 0, 2, "ab-test"));
+            ab.write(&100u32);
+            ab.write(&200u32);
+
+            let slot = &ab.slots[torn_slot].flash;
+            slot.erase_all().unwrap();
+            let header = [SLOT_MAGIC, u32::MAX - 1];
+            let bytes: Vec<u8> = header.iter().flat_map(|w| w.to_le_bytes()).collect();
+            slot.nor_write(0, &bytes).unwrap();
+
+            ab.write(&300u32);
+            assert_eq!(ab.read::<u32>(), Some(300));
+            assert_eq!(committed_index(&ab), Some(2));
         }
     }
 }
