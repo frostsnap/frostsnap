@@ -123,9 +123,10 @@ pub fn recover_secret(
 
 /// Recovers the secret from a collection of shares by automatically discovering compatible subsets.
 ///
-/// This function searches through the provided shares to find a valid subset that can reconstruct
-/// a SharedKey matching the given fingerprint. It's useful when you have a collection of shares
-/// that may include duplicates, shares from different DKG sessions, or corrupted shares.
+/// Like [`find_valid_subset`], but a key is returned only if every given share that lies on it
+/// passes [`ShareBackup::extract_secret`]; a candidate that any of them fails is skipped and the
+/// search moves on. Duplicates and shares from other keys are tolerated. A share that lies
+/// on the key but fails its polynomial checksum is not: it blocks recovery of that key.
 ///
 /// # Arguments
 /// * `shares` - A slice of ShareBackup instances to search through
@@ -133,7 +134,7 @@ pub fn recover_secret(
 ///
 /// # Returns
 /// * `Some(RecoveredSecret)` - The recovered secret, shares used, and shared key
-/// * `None` - If no valid subset is found
+/// * `None` - If no key is found that every share on it fits
 ///
 /// # Example
 /// ```no_run
@@ -151,8 +152,15 @@ pub fn recover_secret_fuzzy(
     // Get share images from all shares
     let share_images: Vec<ShareImage> = shares.iter().map(|s| s.share_image()).collect();
 
-    // Try to find a valid subset of shares
-    let subset = find_valid_subset(&share_images, fingerprint, known_threshold)?;
+    // A card's 8-bit checksum is tried against several candidate keys here, which the
+    // README's single-attempt rule forbids only for keys a coordinator proposes
+    let fits = |key: &SharedKey<Normal, Zero>| {
+        shares.iter().all(|share| {
+            schnorr_fun_shim::share_image(key, share.index()) != share.share_image()
+                || share.clone().extract_secret(key).is_ok()
+        })
+    };
+    let subset = find_valid_subset_with(&share_images, fingerprint, known_threshold, fits)?;
     let shared_key = subset.shared_key;
     let full_secret_image = subset
         .includes_full_secret_backup
@@ -172,7 +180,10 @@ pub fn recover_secret_fuzzy(
     // Extract secret shares
     let mut secret_shares = Vec::with_capacity(compatible_shares.len());
     for share in &compatible_shares {
-        let secret_share = share.clone().extract_secret(&shared_key).ok()?;
+        let secret_share = share
+            .clone()
+            .extract_secret(&shared_key)
+            .expect("the search only accepts keys every card on it extracts against");
         secret_shares.push(secret_share);
     }
 
@@ -205,6 +216,9 @@ pub struct ValidSubset {
 /// Note this finds shares that are compatible with each other -- it doesn't
 /// find shares that on their own were single share wallets.
 ///
+/// A fingerprint match can be a fluke, so a caller holding the secrets should check each share's
+/// polynomial checksum against the returned key, as [`recover_secret_fuzzy`] does.
+///
 /// # Arguments
 /// * `images` - A slice of ShareImages to search through
 /// * `fingerprint` - The fingerprint that the reconstructed SharedKey must match
@@ -216,6 +230,15 @@ pub fn find_valid_subset(
     images: &[ShareImage],
     fingerprint: Fingerprint,
     known_threshold: Option<usize>,
+) -> Option<ValidSubset> {
+    find_valid_subset_with(images, fingerprint, known_threshold, |_| true)
+}
+
+fn find_valid_subset_with(
+    images: &[ShareImage],
+    fingerprint: Fingerprint,
+    known_threshold: Option<usize>,
+    accept: impl Fn(&SharedKey<Normal, Zero>) -> bool,
 ) -> Option<ValidSubset> {
     // We need at least 2 images for the fingerprint to actually filter anything
     // -- unless we know explicitly that it's the trivial 1-of-n case then we
@@ -272,7 +295,7 @@ pub fn find_valid_subset(
                         Some((_, prev_bits)) => bits_matched > *prev_bits,
                     };
 
-                    if is_better {
+                    if is_better && accept(&shared_key) {
                         best_match = Some((shared_key, bits_matched));
                         // Early exit if we found a complete match
                         if bits_matched >= fingerprint.max_bits_total as usize {
@@ -290,7 +313,8 @@ pub fn find_valid_subset(
         // itself: the 1-of-1 key `[s·G]`
         None if known_threshold.is_none() => {
             let full_secret = images.iter().find(|image| image.index.is_zero())?;
-            schnorr_fun_shim::shared_key_from_share_images([*full_secret])
+            let key = schnorr_fun_shim::shared_key_from_share_images([*full_secret]);
+            accept(&key).then_some(key)?
         }
         None => return None,
     };
