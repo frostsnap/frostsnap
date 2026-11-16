@@ -102,7 +102,8 @@ pub struct FirmwareFeatures {
 
 /// Devices built from this tree refuse to install any image built as an
 /// earlier release number than this, and any image that doesn't embed a
-/// version at all (every release before 0.5.0). Bumped when a release is cut.
+/// version at all (every release before 0.5.0). Raised only when earlier
+/// releases must be blocked for a security reason, not at every release.
 pub const EARLIEST_ACCEPTABLE: VersionNumber = VersionNumber::new(0, 4, 0);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
