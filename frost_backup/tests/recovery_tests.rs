@@ -532,3 +532,71 @@ fn two_of_three_and_zero_of_another_secret() {
     assert_eq!(recovered.full_secret_backup, None);
     assert_eq!(recovered.compatible_shares, shares);
 }
+
+// Weak, so a line through cards of two wallets can pass it by chance
+const WEAK_FINGERPRINT: schnorr_fun::frost::Fingerprint = schnorr_fun::frost::Fingerprint {
+    bits_per_coeff: 7,
+    max_bits_total: 14,
+    tag: "test",
+};
+
+fn other_wallet(seed: u64) -> Vec<ShareBackup> {
+    let mut rng = StdRng::seed_from_u64(seed);
+    ShareBackup::generate_shares(s!(7), 2, 3, WEAK_FINGERPRINT, &mut rng).0
+}
+
+#[test]
+fn a_fingerprint_fluke_gives_way_to_the_full_secret_backup() {
+    let secret = s!(42);
+    let mut rng = StdRng::seed_from_u64(0);
+    let zero = ShareBackup::generate_shares(secret, 1, 1, WEAK_FINGERPRINT, &mut rng).0[0].clone();
+    // Seed 73 makes the line through `zero` and this share pass the fingerprint
+    let backups = [zero.clone(), other_wallet(73)[0].clone()];
+
+    let fluke = recovery::find_valid_subset(&images(&backups), WEAK_FINGERPRINT, None).unwrap();
+    assert_eq!(fluke.shared_key.point_polynomial().len(), 2);
+
+    let recovered = recovery::recover_secret_fuzzy(&backups, WEAK_FINGERPRINT, None).unwrap();
+    assert_eq!(recovered.secret, secret);
+    assert_eq!(recovered.full_secret_backup, Some(zero));
+    assert!(recovered.compatible_shares.is_empty());
+}
+
+#[test]
+fn a_fingerprint_fluke_gives_way_to_the_real_key() {
+    let mut rng = StdRng::seed_from_u64(0);
+    let (shares, shared_key) =
+        ShareBackup::generate_shares(s!(42), 2, 3, WEAK_FINGERPRINT, &mut rng);
+    // Seed 60 makes the line through `#1` and the other wallet's `#2` pass the fingerprint
+    let backups = [
+        shares[0].clone(),
+        other_wallet(60)[1].clone(),
+        shares[2].clone(),
+    ];
+
+    let fluke = recovery::find_valid_subset(&images(&backups), WEAK_FINGERPRINT, None).unwrap();
+    assert_ne!(fluke.shared_key.public_key(), shared_key.public_key());
+
+    let recovered = recovery::recover_secret_fuzzy(&backups, WEAK_FINGERPRINT, None).unwrap();
+    assert_eq!(recovered.secret, s!(42));
+    assert_eq!(
+        recovered.compatible_shares,
+        vec![shares[0].clone(), shares[2].clone()]
+    );
+}
+
+#[test]
+fn a_card_failing_its_checksum_on_the_real_key_fails_recovery() {
+    let mut rng = StdRng::seed_from_u64(0);
+    let (shares, shared_key) =
+        ShareBackup::generate_shares(s!(42), 2, 3, WEAK_FINGERPRINT, &mut rng);
+    let (_, other_key) = ShareBackup::generate_shares(s!(7), 2, 3, WEAK_FINGERPRINT, &mut rng);
+    let share = shares[2].clone().extract_secret(&shared_key).unwrap();
+    let bad_checksum = ShareBackup::from_secret_share_and_shared_key(share, &other_key);
+    assert_eq!(bad_checksum.share_image(), shares[2].share_image());
+
+    let good = [shares[0].clone(), shares[1].clone()];
+    assert!(recovery::recover_secret_fuzzy(&good, WEAK_FINGERPRINT, None).is_some());
+    let with_bad = [shares[0].clone(), shares[1].clone(), bad_checksum];
+    assert!(recovery::recover_secret_fuzzy(&with_bad, WEAK_FINGERPRINT, None).is_none());
+}
