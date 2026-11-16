@@ -107,7 +107,9 @@ macro_rules! demo_widget {
 
                 let mut screen = $crate::backup::EnterShareScreen::new();
                 // A --cfg, NOT a cargo feature: features are additive, so `--all-features`
-                // armed self-fill during tests. Enable with RUSTFLAGS='--cfg prefill_words'.
+                // armed self-fill during tests. Enable with
+                // CARGO_BUILD_RUSTFLAGS='--cfg prefill_words', not RUSTFLAGS, which would
+                // replace device/.cargo/config.toml's rustflags and drop the linker script.
                 if cfg!(prefill_words) {
                     screen.prefill_test_words();
                 }
