@@ -102,6 +102,10 @@ impl UiProtocol for SigningDispatcher {
                         self.emit_state()
                     }
                 }
+                // A contact's ECDH comes before its signing session, see `sp_contact`.
+                CoordinatorToUserSigningMessage::GotSpContactEcdhShare { .. } => {
+                    return false;
+                }
                 CoordinatorToUserSigningMessage::Signed {
                     signatures,
                     session_id,

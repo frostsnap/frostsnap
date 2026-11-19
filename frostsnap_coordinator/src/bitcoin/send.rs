@@ -7,7 +7,7 @@
 use super::wallet::{CoordSuperWallet, KeychainId};
 use anyhow::{anyhow, Result};
 use bdk_chain::{
-    bitcoin::{self, Amount, OutPoint, TxOut},
+    bitcoin::{self, Amount, OutPoint, ScriptBuf, TxOut},
     indexer::keychain_txout,
     CanonicalizationParams,
 };
@@ -16,7 +16,8 @@ use bdk_coin_select::{
     TargetOutputs, TR_DUST_RELAY_MIN_VALUE, TR_KEYSPEND_TXIN_WEIGHT,
 };
 use frostsnap_core::{
-    bitcoin_transaction::{LocalSpk, PushInput, TransactionTemplate},
+    bitcoin_transaction::{LocalSpk, PushInput, SilentPaymentOutput, TransactionTemplate},
+    silent_payments::SignedSpContact,
     tweak::{BitcoinAccountKeychain, BitcoinBip32Path, NormalIndex},
     MasterAppkey,
 };
@@ -31,6 +32,34 @@ use tracing::{event, Level};
 /// gap never enters the UTXO set, so there is nothing to force.
 const RISKY_GAP: u32 = 20;
 
+/// A recipient of a send: an ordinary address, or a trusted silent payment contact with its
+/// address, which the signing devices display.
+#[derive(Clone, Debug)]
+pub enum SendRecipient {
+    Address(bitcoin::Address),
+    SilentPayment {
+        contact: Box<SignedSpContact>,
+        address: String,
+    },
+}
+
+impl From<bitcoin::Address> for SendRecipient {
+    fn from(address: bitcoin::Address) -> Self {
+        SendRecipient::Address(address)
+    }
+}
+
+impl SendRecipient {
+    /// The script used to size this recipient's output. A silent payment output's script depends
+    /// on the inputs, so it is sized by its placeholder.
+    pub fn script_for_weight(&self) -> ScriptBuf {
+        match self {
+            SendRecipient::Address(address) => address.script_pubkey(),
+            SendRecipient::SilentPayment { .. } => SilentPaymentOutput::placeholder_script(),
+        }
+    }
+}
+
 /// A finished coin selection that has reserved nothing.
 ///
 /// Each selected input is pinned as the keychain outpoint it came from — derivation path and
@@ -44,7 +73,7 @@ const RISKY_GAP: u32 = 20;
 pub struct SendPlan {
     master_appkey: MasterAppkey,
     selected: Vec<(BitcoinBip32Path, OutPoint, u64)>,
-    recipients: Vec<TxOut>,
+    recipients: Vec<(SendRecipient, u64)>,
     change_value: Option<u64>,
     fee: u64,
 }
@@ -61,13 +90,13 @@ impl SendPlan {
     fn new(
         master_appkey: MasterAppkey,
         selected: Vec<(BitcoinBip32Path, OutPoint, u64)>,
-        recipients: Vec<TxOut>,
+        recipients: Vec<(SendRecipient, u64)>,
         change_value: Option<u64>,
         fee: u64,
     ) -> Result<Self> {
         let inputs: u64 = selected.iter().map(|&(_, _, value)| value).sum();
-        let outputs: u64 = recipients.iter().map(|txo| txo.value.to_sat()).sum::<u64>()
-            + change_value.unwrap_or(0);
+        let outputs: u64 =
+            recipients.iter().map(|(_, value)| value).sum::<u64>() + change_value.unwrap_or(0);
         let spent = outputs
             .checked_add(fee)
             .ok_or_else(|| anyhow!("plan outputs plus fee overflow"))?;
@@ -120,7 +149,7 @@ impl SendPlan {
     /// now: a deposit landing after planning does not raise it. A display that re-asks the
     /// wallet "what is the max?" shows a number this plan does not pay.
     pub fn recipient_value(&self, index: usize) -> Option<u64> {
-        self.recipients.get(index).map(|txo| txo.value.to_sat())
+        self.recipients.get(index).map(|&(_, value)| value)
     }
 }
 
@@ -132,22 +161,25 @@ impl CoordSuperWallet {
     pub fn plan_send(
         &mut self,
         master_appkey: MasterAppkey,
-        recipients: impl IntoIterator<Item = (bitcoin::Address, Option<u64>)>,
+        recipients: impl IntoIterator<Item = (impl Into<SendRecipient>, Option<u64>)>,
         feerate: f32,
     ) -> Result<SendPlan> {
         self.lazily_initialize_key(master_appkey);
 
-        let recipients = recipients.into_iter().collect::<Vec<_>>();
+        let recipients = recipients
+            .into_iter()
+            .map(|(recipient, amount)| (recipient.into(), amount))
+            .collect::<Vec<(SendRecipient, _)>>();
 
         let target_outputs = {
-            let mut target_outputs = Vec::<TxOut>::with_capacity(recipients.len());
+            let mut target_outputs = Vec::<(SendRecipient, u64)>::with_capacity(recipients.len());
             let mut available_amount = self.calculate_avaliable_value(
                 master_appkey,
-                recipients.iter().map(|(addr, _)| addr.clone()),
+                recipients.iter().map(|(recipient, _)| recipient.clone()),
                 feerate,
                 true,
             );
-            for (i, (addr, amount_opt)) in recipients.iter().enumerate() {
+            for (i, (recipient, amount_opt)) in recipients.iter().enumerate() {
                 let amount: u64 = match amount_opt {
                     Some(amount) => *amount,
                     None => available_amount
@@ -162,10 +194,7 @@ impl CoordSuperWallet {
                         "Insufficient balance: {available_amount}sats left for recipient {i}"
                     ));
                 }
-                target_outputs.push(TxOut {
-                    value: Amount::from_sat(amount),
-                    script_pubkey: addr.script_pubkey(),
-                });
+                target_outputs.push((recipient.clone(), amount));
             }
             target_outputs
         };
@@ -195,11 +224,15 @@ impl CoordSuperWallet {
 
         let target = Target {
             fee: TargetFee::from_feerate(FeeRate::from_sat_per_vb(feerate)),
-            outputs: TargetOutputs::fund_outputs(
-                target_outputs
-                    .iter()
-                    .map(|txo| (txo.weight().to_wu(), txo.value.to_sat())),
-            ),
+            outputs: TargetOutputs::fund_outputs(target_outputs.iter().map(
+                |(recipient, value)| {
+                    let txo = TxOut {
+                        value: Amount::from_sat(*value),
+                        script_pubkey: recipient.script_for_weight(),
+                    };
+                    (txo.weight().to_wu(), *value)
+                },
+            )),
         };
 
         // we try and guess the usual feerate from the existing transactions in the graph This is
@@ -275,7 +308,7 @@ impl CoordSuperWallet {
             })
             .collect();
 
-        let recipient_value: u64 = target_outputs.iter().map(|txo| txo.value.to_sat()).sum();
+        let recipient_value: u64 = target_outputs.iter().map(|(_, value)| value).sum();
         let change_value = cs.drain_value(target, change_policy);
         // Not saturating: a selection that does not cover its own outputs is a bug in the
         // selection, and clamping the fee to zero would hide it behind a plausible number.
@@ -647,7 +680,22 @@ impl CoordSuperWallet {
             );
         }
 
-        for txo in &plan.recipients {
+        for (recipient, value) in &plan.recipients {
+            let address = match recipient {
+                SendRecipient::Address(address) => address,
+                SendRecipient::SilentPayment { contact, address } => {
+                    template.push_silent_payment_output(
+                        Amount::from_sat(*value),
+                        (**contact).clone(),
+                        address.clone(),
+                    );
+                    continue;
+                }
+            };
+            let txo = &TxOut {
+                value: Amount::from_sat(*value),
+                script_pubkey: address.script_pubkey(),
+            };
             // A recipient can be an address of our own: pasting one is how a user moves coins
             // between their own wallets. Claim it here or the signing device has nothing to name
             // it by, and the user is asked to approve a bare address the app already told them
@@ -668,7 +716,12 @@ impl CoordSuperWallet {
             }
         }
 
-        Ok(template)
+        if !template.has_silent_payment_outputs() {
+            return Ok(template);
+        }
+        template
+            .with_contact_sp_scripts(plan.master_appkey)
+            .ok_or_else(|| anyhow!("couldn't derive the silent payment scripts"))
     }
 }
 #[cfg(test)]
@@ -907,6 +960,47 @@ mod test {
         }
     }
 
+    /// A contact is sized as the P2TR output it will become, and the committed template has its
+    /// script derived from the contact and the inputs.
+    #[test]
+    fn a_contact_is_committed_with_its_script() {
+        use frostsnap_core::silent_payments::{
+            SilentPaymentRecipient, SpContact, SpContactDetails,
+        };
+        let mut f = Fixture::new();
+        f.fund(0, 100_000, 100);
+        let key = Point::random(&mut rand::thread_rng());
+        let silent = SendRecipient::SilentPayment {
+            contact: Box::new(SignedSpContact {
+                contact: SpContact {
+                    details: SpContactDetails {
+                        name: "Alice".into(),
+                        recipient: SilentPaymentRecipient {
+                            scan_key: key,
+                            spend_key: key,
+                        },
+                    },
+                    account_ecdh: key,
+                },
+                signature: [0u8; 64],
+            }),
+            address: "sp1example".into(),
+        };
+        assert!(silent.script_for_weight().is_p2tr());
+
+        let plan = f
+            .wallet
+            .plan_send(f.master_appkey, [(silent, Some(20_000))], 1.0)
+            .unwrap();
+        assert_eq!(plan.recipient_value(0), Some(20_000));
+        let template = f.wallet.commit_send(&plan, []).unwrap();
+
+        let outputs = template.silent_payment_outputs().collect::<Vec<_>>();
+        assert_eq!(outputs.len(), 1);
+        assert_eq!(outputs[0].address, "sp1example");
+        assert!(outputs[0].script.as_ref().unwrap().is_p2tr());
+    }
+
     /// The feature, in the shape that produced it. 0.3 could pay change far past the frontier it
     /// persisted; the transaction is held anyway because we own a spent prevout, and nothing in the
     /// update points at the change. Attributing it is purely a matter of having derived that far, so
@@ -981,12 +1075,7 @@ mod test {
             OutPoint::null(),
             10_000,
         );
-        let recipient = |value| {
-            vec![TxOut {
-                value: Amount::from_sat(value),
-                script_pubkey: f.recipient.script_pubkey(),
-            }]
-        };
+        let recipient = |value| vec![(SendRecipient::Address(f.recipient.clone()), value)];
 
         SendPlan::new(f.master_appkey, vec![input], recipient(9_000), None, 1_000)
             .expect("10,000 in, 9,000 out, 1,000 fee");

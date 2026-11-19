@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:frostsnap/camera/camera.dart';
+import 'package:frostsnap/wallet_contacts.dart';
 import 'package:frostsnap/contexts.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
@@ -97,6 +98,13 @@ class _WalletSendPageState extends State<WalletSendPage> {
   void _onRecipientTextChanged() {
     if (mounted) setState(() {});
   }
+
+  /// The contact being paid. Replaces the recipient field until it is cleared.
+  SpContactEntry? get selectedContact => state.recipient(recipient: 0)?.contact;
+
+  AccessStructureRef get _contactsRef => WalletContext.of(
+    context,
+  )!.wallet.frostKey()!.accessStructures()[0].accessStructureRef();
 
   /// Derived, not stored, from whichever recipient is on screen: the raw field
   /// text while editing (a stale submitted recipient must not keep the pill
@@ -240,12 +248,27 @@ class _WalletSendPageState extends State<WalletSendPage> {
               leading: completedCardLabel(context, 'Recipient'),
               title: Text(
                 // addressModel.formattedAddress,
-                spacedHex(recipient?.address?.toString() ?? '', groupSize: 4),
+                spacedHex(
+                  recipient?.contact?.address() ??
+                      recipient?.address?.toString() ??
+                      '',
+                  groupSize: 4,
+                ),
                 textWidthBasis: TextWidthBasis.longestLine,
                 textAlign: TextAlign.right,
                 style: monospaceTextStyle,
               ),
               subtitle: switch (ownedRecipientLabel) {
+                null when recipient?.contact != null => Padding(
+                  padding: const EdgeInsets.only(top: 4.0),
+                  child: Text(
+                    'Silent payment to ${recipient?.contact?.name()}',
+                    textAlign: TextAlign.right,
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
                 null => null,
                 final label => Padding(
                   padding: const EdgeInsets.only(top: 4.0),
@@ -331,20 +354,39 @@ class _WalletSendPageState extends State<WalletSendPage> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           spacing: 12.0,
           children: [
-            AddressInput(
-              controller: addrController,
-              onSubmitted: (_) => recipientDone(context),
-              decoration: InputDecoration(
-                filled: false,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8.0),
-                  borderSide: BorderSide.none,
+            if (selectedContact case final contact?)
+              Align(
+                alignment: Alignment.centerLeft,
+                child: InputChip(
+                  label: Text(contact.name()),
+                  avatar: const Icon(Icons.person_outline),
+                  onDeleted: () => state.clearAddress(recipient: 0),
                 ),
-                hintText: 'Recipient',
-                errorText: addrError,
-                errorMaxLines: 2,
+              )
+            else ...[
+              AddressInput(
+                controller: addrController,
+                onSubmitted: (_) => recipientDone(context),
+                decoration: InputDecoration(
+                  filled: false,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8.0),
+                    borderSide: BorderSide.none,
+                  ),
+                  hintText: 'Name or address',
+                  errorText: addrError,
+                  errorMaxLines: 2,
+                ),
               ),
-            ),
+              SpContactSuggestions(
+                keyId: _contactsRef.keyId,
+                query: addrController.controller,
+                isSilentPaymentAddress: (address) =>
+                    state.isSilentPaymentAddress(address: address),
+                onSelected: (contact) => recipientContact(context, contact),
+                onAdd: (address) => recipientAddContact(context, address),
+              ),
+            ],
             if (ownedRecipientLabel case final label?)
               Align(
                 alignment: Alignment.centerLeft,
@@ -361,16 +403,18 @@ class _WalletSendPageState extends State<WalletSendPage> {
                       shrinkWrap: true,
                       scrollDirection: Axis.horizontal,
                       children: [
-                        TextButton.icon(
-                          onPressed: () => recipientPaste(context),
-                          label: Text('Paste'),
-                          icon: Icon(Icons.paste),
-                        ),
-                        TextButton.icon(
-                          onPressed: () => recipientScan(context),
-                          label: Text('Scan'),
-                          icon: Icon(Icons.qr_code),
-                        ),
+                        if (selectedContact == null) ...[
+                          TextButton.icon(
+                            onPressed: () => recipientPaste(context),
+                            label: Text('Paste'),
+                            icon: Icon(Icons.paste),
+                          ),
+                          TextButton.icon(
+                            onPressed: () => recipientScan(context),
+                            label: Text('Scan'),
+                            icon: Icon(Icons.qr_code),
+                          ),
+                        ],
                       ],
                     ),
                   ),
@@ -686,7 +730,48 @@ class _WalletSendPageState extends State<WalletSendPage> {
     nextPageOrPop(null);
   }
 
+  void recipientContact(BuildContext context, SpContactEntry contact) {
+    // Hardcoded recipient index for now - since only 1 recipient is supported.
+    state.setRecipientContact(recipient: 0, contact: contact);
+    addrController.controller.clear();
+    recipientNext(context);
+  }
+
+  /// The add flow, then pays whoever was added.
+  Future<void> recipientAddContact(BuildContext context, String address) async {
+    final name = await showAddSpContact(
+      context,
+      accessStructureRef: _contactsRef,
+      address: address,
+    );
+    if (name == null || !context.mounted) return;
+    final contact = coord
+        .spContacts(keyId: _contactsRef.keyId)
+        .where((contact) => contact.name() == name)
+        .firstOrNull;
+    if (contact != null) recipientContact(context, contact);
+  }
+
   void recipientDone(BuildContext context) async {
+    if (selectedContact != null) {
+      recipientNext(context);
+      return;
+    }
+    final text = addrController.controller.text;
+    final exact = coord
+        .spContacts(keyId: _contactsRef.keyId)
+        .where(
+          (contact) => contactIsExactly(
+            text,
+            name: contact.name(),
+            address: contact.address(),
+          ),
+        )
+        .firstOrNull;
+    if (exact != null) {
+      recipientContact(context, exact);
+      return;
+    }
     // Hardcoded recipient index for now - since only 1 recipient is supported.
     final submitOkay = addrController.submit(0);
     if (!submitOkay) {
@@ -694,6 +779,10 @@ class _WalletSendPageState extends State<WalletSendPage> {
       setState(() {});
       return;
     }
+    recipientNext(context);
+  }
+
+  void recipientNext(BuildContext context) async {
     if (state.feerate() == null) {
       final feerate = await showFeeRateDialog(context);
       if (feerate == null) return;

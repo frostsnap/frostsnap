@@ -3,7 +3,7 @@ use bitcoin::Address;
 use frost_backup::ShareBackup;
 use frostsnap_comms::Sha256Digest;
 use frostsnap_core::{
-    device::{restoration::EnterBackupPhase, KeyGenPhase3, SignPhase1},
+    device::{restoration::EnterBackupPhase, KeyGenPhase3, SignPhase1, SpContactEcdhPhase},
     schnorr_fun::frost::ShareIndex,
     tweak::BitcoinBip32Path,
     AccessStructureRef, SignTask,
@@ -12,7 +12,7 @@ use frostsnap_widgets::{
     backup::{BackupDisplay, CheckBackupScreen, EnterShareScreen},
     keygen_check::KeygenCheck,
     layout::*,
-    sign_prompt::SignTxPrompt,
+    sign_prompt::{SignTxPrompt, SpContactPrompt},
     AddressWithIndex, DeviceNameScreen, EraseDevice, EraseProgress, FirmwareUpgradeConfirm,
     FirmwareUpgradeProgress, SignMessageConfirm, Standby,
 };
@@ -39,6 +39,12 @@ pub enum WidgetTree {
     SignTxPrompt {
         widget: Box<SignTxPrompt>,
         phase: Option<Box<SignPhase1>>,
+    },
+
+    /// Add a trusted silent payment contact prompt screen
+    SpContactPrompt {
+        widget: Box<SpContactPrompt>,
+        phase: Option<Box<SpContactEcdhPhase>>,
     },
 
     /// Sign test message prompt screen
@@ -151,11 +157,25 @@ impl WidgetTree {
                     phase: Some(phase),
                 }
             }
-            SignTask::Nostr { .. } => {
+            // Never prompted for: it is signed on the user's confirmation at its ECDH.
+            SignTask::Nostr { .. } | SignTask::SpContact { .. } => {
                 let mut standby = Standby::new(crate::FIRMWARE_VERSION);
                 standby.set_welcome();
                 Self::Standby(Box::new(standby))
             }
+        }
+    }
+
+    #[inline(never)]
+    pub(crate) fn build_sp_contact_prompt(phase: Box<SpContactEcdhPhase>, rand_seed: u32) -> Self {
+        let widget = Box::new(SpContactPrompt::new(
+            phase.name().into(),
+            phase.address().into(),
+            rand_seed,
+        ));
+        Self::SpContactPrompt {
+            widget,
+            phase: Some(phase),
         }
     }
 

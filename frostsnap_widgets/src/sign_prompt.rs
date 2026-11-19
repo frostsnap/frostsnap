@@ -1,5 +1,5 @@
 use crate::{
-    address_display::AddressDisplay,
+    address_display::{pick_highlights, AddressDisplay},
     any_of::AnyOf,
     bitcoin_amount_display::BitcoinAmountDisplay,
     gray4_style::Gray4TextStyle,
@@ -9,7 +9,12 @@ use crate::{
     widget_list::{WidgetList, WidgetListItem},
     GrayToAlpha, HoldToConfirm, Image,
 };
-use alloc::{boxed::Box, format, string::ToString};
+use alloc::{
+    boxed::Box,
+    format,
+    string::{String, ToString},
+    vec::Vec,
+};
 use embedded_graphics::{
     geometry::Size,
     pixelcolor::{Gray8, Rgb565},
@@ -20,6 +25,7 @@ use frostsnap_core::{
 };
 use frostsnap_fonts::{
     Gray4Font, NOTO_SANS_17_REGULAR, NOTO_SANS_18_LIGHT, NOTO_SANS_18_MEDIUM, NOTO_SANS_24_BOLD,
+    NOTO_SANS_MONO_15_REGULAR,
 };
 use tinybmp::Bmp;
 
@@ -29,6 +35,8 @@ const FONT_CONFIRM_TEXT: &Gray4Font = &NOTO_SANS_17_REGULAR;
 const FONT_CAUTION_NOTE: &Gray4Font = &NOTO_SANS_18_MEDIUM;
 const FONT_CAUTION_TITLE: &Gray4Font = &NOTO_SANS_24_BOLD;
 const FONT_CAUTION_TEXT: &Gray4Font = &NOTO_SANS_17_REGULAR;
+const FONT_SILENT_PAYMENT_ADDRESS: &Gray4Font = &NOTO_SANS_MONO_15_REGULAR;
+const SP_ADDRESS_HORIZONTAL_SPACING: u32 = 15;
 
 const HIGH_FEE_ABSOLUTE_THRESHOLD_SATS: u64 = 100_000;
 const HIGH_FEE_PERCENTAGE_THRESHOLD: u64 = 5;
@@ -182,6 +190,78 @@ impl UnrecognizedScriptPage {
     }
 }
 
+fn chunk_silent_payment_address(address: &str) -> Vec<String> {
+    let mut chunks = Vec::new();
+    let mut pos = 0;
+    while pos < address.len() {
+        let end = (pos + 4).min(address.len());
+        chunks.push(format!("{:4}", &address[pos..end]));
+        pos = end;
+    }
+    chunks
+}
+
+/// In the address's monospace font, the one where every contact name fits on a line.
+fn contact_title(title: String) -> Text<Gray4TextStyle> {
+    Text::new(
+        title,
+        Gray4TextStyle::new(FONT_SILENT_PAYMENT_ADDRESS, PALETTE.on_background),
+    )
+}
+
+type SilentPaymentAddressDisplay = Column<Vec<Row<Vec<Text<Gray4TextStyle>>>>>;
+
+/// A silent payment contact's address, in groups of four with a few highlighted, like
+/// [`AddressPage`]. A silent payment address is too long for `AddressDisplay`'s layout, so it
+/// gets a smaller monospace font. `title` says what the address is to the user.
+#[derive(Clone, frostsnap_macros::Widget)]
+pub struct SilentPaymentAddressPage {
+    #[widget_delegate]
+    center: Center<Padding<Column<(Text<Gray4TextStyle>, SilentPaymentAddressDisplay)>>>,
+}
+
+impl SilentPaymentAddressPage {
+    #[inline(never)]
+    pub fn new_with_seed(index: usize, title: String, address: &str, rand_seed: u32) -> Self {
+        let title = contact_title(title);
+
+        let chunks = chunk_silent_payment_address(address);
+        let mixed_seed = rand_seed.wrapping_add((index as u32).wrapping_mul(0x9e3779b9));
+        let highlighted = pick_highlights(mixed_seed, chunks.len());
+
+        let mut rows = Vec::new();
+        for (row_idx, chunk_slice) in chunks.chunks(3).enumerate() {
+            let mut row_texts = Vec::new();
+            for (col_idx, chunk_str) in chunk_slice.iter().enumerate() {
+                let color = if highlighted.contains(&(row_idx * 3 + col_idx)) {
+                    PALETTE.on_background
+                } else {
+                    PALETTE.primary
+                };
+                row_texts.push(Text::new(
+                    chunk_str.clone(),
+                    Gray4TextStyle::new(FONT_SILENT_PAYMENT_ADDRESS, color),
+                ));
+            }
+            let mut row = Row::new(row_texts).with_main_axis_alignment(MainAxisAlignment::Center);
+            row.set_uniform_gap(SP_ADDRESS_HORIZONTAL_SPACING);
+            rows.push(row);
+        }
+        let mut address_col = Column::new(rows);
+        address_col.set_uniform_gap(1);
+
+        let mut column = Column::new((title, address_col))
+            .with_main_axis_alignment(MainAxisAlignment::Start)
+            .with_cross_axis_alignment(CrossAxisAlignment::Center);
+        column.set_gap(0, 10);
+        let padded = Padding::only(column).bottom(30).build();
+
+        Self {
+            center: Center::new(padded),
+        }
+    }
+}
+
 /// Page widget for displaying network fee
 #[derive(frostsnap_macros::Widget)]
 pub struct FeePage {
@@ -331,18 +411,23 @@ pub struct ConfirmationPage {
 impl ConfirmationPage {
     #[inline(never)]
     fn new() -> Self {
+        Self::with_text("Hold to Sign", "Press and hold", "for 3 seconds")
+    }
+
+    #[inline(never)]
+    fn with_text(title: &str, line1: &str, line2: &str) -> Self {
         let sign_text = Text::new(
-            "Hold to Sign".to_string(),
+            title.to_string(),
             Gray4TextStyle::new(FONT_CONFIRM_TITLE, PALETTE.on_background),
         );
 
         let press_text = Column::new((
             Text::new(
-                "Press and hold".to_string(),
+                line1.to_string(),
                 Gray4TextStyle::new(FONT_CONFIRM_TEXT, PALETTE.text_secondary),
             ),
             Text::new(
-                "for 3 seconds".to_string(),
+                line2.to_string(),
                 Gray4TextStyle::new(FONT_CONFIRM_TEXT, PALETTE.text_secondary),
             ),
         ));
@@ -371,6 +456,7 @@ type SignPromptPage = AnyOf<(
     AmountPage,
     AddressPage,
     UnrecognizedScriptPage,
+    SilentPaymentAddressPage,
     FeePage,
     WarningPage,
     ConfirmationPage,
@@ -452,6 +538,15 @@ impl WidgetList for SignPromptPageList {
                     ),
                     PromptDestination::UnrecognizedScript(_) => (
                         SignPromptPage::new(UnrecognizedScriptPage::new(recipient_idx)),
+                        true,
+                    ),
+                    PromptDestination::SilentPayment { name, address } => (
+                        SignPromptPage::new(SilentPaymentAddressPage::new_with_seed(
+                            recipient_idx,
+                            format!("To {name}"),
+                            address,
+                            self.rand_seed,
+                        )),
                         true,
                     ),
                 }
@@ -542,9 +637,108 @@ impl SignTxPrompt {
     }
 }
 
+/// The pages of adding a contact: its name and address, then the hold.
+pub struct SpContactPageList {
+    name: String,
+    address: String,
+    rand_seed: u32,
+}
+
+impl WidgetList for SpContactPageList {
+    type Widget = SignPromptPage;
+
+    fn len(&self) -> usize {
+        2
+    }
+
+    fn get(&self, index: usize) -> Option<WidgetListItem<SignPromptPage>> {
+        match index {
+            0 => Some(
+                WidgetListItem::new(SignPromptPage::new(
+                    SilentPaymentAddressPage::new_with_seed(
+                        0,
+                        format!("Add {}", self.name),
+                        &self.address,
+                        self.rand_seed,
+                    ),
+                ))
+                .with_framebuffer_transitions(true),
+            ),
+            1 => Some(WidgetListItem::new(SignPromptPage::new(
+                ConfirmationPage::with_text(
+                    "Hold to Trust",
+                    "Is the address right?",
+                    "Press and hold",
+                ),
+            ))),
+            _ => None,
+        }
+    }
+
+    fn can_go_prev(&self, from_index: usize, current_widget: &SignPromptPage) -> bool {
+        from_index == 1
+            && !current_widget
+                .downcast_ref::<ConfirmationPage>()
+                .is_some_and(ConfirmationPage::is_confirmed)
+    }
+}
+
+/// The prompt to add a trusted contact. This is where the user checks the address: a send to the
+/// contact relies on this check.
+#[derive(frostsnap_macros::Widget)]
+pub struct SpContactPrompt {
+    #[widget_delegate]
+    page_slider: Box<PageSlider<SpContactPageList>>,
+}
+
+impl SpContactPrompt {
+    pub fn new(name: String, address: String, rand_seed: u32) -> Self {
+        let mut page_slider = Box::new(PageSlider::new(SpContactPageList {
+            name,
+            address,
+            rand_seed,
+        }));
+        page_slider.set_on_page_ready(|page| {
+            if let Some(confirmation_page) = page.downcast_mut::<ConfirmationPage>() {
+                confirmation_page.hold_confirm.fade_in_button();
+            }
+        });
+        page_slider.enable_swipe_up_chevron();
+        Self { page_slider }
+    }
+
+    pub fn is_confirmed(&mut self) -> bool {
+        self.confirmation_page()
+            .is_some_and(ConfirmationPage::is_confirmed)
+    }
+
+    pub fn is_finished(&mut self) -> bool {
+        self.confirmation_page()
+            .is_some_and(ConfirmationPage::is_finished)
+    }
+
+    fn confirmation_page(&mut self) -> Option<&ConfirmationPage> {
+        self.page_slider
+            .current_widget()
+            .downcast_ref::<ConfirmationPage>()
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
+
+    /// A title that ran off the screen would hide part of a name the user is trusting. `Text` does
+    /// not wrap, so the longest name must fit on its own.
+    #[test]
+    fn the_longest_contact_name_fits_on_the_address_page() {
+        use frostsnap_core::silent_payments::MAX_CONTACT_NAME_LEN;
+        for prefix in ["To", "Add"] {
+            let name = "W".repeat(MAX_CONTACT_NAME_LEN);
+            let title = contact_title(format!("{prefix} {name}"));
+            assert!(title.sizing().width <= 240);
+        }
+    }
 
     #[test]
     fn fee_rate_text_is_tenths_of_the_whole_rate() {

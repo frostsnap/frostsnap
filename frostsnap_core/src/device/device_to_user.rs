@@ -17,6 +17,15 @@ pub enum DeviceToUserMessage {
     SignatureRequest {
         phase: Box<SignPhase1>,
     },
+    /// Confirm this contact with the user, then answer with `sp_contact_ecdh_ack`.
+    SpContactEcdhRequest {
+        phase: Box<SpContactEcdhPhase>,
+    },
+    /// The user already approved this contact at its ECDH and its proofs check out, so there is
+    /// nothing more to ask: answer with `sign_ack`.
+    SpContactSignRequest {
+        phase: Box<SignPhase1>,
+    },
     VerifyAddress {
         address: Address<NetworkChecked>,
         bip32_path: BitcoinBip32Path,

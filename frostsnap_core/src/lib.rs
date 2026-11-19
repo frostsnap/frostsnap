@@ -12,6 +12,7 @@ mod master_appkey;
 pub mod message;
 pub mod nonce_stream;
 pub mod nostr;
+pub mod silent_payments;
 pub mod tweak;
 
 use core::ops::RangeBounds;

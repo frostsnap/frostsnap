@@ -1,7 +1,8 @@
 use crate::device_nonces::{self, AbSlots, MemoryNonceSlot, NonceStreamSlot};
 use crate::nonce_stream::CoordNonceStreamState;
+use crate::silent_payments::{self, SpContact, SpContactDetails};
 use crate::symmetric_encryption::Ciphertext;
-use crate::tweak::{self, Xpub};
+use crate::tweak::{self, BitcoinAccount, Xpub};
 use crate::{
     bitcoin_transaction, message::*, AccessStructureId, AccessStructureKind, AccessStructureRef,
     ActionError, CheckedSignTask, CoordShareDecryptionContrib, Error, KeyId, KeygenId, Kind,
@@ -28,6 +29,29 @@ pub mod restoration;
 mod secret_derivation;
 pub use device_to_user::*;
 pub use keygen::{KeyGenPhase1, KeyGenPhase2, KeyGenPhase3, KeyGenPhase4};
+
+/// A request to add a contact, awaiting the user's confirmation of its name and address.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SpContactEcdhPhase {
+    session_id: signing::SpContactSessionId,
+    rootkey: Point,
+    access_structure_ref: AccessStructureRef,
+    coord_share_decryption_contrib: CoordShareDecryptionContrib,
+    encrypted_secret_share: EncryptedSecretShare,
+    details: SpContactDetails,
+    network: bitcoin::Network,
+    address: String,
+}
+
+impl SpContactEcdhPhase {
+    pub fn name(&self) -> &str {
+        &self.details.name
+    }
+
+    pub fn address(&self) -> &str {
+        &self.address
+    }
+}
 pub use secret_derivation::*;
 
 /// The number of nonces the device will give out at a time.
@@ -43,6 +67,10 @@ pub struct FrostSigner<S = MemoryNonceSlot> {
     restoration: restoration::State,
     pub keygen_fingerprint: Fingerprint,
     pub nonce_batch_size: u32,
+    /// The contact the user last confirmed, by [`SpContactDetails::digest`]. In memory only: a
+    /// restart, a cancel or a newer confirmation forgets it. It is what lets the contact's
+    /// signature follow its ECDH without a second hold.
+    sp_contact_approval: Option<[u8; 32]>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -166,6 +194,7 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
             restoration: Default::default(),
             keygen_fingerprint: Fingerprint::FROST_V0,
             nonce_batch_size: NONCE_BATCH_SIZE,
+            sp_contact_approval: None,
         }
     }
 
@@ -253,6 +282,7 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
     }
 
     pub fn clear_tmp_data(&mut self) {
+        self.sp_contact_approval = None;
         self.clear_unfinished_keygens();
         self.restoration.clear_tmp_data();
     }
@@ -263,6 +293,298 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
 
     pub fn device_id(&self) -> DeviceId {
         DeviceId::new(self.keypair().public_key())
+    }
+
+    fn recv_sp_contact_ecdh_request(
+        &self,
+        message: &CoordinatorToDeviceMessage,
+        request: signing::RequestSpContactEcdh,
+    ) -> MessageResult<Vec<DeviceSend>> {
+        let signing::RequestSpContactEcdh {
+            session_id,
+            rootkey,
+            access_structure_id,
+            share_index,
+            coord_share_decryption_contrib,
+            details,
+        } = request;
+        let key_id = KeyId::from_rootkey(rootkey);
+        let key_data = self.keys.get(&key_id).ok_or_else(|| {
+            Error::signer_invalid_message(message, format!("device doesn't have key for {key_id}"))
+        })?;
+        let KeyPurpose::Bitcoin(network) = key_data.purpose else {
+            return Err(Error::signer_invalid_message(
+                message,
+                "silent payment contact for a key that is not a bitcoin key",
+            ));
+        };
+        if !details.has_valid_name() {
+            return Err(Error::signer_invalid_message(
+                message,
+                "silent payment contact has an invalid name",
+            ));
+        }
+        let address = details.recipient.address(network).ok_or_else(|| {
+            Error::signer_invalid_message(message, "silent payment contact has no address")
+        })?;
+        let access_structure_data = key_data
+            .access_structures
+            .get(&access_structure_id)
+            .ok_or_else(|| {
+                Error::signer_invalid_message(
+                    message,
+                    format!(
+                        "this device is not part of that access structure: {access_structure_id}"
+                    ),
+                )
+            })?;
+        let encrypted_secret_share =
+            *access_structure_data
+                .shares
+                .get(&share_index)
+                .ok_or_else(|| {
+                    Error::signer_invalid_message(
+                        message,
+                        "device doesn't have the share requested",
+                    )
+                })?;
+
+        let phase = SpContactEcdhPhase {
+            session_id,
+            rootkey,
+            access_structure_ref: AccessStructureRef {
+                key_id,
+                access_structure_id,
+            },
+            coord_share_decryption_contrib,
+            encrypted_secret_share,
+            details,
+            network,
+            address,
+        };
+        Ok(vec![DeviceSend::ToUser(Box::new(
+            DeviceToUserMessage::SpContactEcdhRequest {
+                phase: Box::new(phase),
+            },
+        ))])
+    }
+
+    /// The user has confirmed the contact: answer with this device's share of `x * B_scan`, and
+    /// remember the approval for the signature that follows.
+    // Never inlined: inlined into `DeviceLoop::poll` it pushes that frame past the stack budget.
+    #[inline(never)]
+    pub fn sp_contact_ecdh_ack(
+        &mut self,
+        phase: SpContactEcdhPhase,
+        symm_keygen: &mut impl DeviceSecretDerivation,
+        rng: &mut impl rand_core::RngCore,
+    ) -> Result<Vec<DeviceSend>, ActionError> {
+        let SpContactEcdhPhase {
+            session_id,
+            rootkey,
+            access_structure_ref,
+            coord_share_decryption_contrib,
+            encrypted_secret_share,
+            details,
+            network,
+            ..
+        } = phase;
+
+        let my_index = encrypted_secret_share.share_image.index;
+        let symmetric_key = symm_keygen.get_share_encryption_key(
+            access_structure_ref,
+            my_index,
+            coord_share_decryption_contrib,
+        );
+        let secret_share = encrypted_secret_share
+            .ciphertext
+            .decrypt(symmetric_key)
+            .ok_or_else(|| {
+                ActionError::StateInconsistent("couldn't decrypt secret share".into())
+            })?;
+        let root_paired_secret_share = Xpub::from_rootkey(PairedSecretShare::new_unchecked(
+            SecretShare {
+                index: my_index,
+                share: secret_share,
+            },
+            rootkey,
+        ));
+        let app_paired_secret_share = root_paired_secret_share.rootkey_to_master_appkey();
+        let account_secret_share =
+            BitcoinAccount::default().derive_account_key(&app_paired_secret_share);
+        let account_share = account_secret_share
+            .key()
+            .secret_share()
+            .share
+            .non_zero()
+            .ok_or_else(|| ActionError::StateInconsistent("account share is zero".into()))?;
+
+        let digest = details.digest(network);
+        let share = silent_payments::prove_ecdh_share(
+            my_index,
+            account_share,
+            details.recipient.scan_key,
+            &digest,
+            rng,
+        )
+        .ok_or_else(|| {
+            ActionError::StateInconsistent("couldn't prove silent payment ECDH share".into())
+        })?;
+
+        self.sp_contact_approval = Some(digest);
+
+        Ok(vec![DeviceSend::ToCoordinator(Box::new(
+            DeviceToCoordinatorMessage::Signing(signing::DeviceSigning::SpContactEcdhShare {
+                session_id,
+                share: Box::new(share),
+            }),
+        ))])
+    }
+
+    /// Whether this device may sign `contact`: the user confirmed exactly these details here, and
+    /// a threshold of proofs under the access structure's own polynomial give its `x * B_scan`.
+    fn check_sp_contact_sign(
+        &self,
+        contact: &SpContact,
+        network: bitcoin::Network,
+        master_appkey: crate::MasterAppkey,
+        access_structure_id: AccessStructureId,
+        proofs: &signing::SpContactProofs,
+    ) -> Result<(), &'static str> {
+        if self.sp_contact_approval != Some(contact.details.digest(network)) {
+            return Err("the user has not confirmed this contact on this device");
+        }
+        if AccessStructureId::from_app_poly(&proofs.app_poly) != access_structure_id {
+            return Err("app polynomial does not match the access structure");
+        }
+        let app_shared_key = SharedKey::from_poly(proofs.app_poly.clone())
+            .non_zero()
+            .ok_or("app polynomial is zero")?;
+        let master_xpub = master_appkey.to_xpub();
+        if app_shared_key.public_key() != master_xpub.key {
+            return Err("app polynomial does not commit to the root key");
+        }
+        let combined = silent_payments::combine_contact_shares(
+            &Xpub::new(app_shared_key, master_xpub.chaincode),
+            &contact.details,
+            network,
+            &proofs.shares,
+        )?;
+        if combined != contact.account_ecdh {
+            return Err("contact's ECDH value does not match its shares");
+        }
+        Ok(())
+    }
+
+    fn recv_sign_request(
+        &mut self,
+        message: &CoordinatorToDeviceMessage,
+        group_sign_req: GroupSignReq,
+        device_sign_req: DeviceSignReq,
+        sp_contact_proofs: Option<signing::SpContactProofs>,
+    ) -> MessageResult<Vec<DeviceSend>> {
+        let session_id = group_sign_req.session_id();
+        let key_id = KeyId::from_rootkey(device_sign_req.rootkey);
+        let key_data = self
+            .keys
+            .get(&key_id)
+            .ok_or_else(|| {
+                Error::signer_invalid_message(
+                    message,
+                    format!("device doesn't have key for {key_id}"),
+                )
+            })?
+            .clone();
+
+        let group_sign_req = group_sign_req
+            .check(device_sign_req.rootkey, key_data.purpose)
+            .map_err(|e| Error::signer_invalid_message(message, e))?;
+
+        let GroupSignReq {
+            parties,
+            access_structure_id,
+            sign_task,
+            ..
+        } = &group_sign_req;
+
+        // A contact is only ever signed from its ECDH round, and only that round signs one.
+        let is_contact = match (&sign_task.inner, &sp_contact_proofs) {
+            (crate::SignTask::SpContact { contact, network }, Some(proofs)) => {
+                // A device that restarted since the user confirmed has forgotten the approval. The
+                // coordinator sends the request again on every reconnect, so ignore it.
+                if self.sp_contact_approval != Some(contact.details.digest(*network)) {
+                    return Ok(vec![]);
+                }
+                self.check_sp_contact_sign(
+                    contact,
+                    *network,
+                    sign_task.master_appkey,
+                    *access_structure_id,
+                    proofs,
+                )
+                .map_err(|e| Error::signer_invalid_message(message, e))?;
+                true
+            }
+            (crate::SignTask::SpContact { .. }, None) | (_, Some(_)) => {
+                return Err(Error::signer_invalid_message(
+                    message,
+                    "a contact must be signed with its proofs",
+                ))
+            }
+            (_, None) => false,
+        };
+
+        let coord_req_nonces = device_sign_req.nonces;
+
+        let access_structure_data = key_data
+            .access_structures
+            .get(access_structure_id)
+            .ok_or_else(|| {
+                Error::signer_invalid_message(
+                    message,
+                    format!(
+                        "this device is not part of that access structure: {access_structure_id}"
+                    ),
+                )
+            })?
+            .clone();
+        let (_, encrypted_secret_share) = parties
+            .iter()
+            .find_map(|party| Some((*party, *access_structure_data.shares.get(party)?)))
+            .ok_or_else(|| {
+                Error::signer_invalid_message(
+                    message,
+                    "device doesn't have any of the shares requested",
+                )
+            })?;
+
+        // Just verify the nonce stream exists but don't check availability
+        // The signing logic will handle cached signatures naturally
+        let _nonce_slot = self
+            .nonce_slots
+            .get(coord_req_nonces.stream_id)
+            .and_then(|slot| slot.read_slot())
+            .ok_or(Error::signer_invalid_message(
+                message,
+                format!(
+                    "device did not have that nonce stream id {}",
+                    coord_req_nonces.stream_id
+                ),
+            ))?;
+
+        // Removed are_nonces_available check - let the signing system handle it
+        let phase = SignPhase1 {
+            group_sign_req,
+            device_sign_req,
+            encrypted_secret_share,
+            session_id,
+        };
+        let phase = Box::new(phase);
+        Ok(vec![DeviceSend::ToUser(Box::new(if is_contact {
+            DeviceToUserMessage::SpContactSignRequest { phase }
+        } else {
+            DeviceToUserMessage::SignatureRequest { phase }
+        }))])
     }
 
     pub fn recv_coordinator_message(
@@ -317,70 +639,21 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
                     group_sign_req,
                     device_sign_req,
                 } = *request_sign;
-                let session_id = group_sign_req.session_id();
-                let key_id = KeyId::from_rootkey(device_sign_req.rootkey);
-                let key_data = self
-                    .keys
-                    .get(&key_id)
-                    .ok_or_else(|| {
-                        Error::signer_invalid_message(
-                            &message,
-                            format!("device doesn't have key for {key_id}"),
-                        )
-                    })?
-                    .clone();
-
-                let group_sign_req = group_sign_req
-                    .check(device_sign_req.rootkey, key_data.purpose)
-                    .map_err(|e| Error::signer_invalid_message(&message, e))?;
-
-                let GroupSignReq {
-                    parties,
-                    access_structure_id,
-                    ..
-                } = &group_sign_req;
-                let coord_req_nonces = device_sign_req.nonces;
-
-                let access_structure_data = key_data.access_structures.get(access_structure_id)
-                    .ok_or_else(|| {
-                        Error::signer_invalid_message(&message, format!("this device is not part of that access structure: {access_structure_id}"))
-                    })?.clone();
-                let (_, encrypted_secret_share) = parties
-                    .iter()
-                    .find_map(|party| Some((*party, *access_structure_data.shares.get(party)?)))
-                    .ok_or_else(|| {
-                        Error::signer_invalid_message(
-                            &message,
-                            "device doesn't have any of the shares requested",
-                        )
-                    })?;
-
-                // Just verify the nonce stream exists but don't check availability
-                // The signing logic will handle cached signatures naturally
-                let _nonce_slot = self
-                    .nonce_slots
-                    .get(coord_req_nonces.stream_id)
-                    .and_then(|slot| slot.read_slot())
-                    .ok_or(Error::signer_invalid_message(
-                        &message,
-                        format!(
-                            "device did not have that nonce stream id {}",
-                            coord_req_nonces.stream_id
-                        ),
-                    ))?;
-
-                // Removed are_nonces_available check - let the signing system handle it
-                let phase = SignPhase1 {
-                    group_sign_req,
-                    device_sign_req,
-                    encrypted_secret_share,
-                    session_id,
-                };
-                Ok(vec![DeviceSend::ToUser(Box::new(
-                    DeviceToUserMessage::SignatureRequest {
-                        phase: Box::new(phase),
-                    },
-                ))])
+                self.recv_sign_request(&message, group_sign_req, device_sign_req, None)
+            }
+            Signing(signing::CoordinatorSigning::RequestSpContactEcdh(request)) => {
+                self.recv_sp_contact_ecdh_request(&message, *request)
+            }
+            Signing(signing::CoordinatorSigning::RequestSpContactSign(request)) => {
+                let signing::RequestSpContactSign {
+                    request_sign:
+                        self::RequestSign {
+                            group_sign_req,
+                            device_sign_req,
+                        },
+                    proofs,
+                } = *request;
+                self.recv_sign_request(&message, group_sign_req, device_sign_req, Some(proofs))
             }
             ScreenVerify(screen_verify::ScreenVerify::VerifyAddress {
                 master_appkey,

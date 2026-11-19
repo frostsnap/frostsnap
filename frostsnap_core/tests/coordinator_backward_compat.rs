@@ -11,6 +11,9 @@ use frostsnap_core::device::KeyPurpose;
 use frostsnap_core::message::HeldShare2;
 use frostsnap_core::message::{EncodedSignature, GroupSignReq};
 use frostsnap_core::nonce_stream::{CoordNonceStreamState, NonceStreamId, NonceStreamSegment};
+use frostsnap_core::silent_payments::{
+    SignedSpContact, SilentPaymentRecipient, SpContact, SpContactDetails,
+};
 use frostsnap_core::tweak::AppTweak;
 use frostsnap_core::tweak::Xpub;
 use frostsnap_core::{
@@ -300,6 +303,26 @@ fn test_all_coordinator_mutations() {
         Mutation::Signing(SigningMutation::ForgetFinishedSignSession {
             session_id: SignSessionId([12u8; 32]),
         }),
+        Mutation::Signing(SigningMutation::AddSpContact {
+            key_id: KeyId([3u8; 32]),
+            contact: Box::new(SignedSpContact {
+                contact: SpContact {
+                    details: SpContactDetails {
+                        name: "Alice".to_string(),
+                        recipient: SilentPaymentRecipient {
+                            scan_key: g!(42 * G).normalize(),
+                            spend_key: g!(43 * G).normalize(),
+                        },
+                    },
+                    account_ecdh: g!(44 * G).normalize(),
+                },
+                signature: [14u8; 64],
+            }),
+        }),
+        Mutation::Signing(SigningMutation::RemoveSpContact {
+            key_id: KeyId([3u8; 32]),
+            name: "Alice".to_string(),
+        }),
     ];
 
     // Test each mutation
@@ -414,6 +437,18 @@ fn test_all_coordinator_mutations() {
                 assert_bincode_hex_eq!(
                     mutation,
                     "01050c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c"
+                );
+            }
+            Mutation::Signing(SigningMutation::AddSpContact { .. }) => {
+                assert_bincode_hex_eq!(
+                    mutation,
+                    "0106030303030303030303030303030303030303030303030303030303030303030305416c69636502fe8d1eb1bcb3432b1db5833ff5f2226d9cb5e65cee430558c18ed3a3c86ce1af03d528ecd9b696b54c907a9ed045447a79bb408ec39b68df504bb51f459bc3ffc9025d045857332d5b9e541514731622af8d60c180165d971a61e06b70a9b38347650e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e"
+                );
+            }
+            Mutation::Signing(SigningMutation::RemoveSpContact { .. }) => {
+                assert_bincode_hex_eq!(
+                    mutation,
+                    "0107030303030303030303030303030303030303030303030303030303030303030305416c696365"
                 );
             }
             Mutation::Restoration(RestorationMutation::NewRestoration2 { .. }) => {

@@ -2,8 +2,15 @@ use crate::{
     coord_nonces::{NonceCache, NotEnoughNonces},
     device::{KeyPurpose, NONCE_BATCH_SIZE},
     map_ext::*,
-    message::{signing::OpenNonceStreams, *},
-    nonce_stream::{CoordNonceStreamState, NonceStreamId},
+    message::{
+        signing::{OpenNonceStreams, RequestSpContactEcdh, SpContactProofs, SpContactSessionId},
+        *,
+    },
+    nonce_stream::{CoordNonceStreamState, NonceStreamId, SigningReqSubSegment},
+    silent_payments::{
+        combine_contact_shares, verify_contact_shares, EcdhShare, SignedSpContact, SpContact,
+        SpContactDetails,
+    },
     symmetric_encryption::{Ciphertext, SymmetricKey},
     tweak::Xpub,
     AccessStructureId, AccessStructureKind, AccessStructureRef, ActionError,
@@ -52,8 +59,24 @@ pub struct FrostCoordinator {
     active_signing_sessions: BTreeMap<SignSessionId, ActiveSignSession>,
     active_sign_session_order: Vec<SignSessionId>,
     finished_signing_sessions: BTreeMap<SignSessionId, FinishedSignSession>,
+    /// Contacts being added. In memory only, so that ECDH shares and proofs never reach the
+    /// append-only mutation log: an interrupted ceremony starts again.
+    sp_contact_sessions: BTreeMap<SpContactSessionId, SpContactSession>,
+    /// The proofs of each contact signing session. In memory only, like `sp_contact_sessions`.
+    sp_contact_sign_proofs: BTreeMap<SignSessionId, SpContactProofs>,
+    /// The trusted contacts of each key, by name.
+    sp_contacts: BTreeMap<KeyId, BTreeMap<String, SignedSpContact>>,
     restoration: restoration::State,
     pub keygen_fingerprint: schnorr_fun::frost::Fingerprint,
+}
+
+/// One run of adding a contact, before the wallet signs it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SpContactSession {
+    pub access_structure_ref: AccessStructureRef,
+    pub details: SpContactDetails,
+    pub requested: BTreeSet<DeviceId>,
+    pub shares: BTreeMap<DeviceId, EcdhShare>,
 }
 
 #[derive(Debug, Clone, bincode::Encode, bincode::Decode, PartialEq)]
@@ -309,6 +332,9 @@ impl FrostCoordinator {
                 self.keys.remove(&key_id)?;
                 self.key_order.retain(|&entry| entry != key_id);
                 self.restoration.clear_up_key_deletion(key_id);
+                self.sp_contacts.remove(&key_id);
+                self.sp_contact_sessions
+                    .retain(|_, session| session.access_structure_ref.key_id != key_id);
                 let sessions_to_delete = self
                     .active_signing_sessions
                     .iter()
@@ -407,6 +433,18 @@ impl FrostCoordinator {
             }
             Signing(SigningMutation::ForgetFinishedSignSession { session_id }) => {
                 self.finished_signing_sessions.remove(&session_id);
+            }
+            Signing(SigningMutation::AddSpContact {
+                key_id,
+                ref contact,
+            }) => {
+                self.sp_contacts
+                    .entry(key_id)
+                    .or_default()
+                    .insert(contact.contact.details.name.clone(), (**contact).clone());
+            }
+            Signing(SigningMutation::RemoveSpContact { key_id, ref name }) => {
+                self.sp_contacts.get_mut(&key_id)?.remove(name)?;
             }
             Restoration(inner) => {
                 return self
@@ -865,6 +903,22 @@ impl FrostCoordinator {
                 }
             }
             DeviceToCoordinatorMessage::Signing(
+                crate::message::signing::DeviceSigning::SpContactEcdhShare { session_id, share },
+            ) => {
+                self.check_sp_contact_share(from, session_id, &share)
+                    .map_err(|reason| Error::coordinator_invalid_message(message_kind, reason))?;
+                self.sp_contact_sessions
+                    .get_mut(&session_id)
+                    .expect("just checked")
+                    .shares
+                    .insert(from, *share);
+                Ok(vec![CoordinatorSend::ToUser(
+                    CoordinatorToUserMessage::Signing(
+                        CoordinatorToUserSigningMessage::GotSpContactEcdhShare { session_id, from },
+                    ),
+                )])
+            }
+            DeviceToCoordinatorMessage::Signing(
                 crate::message::signing::DeviceSigning::SignatureShare {
                     session_id,
                     ref signature_shares,
@@ -1073,39 +1127,10 @@ impl FrostCoordinator {
         signing_devices: &BTreeSet<DeviceId>,
         rng: &mut impl rand_core::RngCore,
     ) -> Result<SignSessionId, StartSignError> {
-        let AccessStructureRef {
-            key_id,
-            access_structure_id,
-        } = access_structure_ref;
-
         let key_data = self
-            .keys
-            .get(&key_id)
-            .ok_or(StartSignError::UnknownKey { key_id })?
+            .check_signing_devices(access_structure_ref, signing_devices)?
             .clone();
-
         let complete_key = key_data.complete_key;
-
-        let access_structure = complete_key
-            .access_structures
-            .get(&access_structure_id)
-            .ok_or(StartSignError::NoSuchAccessStructure)?;
-
-        for device in signing_devices {
-            if !access_structure.device_to_share_index.contains_key(device) {
-                return Err(StartSignError::DeviceNotPartOfKey { device_id: *device });
-            }
-        }
-
-        let app_shared_key = access_structure.app_shared_key().clone();
-
-        let selected = signing_devices.len();
-        if selected < access_structure.threshold() as usize {
-            return Err(StartSignError::NotEnoughDevicesSelected {
-                selected,
-                threshold: access_structure.threshold(),
-            });
-        }
 
         let checked_sign_task = sign_task
             .clone()
@@ -1123,6 +1148,377 @@ impl FrostCoordinator {
                 &self.all_used_nonce_streams(),
             )
             .map_err(StartSignError::NotEnoughNoncesForDevice)?;
+
+        Ok(self.new_sign_session(
+            access_structure_ref,
+            sign_task,
+            sign_items,
+            nonces_by_device,
+            rng,
+        ))
+    }
+
+    /// The key of `access_structure_ref`, once `devices` are a threshold of that access structure.
+    fn check_signing_devices(
+        &self,
+        access_structure_ref: AccessStructureRef,
+        devices: &BTreeSet<DeviceId>,
+    ) -> Result<&CoordFrostKey, StartSignError> {
+        let AccessStructureRef {
+            key_id,
+            access_structure_id,
+        } = access_structure_ref;
+
+        let key_data = self
+            .keys
+            .get(&key_id)
+            .ok_or(StartSignError::UnknownKey { key_id })?;
+
+        let access_structure = key_data
+            .complete_key
+            .access_structures
+            .get(&access_structure_id)
+            .ok_or(StartSignError::NoSuchAccessStructure)?;
+
+        for device in devices {
+            if !access_structure.device_to_share_index.contains_key(device) {
+                return Err(StartSignError::DeviceNotPartOfKey { device_id: *device });
+            }
+        }
+
+        let selected = devices.len();
+        if selected < access_structure.threshold() as usize {
+            return Err(StartSignError::NotEnoughDevicesSelected {
+                selected,
+                threshold: access_structure.threshold(),
+            });
+        }
+        Ok(key_data)
+    }
+
+    /// Starts adding the contact `details`: asks `devices`, a threshold or more of the access
+    /// structure, to confirm it and answer with their share of the ECDH. Their answers arrive as
+    /// [`CoordinatorToUserSigningMessage::GotSpContactEcdhShare`], and
+    /// [`Self::start_sp_contact_sign`] takes it from there.
+    pub fn start_sp_contact(
+        &mut self,
+        access_structure_ref: AccessStructureRef,
+        details: SpContactDetails,
+        devices: &BTreeSet<DeviceId>,
+        encryption_key: SymmetricKey,
+        rng: &mut impl rand_core::RngCore,
+    ) -> Result<(SpContactSessionId, Vec<CoordinatorSend>), StartSignError> {
+        let key_data = self.check_signing_devices(access_structure_ref, devices)?;
+        if !matches!(key_data.purpose, KeyPurpose::Bitcoin(_)) {
+            return Err(StartSignError::SignTask(crate::SignTaskError::WrongPurpose));
+        }
+        if !details.has_valid_name() {
+            return Err(StartSignError::SignTask(
+                crate::SignTaskError::SilentPaymentInvalidContactName,
+            ));
+        }
+        // Contacts are stored by name, so a repeat would replace the address a trusted name pays.
+        if self
+            .sp_contacts(access_structure_ref.key_id)
+            .any(|contact| contact.contact.details.same_name(&details))
+        {
+            return Err(StartSignError::SpContactNameTaken);
+        }
+        // The devices sign right after the holds with no second prompt. Each must have a nonce for
+        // that signature before anyone holds.
+        self.nonce_cache
+            .new_signing_session(devices, 1, &self.all_used_nonce_streams())
+            .map_err(StartSignError::NotEnoughNoncesForDevice)?;
+
+        let mut session_id = [0u8; 32];
+        rng.fill_bytes(&mut session_id);
+        let session_id = SpContactSessionId(session_id);
+        self.sp_contact_sessions.insert(
+            session_id,
+            SpContactSession {
+                access_structure_ref,
+                details,
+                requested: devices.clone(),
+                shares: Default::default(),
+            },
+        );
+
+        let sends = devices
+            .iter()
+            .map(|device_id| self.request_sp_contact_ecdh(session_id, *device_id, encryption_key))
+            .collect::<Result<_, _>>();
+        if sends.is_err() {
+            self.sp_contact_sessions.remove(&session_id);
+        }
+        Ok((session_id, sends?))
+    }
+
+    /// The ECDH request for one device of a session. A device keeps nothing from an earlier request
+    /// beyond the user's approval, so asking again is safe.
+    pub fn request_sp_contact_ecdh(
+        &self,
+        session_id: SpContactSessionId,
+        device_id: DeviceId,
+        encryption_key: SymmetricKey,
+    ) -> Result<CoordinatorSend, StartSignError> {
+        let session = self
+            .sp_contact_sessions
+            .get(&session_id)
+            .ok_or(StartSignError::NoSuchSpContactSession)?;
+        if !session.requested.contains(&device_id) {
+            return Err(StartSignError::DeviceNotPartOfKey { device_id });
+        }
+        let share_index = *self
+            .get_access_structure(session.access_structure_ref)
+            .ok_or(StartSignError::NoSuchAccessStructure)?
+            .device_to_share_index
+            .get(&device_id)
+            .ok_or(StartSignError::DeviceNotPartOfKey { device_id })?;
+        let AccessStructureRef {
+            key_id,
+            access_structure_id,
+        } = session.access_structure_ref;
+        let (rootkey, coord_share_decryption_contrib) = self
+            .keys
+            .get(&key_id)
+            .ok_or(StartSignError::UnknownKey { key_id })?
+            .complete_key
+            .coord_share_decryption_contrib(access_structure_id, device_id, encryption_key)
+            .ok_or(StartSignError::CouldntDecryptRootKey)?;
+        Ok(CoordinatorSend::ToDevice {
+            message: CoordinatorToDeviceMessage::Signing(
+                crate::message::signing::CoordinatorSigning::RequestSpContactEcdh(Box::new(
+                    RequestSpContactEcdh {
+                        session_id,
+                        rootkey,
+                        access_structure_id,
+                        share_index,
+                        coord_share_decryption_contrib,
+                        details: session.details.clone(),
+                    },
+                )),
+            ),
+            destinations: [device_id].into(),
+        })
+    }
+
+    pub fn sp_contact_session(&self, session_id: SpContactSessionId) -> Option<&SpContactSession> {
+        self.sp_contact_sessions.get(&session_id)
+    }
+
+    pub fn cancel_sp_contact(&mut self, session_id: SpContactSessionId) {
+        self.sp_contact_sessions.remove(&session_id);
+    }
+
+    /// Forgets the shares `device_id` gave to contacts still being added. A device that disconnects
+    /// loses its approval, so its share could not be followed by its signature. Asking it again
+    /// shows the user the contact again.
+    pub fn forget_sp_contact_shares_from(&mut self, device_id: DeviceId) {
+        for session in self.sp_contact_sessions.values_mut() {
+            session.shares.remove(&device_id);
+        }
+    }
+
+    fn check_sp_contact_share(
+        &self,
+        from: DeviceId,
+        session_id: SpContactSessionId,
+        share: &EcdhShare,
+    ) -> Result<(), String> {
+        let session = self
+            .sp_contact_sessions
+            .get(&session_id)
+            .ok_or("got a contact ECDH share for a session we don't have")?;
+        if !session.requested.contains(&from) {
+            return Err("device was not asked for a contact ECDH share".into());
+        }
+        if session.shares.contains_key(&from) {
+            return Err("device already sent its contact ECDH share".into());
+        }
+        let access_structure = self
+            .get_access_structure(session.access_structure_ref)
+            .ok_or("contact session has no access structure")?;
+        if access_structure.device_to_share_index.get(&from) != Some(&share.share_index) {
+            return Err("contact ECDH share is not for this device's share index".into());
+        }
+        let network = self.sp_contact_network(session.access_structure_ref.key_id)?;
+        verify_contact_shares(
+            &access_structure.app_shared_key(),
+            &session.details,
+            network,
+            core::slice::from_ref(share),
+        )
+        .map_err(String::from)
+    }
+
+    fn sp_contact_network(&self, key_id: KeyId) -> Result<bitcoin::Network, String> {
+        match self.keys.get(&key_id).map(|key| key.purpose) {
+            Some(KeyPurpose::Bitcoin(network)) => Ok(network),
+            _ => Err("a contact needs a bitcoin key".into()),
+        }
+    }
+
+    /// Once a threshold of devices have answered, combines their shares into the contact and opens
+    /// the session that signs it. The signers are the devices that answered, which have each
+    /// approved it. The result of the session goes to [`Self::finish_sp_contact`].
+    pub fn start_sp_contact_sign(
+        &mut self,
+        session_id: SpContactSessionId,
+        rng: &mut impl rand_core::RngCore,
+    ) -> Result<SignSessionId, StartSignError> {
+        let session = self
+            .sp_contact_sessions
+            .get(&session_id)
+            .ok_or(StartSignError::NoSuchSpContactSession)?
+            .clone();
+        let access_structure = self
+            .get_access_structure(session.access_structure_ref)
+            .ok_or(StartSignError::NoSuchAccessStructure)?;
+        let answered = session.shares.keys().copied().collect::<BTreeSet<_>>();
+        if answered.len() < access_structure.threshold() as usize {
+            return Err(StartSignError::NotEnoughDevicesSelected {
+                selected: answered.len(),
+                threshold: access_structure.threshold(),
+            });
+        }
+        let network = self
+            .sp_contact_network(session.access_structure_ref.key_id)
+            .map_err(|_| StartSignError::SignTask(crate::SignTaskError::WrongPurpose))?;
+        let shares = session.shares.values().copied().collect::<Vec<_>>();
+        let account_ecdh = combine_contact_shares(
+            &access_structure.app_shared_key(),
+            &session.details,
+            network,
+            &shares,
+        )
+        .map_err(|_| StartSignError::CantSignInState {
+            in_state: "contact ECDH shares do not combine",
+        })?;
+
+        let sign_session_id = self.start_sign(
+            session.access_structure_ref,
+            WireSignTask::SpContact(Box::new(SpContact {
+                details: session.details,
+                account_ecdh,
+            })),
+            &answered,
+            rng,
+        )?;
+        self.sp_contact_sign_proofs.insert(
+            sign_session_id,
+            SpContactProofs {
+                app_poly: access_structure
+                    .app_shared_key()
+                    .key
+                    .point_polynomial()
+                    .to_vec(),
+                shares,
+            },
+        );
+        self.sp_contact_sessions.remove(&session_id);
+        Ok(sign_session_id)
+    }
+
+    /// Stores the contact a finished signing session signed, and forgets the session.
+    pub fn finish_sp_contact(&mut self, session_id: SignSessionId) -> Option<SignedSpContact> {
+        let finished = self.finished_signing_sessions.get(&session_id)?;
+        let WireSignTask::SpContact(contact) = finished.init.group_request.sign_task.clone() else {
+            return None;
+        };
+        let key_id = finished.key_id;
+        let contact = SignedSpContact {
+            contact: *contact,
+            signature: finished.signatures.first()?.0,
+        };
+        // A contact added under this name since the session started keeps it.
+        if self
+            .sp_contacts(key_id)
+            .any(|stored| stored.contact.details.same_name(&contact.contact.details))
+        {
+            self.forget_finished_sign_session(session_id);
+            self.sp_contact_sign_proofs.remove(&session_id);
+            return None;
+        }
+        self.mutate(Mutation::Signing(SigningMutation::AddSpContact {
+            key_id,
+            contact: Box::new(contact.clone()),
+        }));
+        self.forget_finished_sign_session(session_id);
+        self.sp_contact_sign_proofs.remove(&session_id);
+        Some(contact)
+    }
+
+    /// Settles contact signing sessions left over from an earlier run: finished ones are stored,
+    /// and the rest are cancelled because their proofs were in memory.
+    pub fn settle_sp_contact_sessions(&mut self) {
+        let finished = self
+            .finished_signing_sessions
+            .iter()
+            .filter(|(_, session)| {
+                matches!(
+                    session.init.group_request.sign_task,
+                    WireSignTask::SpContact(_)
+                )
+            })
+            .map(|(session_id, _)| *session_id)
+            .collect::<Vec<_>>();
+        for session_id in finished {
+            self.finish_sp_contact(session_id);
+        }
+        let orphaned = self
+            .active_signing_sessions
+            .iter()
+            .filter(|(session_id, session)| {
+                matches!(
+                    session.init.group_request.sign_task,
+                    WireSignTask::SpContact(_)
+                ) && !self.sp_contact_sign_proofs.contains_key(session_id)
+            })
+            .map(|(session_id, _)| *session_id)
+            .collect::<Vec<_>>();
+        for session_id in orphaned {
+            self.cancel_sign_session(session_id);
+        }
+    }
+
+    /// The trusted contacts of `key_id`, by name.
+    pub fn sp_contacts(&self, key_id: KeyId) -> impl Iterator<Item = &SignedSpContact> {
+        self.sp_contacts
+            .get(&key_id)
+            .into_iter()
+            .flat_map(|c| c.values())
+    }
+
+    pub fn remove_sp_contact(&mut self, key_id: KeyId, name: String) {
+        self.mutate(Mutation::Signing(SigningMutation::RemoveSpContact {
+            key_id,
+            name,
+        }));
+    }
+
+    /// Opens the signing session for `sign_task`, whose nonces are already reserved for each device
+    /// in `nonces_by_device`. The access structure in `access_structure_ref` must exist.
+    fn new_sign_session(
+        &mut self,
+        access_structure_ref: AccessStructureRef,
+        sign_task: WireSignTask,
+        sign_items: Vec<SignItem>,
+        nonces_by_device: BTreeMap<DeviceId, SigningReqSubSegment>,
+        rng: &mut impl rand_core::RngCore,
+    ) -> SignSessionId {
+        let AccessStructureRef {
+            key_id,
+            access_structure_id,
+        } = access_structure_ref;
+        let access_structure = self
+            .keys
+            .get(&key_id)
+            .expect("key was checked by start_sign")
+            .complete_key
+            .access_structures
+            .get(&access_structure_id)
+            .expect("access structure was checked by start_sign");
+        let app_shared_key = access_structure.app_shared_key().clone();
 
         let nonces_by_party = nonces_by_device
             .iter()
@@ -1189,7 +1585,7 @@ impl FrostCoordinator {
             local_session,
         )));
 
-        Ok(session_id)
+        session_id
     }
 
     pub fn request_device_sign(
@@ -1239,6 +1635,7 @@ impl FrostCoordinator {
         RequestDeviceSign {
             device_id,
             request_sign,
+            sp_contact_proofs: self.sp_contact_sign_proofs.get(&session_id).cloned(),
         }
     }
 
@@ -1467,6 +1864,21 @@ impl FrostCoordinator {
     }
 
     pub fn cancel_sign_session(&mut self, session_id: SignSessionId) {
+        self.sp_contact_sign_proofs.remove(&session_id);
+        // A contact the user walked away from must not be stored by `settle_sp_contact_sessions`.
+        if self
+            .finished_signing_sessions
+            .get(&session_id)
+            .is_some_and(|session| {
+                matches!(
+                    session.init.group_request.sign_task,
+                    WireSignTask::SpContact(_)
+                )
+            })
+        {
+            self.forget_finished_sign_session(session_id);
+            return;
+        }
         self.mutate(Mutation::Signing(SigningMutation::CloseSignSession {
             session_id,
             finished: None,
@@ -1546,6 +1958,8 @@ impl FrostCoordinator {
 
     pub fn clear_tmp_data(&mut self) {
         self.pending_keygens.clear();
+        self.sp_contact_sessions.clear();
+        self.sp_contact_sign_proofs.clear();
         self.restoration.clear_tmp_data();
     }
 
@@ -1847,6 +2261,8 @@ pub enum StartSignError {
     SignTask(SignTaskError),
     NoSuchAccessStructure,
     CouldntDecryptRootKey,
+    NoSuchSpContactSession,
+    SpContactNameTaken,
 }
 
 impl fmt::Display for StartSignError {
@@ -1863,6 +2279,12 @@ impl fmt::Display for StartSignError {
             }
             StartSignError::CantSignInState { in_state } => {
                 write!(f, "Can't sign in state {in_state}")
+            }
+            StartSignError::NoSuchSpContactSession => {
+                write!(f, "That contact is no longer being added")
+            }
+            StartSignError::SpContactNameTaken => {
+                write!(f, "This wallet already has a contact with that name")
             }
             StartSignError::NotEnoughNoncesForDevice(not_enough_nonces) => not_enough_nonces.fmt(f),
             StartSignError::DeviceNotPartOfKey { device_id } => {
@@ -2045,16 +2467,25 @@ pub struct StartSign {
 pub struct RequestDeviceSign {
     pub request_sign: RequestSign,
     pub device_id: DeviceId,
+    /// Set for a contact's signing session, which the device checks against these.
+    pub sp_contact_proofs: Option<SpContactProofs>,
 }
 
 impl From<RequestDeviceSign> for CoordinatorSend {
     fn from(value: RequestDeviceSign) -> Self {
-        CoordinatorSend::ToDevice {
-            message: CoordinatorToDeviceMessage::Signing(
-                crate::message::signing::CoordinatorSigning::RequestSign(Box::new(
-                    value.request_sign,
-                )),
+        let message = match value.sp_contact_proofs {
+            None => crate::message::signing::CoordinatorSigning::RequestSign(Box::new(
+                value.request_sign,
+            )),
+            Some(proofs) => crate::message::signing::CoordinatorSigning::RequestSpContactSign(
+                Box::new(crate::message::signing::RequestSpContactSign {
+                    request_sign: value.request_sign,
+                    proofs,
+                }),
             ),
+        };
+        CoordinatorSend::ToDevice {
+            message: CoordinatorToDeviceMessage::Signing(message),
             destinations: [value.device_id].into(),
         }
     }

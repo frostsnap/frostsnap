@@ -9,6 +9,7 @@ import 'package:frostsnap/psbt.dart';
 import 'package:frostsnap/settings.dart';
 import 'package:frostsnap/sign_message.dart';
 import 'package:frostsnap/theme.dart';
+import 'package:frostsnap/wallet_contacts.dart';
 import 'package:frostsnap/wallet_stranded_coins.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
 
@@ -204,6 +205,28 @@ class _WalletMoreState extends State<WalletMore> {
                         child: BackupChecklist(
                           accessStructure: frostKey.accessStructures()[0],
                           showAppBar: true,
+                        ),
+                      ),
+                    );
+                  },
+          ),
+          ListTile(
+            contentPadding: contentPadding,
+            tileColor: tileColor,
+            shape: tileShape,
+            title: Text('Contacts'),
+            subtitle: Text('Addresses your devices trust for silent payments'),
+            leading: Icon(Icons.contacts),
+            onTap: frostKey == null
+                ? null
+                : () async {
+                    await MaybeFullscreenDialog.show(
+                      context: context,
+                      child: walletCtx.wrap(
+                        SpContactsPage(
+                          accessStructureRef: frostKey
+                              .accessStructures()[0]
+                              .accessStructureRef(),
                         ),
                       ),
                     );

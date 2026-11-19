@@ -1,6 +1,6 @@
 // USB CDC vid and pid
-const USB_VID: u16 = 12346;
-const USB_PID: u16 = 4097;
+pub(crate) const USB_VID: u16 = 12346;
+pub(crate) const USB_PID: u16 = 4097;
 
 use crate::firmware::ValidatedFirmwareBin;
 use crate::PortOpenError;
