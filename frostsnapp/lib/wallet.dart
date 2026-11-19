@@ -11,6 +11,7 @@ import 'package:frostsnap/maybe_fullscreen_dialog.dart';
 import 'package:frostsnap/nonce_replenish.dart';
 import 'package:frostsnap/restoration/wallet_recovery_page.dart';
 import 'package:frostsnap/src/rust/api.dart';
+import 'package:frostsnap/src/rust/api/verifiable_card.dart';
 import 'package:frostsnap/src/rust/api/backup_run.dart';
 import 'package:frostsnap/bitcoin_network_ext.dart';
 import 'package:frostsnap/src/rust/api/bitcoin.dart';
@@ -20,6 +21,7 @@ import 'package:frostsnap/src/rust/api/signing.dart';
 import 'package:frostsnap/src/rust/api/super_wallet.dart';
 import 'package:frostsnap/stream_ext.dart';
 import 'package:frostsnap/theme.dart';
+import 'package:frostsnap/verifiable_card/not_checked_dialog.dart';
 import 'package:frostsnap/wallet_add.dart';
 import 'package:frostsnap/wallet_list_controller.dart';
 import 'package:frostsnap/wallet_more.dart';
@@ -749,11 +751,18 @@ class WalletBottomBar extends StatelessWidget {
 
     final receiveButton = TextButton.icon(
       onPressed: () async {
-        final backupRun = coord.getBackupRun(keyId: walletCtx.wallet.keyId());
+        final keyId = walletCtx.wallet.keyId();
+        final backupRun = coord.getBackupRun(keyId: keyId);
         if (!backupRun.isComplete) {
           final frostKey = walletCtx.wallet.frostKey();
           if (frostKey != null) {
             final accessStructure = frostKey.accessStructures()[0];
+            // The soft receive lock: a card key gets no address until every
+            // card is checked, and there is no "Later".
+            if (coord.keyUsesCard(keyId: keyId)) {
+              await showCardNotCheckedDialog(context, accessStructure);
+              return;
+            }
             final choice = await showSecureWalletDialog(
               context,
               accessStructure,
@@ -1279,6 +1288,16 @@ class BackupWarningBanner extends StatelessWidget {
         final backupRun = backupSnapshot.data;
         final hideBanner = backupRun == null || backupRun.isComplete;
         if (hideBanner) return SizedBox.shrink();
+        // Owner B15: a card written on an install that didn't create the
+        // wallet stays "not verified" here for good.
+        final unverified = backupRun.devices.any(
+          (d) => d.cardStatus == CardBackupStatus.unverified,
+        );
+        final message = coord.keyUsesCard(keyId: frostKey.keyId())
+            ? 'Backup not checked yet'
+            : unverified
+            ? 'Backup not verified'
+            : 'This wallet has unfinished backups!';
 
         return StreamBuilder<TxState>(
           stream: walletCtx.txStream,
@@ -1298,7 +1317,7 @@ class BackupWarningBanner extends StatelessWidget {
                   onPressed: () => onTap(context, walletCtx),
                   icon: Icon(Icons.warning_rounded),
                   style: IconButton.styleFrom(foregroundColor: color),
-                  tooltip: 'This wallet has unfinished backups!',
+                  tooltip: message,
                 ),
               );
             }
@@ -1311,7 +1330,7 @@ class BackupWarningBanner extends StatelessWidget {
               textColor: color,
               leading: Icon(Icons.warning_rounded),
               trailing: Icon(Icons.chevron_right),
-              title: Text('This wallet has unfinished backups!'),
+              title: Text(message),
             );
           },
         );

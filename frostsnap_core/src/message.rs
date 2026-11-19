@@ -20,6 +20,7 @@ use schnorr_fun::Signature;
 use sha2::digest::Update;
 use sha2::Digest;
 
+pub mod card;
 pub mod keygen;
 pub mod screen_verify;
 pub mod signing;
@@ -41,6 +42,8 @@ pub enum CoordinatorToDeviceMessage {
     Restoration(CoordinatorRestoration),
     #[delegate_kind]
     ScreenVerify(screen_verify::ScreenVerify),
+    #[delegate_kind]
+    Card(card::CoordinatorCard),
 }
 
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode, Kind)]
@@ -72,6 +75,29 @@ pub enum CoordinatorRestoration {
         coord_share_decryption_contrib: CoordShareDecryptionContrib,
         share_index: ShareIndex,
         root_shared_key: SharedKey,
+    },
+    /// Spec `CardRestoreBegin`: enter a 64-word card, words 1–32 on the device. Replaces
+    /// `EnterPhysicalBackup` for cards. The device acknowledges it with `RestoreState`, and
+    /// replies with `PhysicalEntered` once restored, as for a 25-word backup.
+    EnterCard {
+        enter_physical_id: EnterPhysicalId,
+        /// F, when the app knows the wallet; None means unique decoding only.
+        target: Option<SharedKey>,
+        /// The card format the app's record of the key gives, if any. A format other than this
+        /// firmware's is "needs newer firmware"; with none the card is read as this firmware's
+        /// format, and a card of another format shows up only as failed masks (spec PK.8).
+        recorded_format: Option<u8>,
+        /// The wallet's share indices, which the repair prefilter keeps candidates to (build
+        /// plan A6). Only a filter: the share is still checked against F.
+        share_indices: Option<Vec<u8>>,
+    },
+    /// The app's words 33–64 for the restore `enter_physical_id` names; `None` is "Can't read
+    /// this word". Sent only after the device's `RestoreState` for that `EnterCard`, and again
+    /// after an edit or whenever a `RestoreState` says the device lacks it. Its `Debug` shows no
+    /// word.
+    CardPhoneHalf {
+        enter_physical_id: EnterPhysicalId,
+        words: card::CardHalfEntries,
     },
 }
 
@@ -132,6 +158,8 @@ pub enum DeviceToCoordinatorMessage {
     Signing(signing::DeviceSigning),
     #[delegate_kind]
     Restoration(DeviceRestoration),
+    #[delegate_kind]
+    Card(card::DeviceCard),
 }
 
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode, Kind)]

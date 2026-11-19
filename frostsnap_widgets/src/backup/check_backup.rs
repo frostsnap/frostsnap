@@ -1,4 +1,3 @@
-use super::distractor::find_closest_distractors;
 use crate::{
     animation_speed::AnimationSpeed,
     circle_button::{CircleButton, CircleButtonState},
@@ -12,12 +11,31 @@ use crate::{
     DefaultTextStyle, DynWidget, Key, KeyTouch, Sizing, Widget, FONT_HUGE_MONO, FONT_MED,
     FONT_SMALL,
 };
-use alloc::string::String;
+use alloc::{string::String, vec::Vec};
 use embedded_graphics::{pixelcolor::Rgb565, prelude::*};
 use frost_backup::bip39_words::BIP39_WORDS;
 
-const TOTAL_SCREENS: usize = 26; // 1 share index + 25 words
 const NUM_OPTIONS: usize = 3;
+
+/// What the quiz asks for, one screen each.
+enum QuizItems {
+    /// The standard 25-word backup: the share index, then the words.
+    Share {
+        word_indices: [u16; 25],
+        share_index: u16,
+    },
+    /// Numbered words, e.g. words 1-32 of a split card: (word number, word index).
+    Words(Vec<(u8, u16)>),
+}
+
+impl QuizItems {
+    fn len(&self) -> usize {
+        match self {
+            QuizItems::Share { .. } => 26, // 1 share index + 25 words
+            QuizItems::Words(items) => items.len(),
+        }
+    }
+}
 
 /// Red color matching erase_device warning text
 const WRONG_ANSWER_COLOR: Rgb565 = Rgb565::new(31, 14, 8);
@@ -47,10 +65,19 @@ fn shuffle_3<T: Copy>(rng_state: &mut u32, arr: &mut [T; NUM_OPTIONS]) {
 
 fn generate_screen_content(
     current_screen: usize,
-    share_index: u16,
-    word_indices: &[u16; 25],
+    items: &QuizItems,
     rng_state: &mut u32,
 ) -> (String, QuizButtons, &'static str) {
+    let (share_index, word_indices) = match items {
+        QuizItems::Share {
+            word_indices,
+            share_index,
+        } => (*share_index, word_indices),
+        QuizItems::Words(items) => {
+            let (number, word) = items[current_screen];
+            return word_screen_content(alloc::format!("Select Word {number}"), word, rng_state);
+        }
+    };
     if current_screen == 0 {
         let correct = share_index;
         let mut options = [0u16; NUM_OPTIONS];
@@ -95,22 +122,35 @@ fn generate_screen_content(
             BIP39_WORDS[correct as usize],
         )
     } else {
-        let correct_word_index = word_indices[current_screen - 1];
-        let distractors = find_closest_distractors(correct_word_index);
-        let mut indices = [correct_word_index, distractors[0], distractors[1]];
-        shuffle_3(rng_state, &mut indices);
-
-        let words = [
-            BIP39_WORDS[indices[0] as usize],
-            BIP39_WORDS[indices[1] as usize],
-            BIP39_WORDS[indices[2] as usize],
-        ];
-        (
+        word_screen_content(
             alloc::format!("Select Word {}", current_screen),
-            QuizButtons::new(&words, words),
-            BIP39_WORDS[correct_word_index as usize],
+            word_indices[current_screen - 1],
+            rng_state,
         )
     }
+}
+
+/// A word and its two closest lookalikes, shuffled.
+fn word_screen_content(
+    title: String,
+    correct_word_index: u16,
+    rng_state: &mut u32,
+) -> (String, QuizButtons, &'static str) {
+    let distractors = frost_backup::bip39_words::closest_lookalikes(correct_word_index)
+        .expect("a backup word index is below 2048");
+    let mut indices = [correct_word_index, distractors[0], distractors[1]];
+    shuffle_3(rng_state, &mut indices);
+
+    let words = [
+        BIP39_WORDS[indices[0] as usize],
+        BIP39_WORDS[indices[1] as usize],
+        BIP39_WORDS[indices[2] as usize],
+    ];
+    (
+        title,
+        QuizButtons::new(&words, words),
+        BIP39_WORDS[correct_word_index as usize],
+    )
 }
 
 const BUTTON_WIDTH: u32 = 200;
@@ -242,7 +282,7 @@ impl QuizButtons {
 
 /// Success content using Column layout with flex, matching the HoldToConfirm pattern.
 #[derive(frostsnap_macros::Widget)]
-struct SuccessContent {
+pub(crate) struct SuccessContent {
     #[widget_delegate]
     inner: Column<(
         Center<Column<(Text<Gray4TextStyle>, SizedBox<Rgb565>, Text<Gray4TextStyle>)>>,
@@ -252,7 +292,7 @@ struct SuccessContent {
 }
 
 impl SuccessContent {
-    fn new() -> Self {
+    pub(crate) fn new(subtitle: &str) -> Self {
         let title = Text::new(
             String::from("Success!"),
             Gray4TextStyle::new(FONT_MED, PALETTE.on_background),
@@ -261,7 +301,7 @@ impl SuccessContent {
         let spacer = SizedBox::<Rgb565>::new(Size::new(1, 15));
 
         let subtitle = Text::new(
-            String::from("Backup Checked"),
+            String::from(subtitle),
             Gray4TextStyle::new(FONT_SMALL, PALETTE.text_secondary),
         );
 
@@ -286,7 +326,7 @@ impl SuccessContent {
         Self { inner }
     }
 
-    fn button_mut(&mut self) -> &mut CircleButton {
+    pub(crate) fn button_mut(&mut self) -> &mut CircleButton {
         &mut self.inner.children.1
     }
 }
@@ -369,8 +409,8 @@ const TITLE_GAP: u32 = 6;
 const SUCCESS_DWELL_MS: u64 = 1800;
 
 pub struct CheckBackupScreen {
-    word_indices: [u16; 25],
-    share_index: u16,
+    items: QuizItems,
+    success_line: &'static str,
     current_screen: usize,
     rng_state: u32,
 
@@ -395,14 +435,32 @@ impl CheckBackupScreen {
     }
 
     pub fn new(word_indices: [u16; 25], share_index: u16, rand_seed: u32) -> Self {
+        Self::with_items(
+            QuizItems::Share {
+                word_indices,
+                share_index,
+            },
+            "Backup Checked",
+            rand_seed,
+        )
+    }
+
+    /// The same quiz over numbered words, e.g. words 1-32 of a split card: one screen per
+    /// `(word number, word index)`, in order, with no share index screen. `success_line` goes
+    /// under "Success!" at the end.
+    pub fn for_words(items: Vec<(u8, u16)>, success_line: &'static str, rand_seed: u32) -> Self {
+        assert!(!items.is_empty(), "a quiz needs a word");
+        Self::with_items(QuizItems::Words(items), success_line, rand_seed)
+    }
+
+    fn with_items(items: QuizItems, success_line: &'static str, rand_seed: u32) -> Self {
         let mut rng_state = rand_seed;
-        let (title, quiz, correct_word) =
-            generate_screen_content(0, share_index, &word_indices, &mut rng_state);
-        let page = QuizPage::new(title, 0, TOTAL_SCREENS, quiz);
+        let (title, quiz, correct_word) = generate_screen_content(0, &items, &mut rng_state);
+        let page = QuizPage::new(title, 0, items.len(), quiz);
 
         Self {
-            word_indices,
-            share_index,
+            items,
+            success_line,
             current_screen: 0,
             rng_state,
             correct_word,
@@ -414,6 +472,16 @@ impl CheckBackupScreen {
             current_time: None,
             checkmark_started: false,
         }
+    }
+
+    /// A pick's feedback (the colour, the shake) or a fade between words is running.
+    pub fn is_animating(&self) -> bool {
+        let buttons_fading = self
+            .screen
+            .current()
+            .downcast_ref::<QuizPage>()
+            .is_some_and(|page| page.inner.children.2.is_transitioning());
+        self.feedback.is_some() || self.screen.is_transitioning() || buttons_fading
     }
 
     pub fn is_verified(&self) -> bool {
@@ -437,16 +505,12 @@ impl CheckBackupScreen {
     }
 
     fn regenerate_content(&mut self) {
-        if self.current_screen >= TOTAL_SCREENS {
+        if self.current_screen >= self.items.len() {
             return;
         }
 
-        let (title_str, quiz, correct_word) = generate_screen_content(
-            self.current_screen,
-            self.share_index,
-            &self.word_indices,
-            &mut self.rng_state,
-        );
+        let (title_str, quiz, correct_word) =
+            generate_screen_content(self.current_screen, &self.items, &mut self.rng_state);
         self.correct_word = correct_word;
         let current_screen = self.current_screen;
         if let Some(page) = self.quiz_page_mut() {
@@ -461,10 +525,12 @@ impl CheckBackupScreen {
         self.feedback = None;
         self.feedback_since = None;
 
-        if self.current_screen >= TOTAL_SCREENS {
+        if self.current_screen >= self.items.len() {
             self.completed_since = self.current_time;
             self.screen
-                .switch_to(crate::any_of::AnyOf::new(SuccessContent::new()));
+                .switch_to(crate::any_of::AnyOf::new(SuccessContent::new(
+                    self.success_line,
+                )));
         } else {
             self.regenerate_content();
         }
@@ -578,7 +644,7 @@ impl DynWidget for CheckBackupScreen {
         current_time: crate::Instant,
         lift_up: bool,
     ) -> Option<KeyTouch> {
-        if self.current_screen >= TOTAL_SCREENS {
+        if self.current_screen >= self.items.len() {
             return None;
         }
 
@@ -663,5 +729,72 @@ impl core::fmt::Debug for CheckBackupScreen {
             .field("current_screen", &self.current_screen)
             .field("feedback", &self.feedback)
             .finish()
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::vec_framebuffer::VecFramebuffer;
+    use alloc::vec::Vec;
+    use frost_backup::bip39_words::closest_lookalikes;
+
+    fn draw(screen: &mut CheckBackupScreen, ms: u64) {
+        let mut target = crate::SuperDrawTarget::new(
+            VecFramebuffer::<Rgb565>::new(240, 280),
+            PALETTE.background,
+        );
+        screen
+            .draw(&mut target, crate::Instant::from_millis(ms))
+            .unwrap();
+    }
+
+    fn pick(screen: &mut CheckBackupScreen, word: u16, ms: u64) {
+        screen.handle_press(BIP39_WORDS[word as usize]);
+        screen.handle_release(crate::Instant::from_millis(ms));
+    }
+
+    #[test]
+    fn for_words_asks_every_word_in_order_until_it_is_right() {
+        let items: Vec<(u8, u16)> = (0..32u8).map(|j| (j + 1, j as u16 * 61 + 5)).collect();
+        let mut screen = CheckBackupScreen::for_words(items.clone(), "Words 1-32 checked", 7);
+        screen.set_constraints(Size::new(240, 280));
+        assert_eq!(screen.items.len(), 32, "no share index screen");
+        let mut t = 0;
+        draw(&mut screen, t);
+        for (k, (number, word)) in items.into_iter().enumerate() {
+            let title = generate_screen_content(k, &screen.items, &mut 1).0;
+            assert_eq!(title, alloc::format!("Select Word {number}"));
+            // a wrong pick shakes, and the same word is asked again
+            let wrong = closest_lookalikes(word).unwrap()[0];
+            pick(&mut screen, wrong, t);
+            t += 700;
+            draw(&mut screen, t);
+            assert_eq!(screen.current_screen, k);
+            pick(&mut screen, word, t);
+            t += 450;
+            draw(&mut screen, t);
+            assert_eq!(screen.current_screen, k + 1);
+        }
+        assert!(!screen.is_verified());
+        draw(&mut screen, t + 1_000);
+        assert!(screen.is_verified());
+        assert!(!screen.is_finished());
+        draw(&mut screen, t + 1_800);
+        assert!(screen.is_finished());
+    }
+
+    #[test]
+    fn for_words_offers_the_word_and_its_two_closest_lookalikes() {
+        let word = 1337;
+        let (_, buttons, correct) =
+            generate_screen_content(0, &QuizItems::Words(alloc::vec![(40, word)]), &mut 9);
+        assert_eq!(correct, BIP39_WORDS[word as usize]);
+        let lookalikes = closest_lookalikes(word).unwrap();
+        for option in [word, lookalikes[0], lookalikes[1]] {
+            assert!(buttons
+                .find_button_index(BIP39_WORDS[option as usize])
+                .is_some());
+        }
     }
 }

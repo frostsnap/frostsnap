@@ -3,7 +3,7 @@ mod backup_display;
 mod backup_model;
 mod backup_status_bar;
 mod check_backup;
-mod distractor;
+pub(crate) use check_backup::SuccessContent;
 mod enter_share_screen;
 mod entered_words;
 mod input_preview;
@@ -12,7 +12,7 @@ mod t9_keyboard;
 mod word_selector;
 
 pub use alphabetic_keyboard::AlphabeticKeyboard;
-pub use backup_display::{AllWordsPage, BackupDisplay};
+pub use backup_display::{AllWordsPage, BackupCopy, BackupDisplay, CARD_HALF_WORDS};
 pub use backup_model::{BackupModel, FramebufferMutation, MainViewState, ViewState};
 pub use check_backup::CheckBackupScreen;
 pub use enter_share_screen::EnterShareScreen;

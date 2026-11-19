@@ -1,11 +1,10 @@
 use crate::DISPLAY_REFRESH_MS;
 use alloc::{boxed::Box, string::ToString};
-use embedded_graphics::prelude::*;
+use embedded_graphics::{geometry::Size, prelude::*};
+use frostsnap_core::device::card::CardScreen;
 use frostsnap_cst816s::interrupt::TouchReceiver;
 use frostsnap_widgets::palette::PALETTE;
-use frostsnap_widgets::{
-    debug::OverlayDebug, DeviceNameScreen, DynWidget, FirmwareUpgradeProgress, Standby, Widget,
-};
+use frostsnap_widgets::{debug::OverlayDebug, DynWidget, Standby, Widget};
 
 use crate::touch_handler;
 use crate::ui::FirmwareUpgradeStatus;
@@ -37,12 +36,17 @@ pub struct FrostyUi<'a> {
     pub widget: OverlayDebug<RootWidget>,
     pub touch_receiver: TouchReceiver,
     pub last_touch: Option<Point>,
+    /// When a touch event was last dequeued.
+    pub last_touch_event: Instant,
     pub last_redraw_time: Instant,
     pub downstream_connection_state: DownstreamConnectionState,
     pub upstream_connection_state: Option<UpstreamConnectionState>,
     pub busy_task: Option<BusyTask>,
     pub current_widget_index: usize,
     default_workflow: Option<Workflow>,
+    /// The word and undos left of the last device round answer screen, so a second look built
+    /// fresh keeps the word's undos.
+    round_undos: Option<(u8, u8)>,
 }
 
 impl<'a> FrostyUi<'a> {
@@ -73,10 +77,99 @@ impl<'a> FrostyUi<'a> {
             downstream_connection_state: DownstreamConnectionState::Disconnected,
             upstream_connection_state: None,
             last_touch: None,
+            last_touch_event: Instant::EPOCH,
             last_redraw_time: Instant::EPOCH,
             current_widget_index: 0,
             busy_task: Default::default(),
             default_workflow: None,
+            round_undos: None,
+        }
+    }
+}
+
+/// A touch counts as down for this long after its last event. A finger on the screen keeps
+/// sending events, so a touch older than this lost its lift-up to a full queue. Kept from Layer
+/// 1 over design §9.3's bare `last_touch.is_some()`: a held finger still counts as down, and a
+/// lost lift-up can't stop the card job until the next touch.
+const TOUCH_STALE_MS: u64 = 1_000;
+
+impl<'a> FrostyUi<'a> {
+    /// A touch is down or queued, a fade is running, or the device round's flash or fade is.
+    /// Card jobs skip their slice then, so touches are drained and drawn at the full frame
+    /// rate, swipes and taps stay smooth while the proofs and openings run behind the writing
+    /// and the quizzes, and a lift-up can't be lost.
+    pub fn is_interacting(&self) -> bool {
+        let touch_down = self.last_touch.is_some()
+            && self.last_touch_event.elapsed().as_millis() < TOUCH_STALE_MS;
+        touch_down
+            || self.touch_receiver.ready()
+            || self.is_transitioning()
+            || self.widget.inner().current().is_animating()
+    }
+
+    /// A fade between pages is under way.
+    pub fn is_transitioning(&self) -> bool {
+        self.widget.inner().is_transitioning()
+    }
+
+    /// A card screen from a background job may replace what's up: a card session screen, or
+    /// the home screen. Any other screen is the user's (a sign prompt, say), and is kept
+    /// (design §2.1 item 9).
+    pub fn may_show_card_job_screen(&self) -> bool {
+        self.at_standby() || self.widget.inner().current().is_card_session_screen()
+    }
+
+    /// A consolidation's threshold hold is up and the user hasn't held through it yet.
+    pub fn consolidate_hold_pending(&self) -> bool {
+        matches!(
+            self.widget.inner().current(),
+            WidgetTree::ConsolidateThresholdHold { phase: Some(_), .. }
+        )
+    }
+
+    /// The home screen is up.
+    pub fn at_standby(&self) -> bool {
+        matches!(self.widget.inner().current(), WidgetTree::Standby(_))
+    }
+
+    /// Moves the progress bar of the card busy screen that's up. Any other screen is left
+    /// alone: a background job never replaces a screen.
+    pub fn set_card_progress(&mut self, progress: f32) {
+        if let WidgetTree::CardPreparing { widget, .. } | WidgetTree::CardRestoreChecking(widget) =
+            self.widget.inner_mut().current_mut()
+        {
+            widget.set_progress(progress);
+        }
+    }
+
+    /// The events of the card screens, and the restore report's pages, which follow each other
+    /// without core.
+    #[inline(never)]
+    fn poll_card_screens(&mut self) -> Option<UiEvent> {
+        let next = match self.widget.inner_mut().current_mut() {
+            WidgetTree::CardRestoreReport {
+                widget,
+                page,
+                findings,
+                decoded,
+            } if widget.is_done() => match page.next(findings) {
+                Some(next_page) => WidgetTree::build_card_restore_report_page(
+                    next_page,
+                    *findings,
+                    decoded.take()?,
+                ),
+                None => return decoded.take().map(UiEvent::CardRestoreConfirm),
+            },
+            current => return current.take_card_event(),
+        };
+        self.widget.inner_mut().switch_to(next);
+        None
+    }
+
+    /// Notes the undos left on an answer screen that is about to be replaced.
+    fn keep_undos(&mut self) {
+        if let WidgetTree::CardDeviceRound(widget) = self.widget.inner().current() {
+            self.round_undos = Some((widget.box_index(), widget.undos_left()));
         }
     }
 }
@@ -123,9 +216,14 @@ impl<'a> UserInteraction for FrostyUi<'a> {
                 Workflow::Standby {
                     device_name,
                     held_share,
+                    card_line,
                 },
             ) => {
-                standby.set_key(device_name.to_string(), held_share.clone());
+                standby.set_key_with_card_line(
+                    device_name.to_string(),
+                    held_share.clone(),
+                    *card_line,
+                );
                 return;
             }
 
@@ -169,29 +267,82 @@ impl<'a> UserInteraction for FrostyUi<'a> {
                 return;
             }
 
+            // Card screens that update in place: the busy screens keep their progress, the
+            // gate moves its dots, and the answer screen moves from word to word. A repeat of
+            // words 1-32 or of a quiz that is up redraws nothing, so a resent screen never
+            // sends the user back to word 1.
+            (
+                WidgetTree::CardPreparing { task: shown, .. },
+                Workflow::Card(CardScreen::Preparing { task }),
+            ) if WidgetTree::same_busy_copy(*shown, *task) => {
+                return;
+            }
+            (WidgetTree::CardRestoreChecking(_), Workflow::Card(CardScreen::RestoreChecking)) => {
+                return;
+            }
+            (
+                WidgetTree::CardDeviceHalf { fired: false, .. },
+                Workflow::Card(CardScreen::DeviceHalf { .. }),
+            )
+            | (
+                WidgetTree::CardSelfCheck {
+                    fired: false,
+                    recheck: false,
+                    ..
+                },
+                Workflow::Card(CardScreen::SelfCheck { .. }),
+            )
+            | (
+                WidgetTree::CardSelfCheck {
+                    fired: false,
+                    recheck: true,
+                    ..
+                },
+                Workflow::Card(CardScreen::Recheck { .. }),
+            ) => {
+                return;
+            }
+            (
+                WidgetTree::CardGate(widget),
+                Workflow::Card(CardScreen::Gate { dots, preparing }),
+            ) => {
+                widget.set(*dots, *preparing);
+                return;
+            }
+            (
+                WidgetTree::CardDeviceRound(widget),
+                Workflow::Card(CardScreen::DeviceRoundAnswer {
+                    j,
+                    k,
+                    options,
+                    display_id,
+                }),
+            ) => {
+                widget.set_question(*j, *k, options.0, *display_id);
+                return;
+            }
+
             // If we're showing KeygenCheck and get another KeyGen prompt, we need a new one
             // because the security code would be different
             _ => {} // Different widget types, need to switch
         };
 
+        // A second look built fresh keeps its word's undos; any other screen ends them
+        if matches!(workflow, Workflow::Card(_)) {
+            self.keep_undos();
+        } else {
+            self.round_undos = None;
+        }
+
         // Convert workflow to widget tree
         let new_page = match workflow {
-            Workflow::Startup => {
-                WidgetTree::Standby(Box::new(Standby::new(crate::FIRMWARE_VERSION)))
-            }
-            Workflow::None => {
-                let mut standby = Standby::new(crate::FIRMWARE_VERSION);
-                standby.set_welcome();
-                WidgetTree::Standby(Box::new(standby))
-            }
+            Workflow::Startup => WidgetTree::build_standby(None, false),
+            Workflow::None => WidgetTree::build_standby(None, true),
             Workflow::Standby {
                 device_name,
                 held_share,
-            } => {
-                let mut standby = Standby::new(crate::FIRMWARE_VERSION);
-                standby.set_key(device_name.to_string(), held_share);
-                WidgetTree::Standby(Box::new(standby))
-            }
+                card_line,
+            } => WidgetTree::build_standby(Some((device_name, held_share, card_line)), false),
             Workflow::UserPrompt(prompt) => match prompt {
                 Prompt::KeyGen { phase } => WidgetTree::build_keygen_check(phase),
                 Prompt::Signing { phase, rand_seed } => {
@@ -202,12 +353,12 @@ impl<'a> UserInteraction for FrostyUi<'a> {
                     size,
                 } => WidgetTree::build_confirm_firmware_upgrade(firmware_digest, size),
                 Prompt::EraseDevice => WidgetTree::build_erase_device(),
+                Prompt::ConsolidateThreshold { phase, warning } => {
+                    WidgetTree::build_consolidate_threshold_hold(phase, warning)
+                }
             },
 
-            Workflow::NamingDevice { new_name } => {
-                let device_name_screen = DeviceNameScreen::new(new_name.to_string());
-                WidgetTree::DeviceNaming(Box::new(device_name_screen))
-            }
+            Workflow::NamingDevice { new_name } => WidgetTree::build_device_naming(&new_name),
 
             Workflow::DisplayBackup {
                 key_name: _,
@@ -230,29 +381,22 @@ impl<'a> UserInteraction for FrostyUi<'a> {
                 rand_seed,
             } => WidgetTree::build_display_address(address, bip32_path, rand_seed),
 
-            Workflow::FirmwareUpgrade(status) => {
-                use crate::ui::FirmwareUpgradeStatus;
+            Workflow::FirmwareUpgrade(status) => WidgetTree::build_firmware_upgrade(status),
 
-                let widget = Box::new(match status {
-                    FirmwareUpgradeStatus::Erase { progress } => {
-                        FirmwareUpgradeProgress::erasing(progress)
-                    }
-                    FirmwareUpgradeStatus::Download { progress } => {
-                        FirmwareUpgradeProgress::downloading(progress)
-                    }
-                    FirmwareUpgradeStatus::Passive => FirmwareUpgradeProgress::passive(),
-                    FirmwareUpgradeStatus::Rejected { reason } => {
-                        FirmwareUpgradeProgress::rejected(&reason.to_string())
-                    }
-                });
+            Workflow::EraseProgress { progress } => WidgetTree::build_erase_progress(progress),
 
-                WidgetTree::FirmwareUpgradeProgress { widget, status }
+            // by reference, so the words are wiped where core put them
+            Workflow::Card(screen) => {
+                match WidgetTree::build_card_screen(&screen, self.round_undos) {
+                    Some(page) => page,
+                    None => return,
+                }
             }
-
-            Workflow::EraseProgress { progress } => {
-                let widget = Box::new(frostsnap_widgets::EraseProgress::new(progress));
-                WidgetTree::EraseProgress { widget }
+            Workflow::CardRestoreEntry { phase, review } => {
+                WidgetTree::build_card_restore_entry(phase, review.as_ref())
             }
+            // by reference, so the share is wiped in the box it came in
+            Workflow::CardRestoreReport(report) => WidgetTree::build_card_restore_report(&report),
         };
 
         // Switch to the new page with fade transition
@@ -260,11 +404,18 @@ impl<'a> UserInteraction for FrostyUi<'a> {
     }
 
     fn poll(&mut self) -> Option<UiEvent> {
+        self.widget
+            .inner_mut()
+            .current_mut()
+            .build_pending(Size::new(240, 280));
         let now = Instant::now();
         let now_ms =
             frostsnap_widgets::Instant::from_millis(now.duration_since_epoch().as_millis());
 
         // Handle touch input
+        if self.touch_receiver.ready() {
+            self.last_touch_event = now;
+        }
         touch_handler::process_all_touch_events(
             &mut self.touch_receiver,
             &mut self.widget,
@@ -361,10 +512,15 @@ impl<'a> UserInteraction for FrostyUi<'a> {
                 *confirmed = true;
                 return Some(UiEvent::EraseDataConfirm);
             }
+            WidgetTree::ConsolidateThresholdHold { widget, phase } => {
+                if let Some(phase) = phase.take_if(|_| widget.is_done()) {
+                    return Some(UiEvent::ConsolidateConfirm { phase });
+                }
+            }
             _ => {}
         }
 
-        None
+        self.poll_card_screens()
     }
 
     fn set_busy_task(&mut self, task: BusyTask) {

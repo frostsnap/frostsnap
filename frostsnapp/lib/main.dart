@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:confetti/confetti.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:frostsnap/restoration/enter_card_view.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge.dart';
@@ -59,6 +60,8 @@ Future<void> main() async {
   try {
     final appDir = await getApplicationSupportDirectory();
     final appDirPath = appDir.path;
+    // Owner follow-up 2 to B14: the restore-failure count is kept per install.
+    await restoreFailures.loadFrom(File('$appDirPath/restore_failures.json'));
     if (Platform.isAndroid) {
       final (coord_, appCtx_, ffiserial) = await api.loadHostHandlesSerial(
         appDir: appDirPath,

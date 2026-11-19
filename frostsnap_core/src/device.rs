@@ -18,6 +18,9 @@ use alloc::{
 use schnorr_fun::frost::chilldkg::certpedpop::{self};
 use schnorr_fun::frost::{Fingerprint, PairedSecretShare, SecretShare, ShareIndex, SharedKey};
 
+pub mod card;
+pub mod card_restore;
+pub mod card_session;
 pub mod keys;
 use schnorr_fun::fun::KeyPair;
 use schnorr_fun::{frost, fun::prelude::*};
@@ -41,6 +44,7 @@ pub struct FrostSigner<S = MemoryNonceSlot> {
     mutations: VecDeque<Mutation>,
     keygen: keygen::State,
     restoration: restoration::State,
+    card: card::State,
     pub keygen_fingerprint: Fingerprint,
     pub nonce_batch_size: u32,
 }
@@ -164,6 +168,7 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
             mutations: Default::default(),
             keygen: Default::default(),
             restoration: Default::default(),
+            card: Default::default(),
             keygen_fingerprint: Fingerprint::FROST_V0,
             nonce_batch_size: NONCE_BATCH_SIZE,
         }
@@ -239,6 +244,7 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
                     .apply_mutation_restoration(restoration_mutation)
                     .map(Mutation::Restoration);
             }
+            Card(card_mutation) => return self.card.apply(card_mutation).map(Mutation::Card),
         }
 
         Some(mutation)
@@ -255,6 +261,7 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
     pub fn clear_tmp_data(&mut self) {
         self.clear_unfinished_keygens();
         self.restoration.clear_tmp_data();
+        self.card.clear_tmp_data();
     }
 
     pub fn keypair(&self) -> &KeyPair {
@@ -420,6 +427,9 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
                 ))])
             }
             Restoration(message) => self.recv_restoration_message(message, rng),
+            // The firmware passes its session itself; without one, session-bound requests get
+            // `NoSession`.
+            Card(message) => Ok(self.recv_card_message(message, None)),
         }
     }
 
@@ -606,6 +616,8 @@ pub enum Mutation {
     Keygen(keys::KeyMutation),
     #[delegate_kind]
     Restoration(restoration::RestorationMutation),
+    #[delegate_kind]
+    Card(card::CardMutation),
 }
 
 #[derive(Clone, Debug, bincode::Encode, bincode::Decode, PartialEq)]

@@ -316,7 +316,8 @@ class _DeviceDiscoveryWidgetState extends State<DeviceDiscoveryWidget> {
                 contentPadding: EdgeInsets.zero,
                 leading: Icon(Icons.description_outlined, size: 24),
                 title: Text(
-                  'To enter a seed word backup: plug in a blank device',
+                  'To enter a seed word backup or a 64-word card: plug in a '
+                  'blank device.',
                 ),
               ),
             ],

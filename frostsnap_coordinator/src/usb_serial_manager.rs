@@ -584,6 +584,17 @@ impl UsbSerialManager {
         &mut *self.serial_impl
     }
 
+    /// Another device is on `device_id`'s port too, so it may be downstream of one: only then
+    /// can its card refusal `NotDirectUsb` be honest (re-attack RA-1). A device alone on its
+    /// port is plugged straight in. The order the devices announced in isn't the chain's, so
+    /// which one is first can't be told from here.
+    pub fn shares_port(&self, device_id: DeviceId) -> bool {
+        self.device_ports
+            .get(&device_id)
+            .and_then(|device_port| self.reverse_device_ports.get(&device_port.port))
+            .is_some_and(|device_ids| device_ids.len() > 1)
+    }
+
     pub fn devices_by_ports(&self) -> &HashMap<String, Vec<DeviceId>> {
         &self.reverse_device_ports
     }

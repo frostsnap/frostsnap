@@ -162,6 +162,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let mut last_touch: Option<Point> = None;
             let mut drag_start: Option<Point> = None; // Initial position when mouse down
             let mut is_dragging = false;
+            // a scripted release ends a drag only after a scripted drag, as on the device,
+            // where a tap's lift-up never reaches handle_vertical_drag
+            let mut script_dragged = false;
             const DRAG_THRESHOLD: i32 = 5; // Minimum pixels to consider it a drag
             let start_time = SystemTime::now();
             let mut touch_feedback: Vec<(Point, u8)> = Vec::new(); // Point and frames remaining
@@ -195,21 +198,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             Command::Touch { x, y } => {
                                 let point = Point::new(x, y);
                                 last_touch = Some(point);
+                                script_dragged = false;
                                 widget.handle_touch(point, current_time, false);
                                 // Add touch feedback
                                 touch_feedback.push((point, 30));
                             }
                             Command::Release { x, y } => {
                                 let point = Point::new(x, y);
-                                if let Some(prev_point) = last_touch {
+                                if let Some(prev_point) = last_touch.filter(|_| script_dragged) {
                                     widget.handle_vertical_drag(Some(prev_point.y as u32), y as u32, true);
                                 }
+                                script_dragged = false;
                                 widget.handle_touch(point, current_time, true);
                                 last_touch = None;
                             }
                             Command::Drag { _x1: _, y1, x2, y2 } => {
                                 widget.handle_vertical_drag(Some(y1 as u32), y2 as u32, false);
                                 last_touch = Some(Point::new(x2, y2));
+                                script_dragged = true;
                             }
                             Command::Screenshot { filename } => {
                                 // First draw any pending touch feedback circles

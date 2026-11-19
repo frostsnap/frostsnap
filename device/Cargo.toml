@@ -16,6 +16,14 @@ prefill-words = []
 stack_guard = []
 # FIXME: remove this feature when v2.rs is deleted (only used in legacy factory code)
 genuine_device = []
+# the heap's high-water mark in the card job log lines (costs time on every alloc)
+card_heap_stats = ["esp-alloc/internal-heap-stats"]
+# the card-timing bench build: keeps every card job log line (the encode, the seal, the proofs,
+# each opening, the restore decode: wall clock, compute, slices, longest slice) and times one
+# encode and two worst-case restore repairs at boot, sent upstream as debug lines once no card
+# flow is live. Job timings follow the user's touches: never ship it, and use it only with a
+# disposable wallet.
+card-timing = []
 
 [dependencies]
 frostsnap_core = { workspace = true }

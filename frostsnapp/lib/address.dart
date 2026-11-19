@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:frostsnap/contexts.dart';
 import 'package:frostsnap/src/rust/api/super_wallet.dart';
 import 'package:frostsnap/theme.dart';
+import 'package:frostsnap/verifiable_card/not_checked_dialog.dart';
 import 'package:frostsnap/wallet_receive.dart';
 
 class CheckAddressPage extends StatefulWidget {
@@ -72,18 +73,22 @@ class _CheckAddressPageState extends State<CheckAddressPage> {
       children.addAll([
         const SizedBox(height: 16),
         FilledButton.tonal(
-          onPressed: () => showBottomSheetOrDialog(
-            context,
-            title: Text(found.external ? 'Receive' : 'Change'),
-            builder: (context, scrollController) => walletCtx.wrap(
-              ReceivePage(
-                wallet: walletCtx.wallet,
-                txStream: walletCtx.txStream,
-                scrollController: scrollController,
-                address: found,
+          onPressed: () async {
+            if (await showCardLockIfHeld(context, walletCtx)) return;
+            if (!context.mounted) return;
+            showBottomSheetOrDialog(
+              context,
+              title: Text(found.external ? 'Receive' : 'Change'),
+              builder: (context, scrollController) => walletCtx.wrap(
+                ReceivePage(
+                  wallet: walletCtx.wallet,
+                  txStream: walletCtx.txStream,
+                  scrollController: scrollController,
+                  address: found,
+                ),
               ),
-            ),
-          ),
+            );
+          },
           child: const Text("Address info"),
         ),
       ]);

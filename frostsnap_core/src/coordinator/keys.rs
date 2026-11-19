@@ -1,4 +1,4 @@
-use crate::coordinator::CompleteKey;
+use crate::coordinator::{card::BackupFormat, CompleteKey};
 use crate::tweak::Xpub;
 use crate::{
     device::KeyPurpose, AccessStructureKind, AccessStructureRef, DeviceId, KeyId, KeygenId, Kind,
@@ -17,6 +17,7 @@ pub struct BeginKeygen {
     pub threshold: u16,
     pub key_name: String,
     pub purpose: KeyPurpose,
+    pub backup_format: BackupFormat,
 }
 
 impl BeginKeygen {
@@ -33,7 +34,14 @@ impl BeginKeygen {
             key_name,
             purpose,
             keygen_id,
+            backup_format: BackupFormat::Words25,
         }
+    }
+
+    /// How the new key's shares are backed up (`Words25` unless set).
+    pub fn with_backup_format(mut self, backup_format: BackupFormat) -> Self {
+        self.backup_format = backup_format;
+        self
     }
 
     pub fn new(

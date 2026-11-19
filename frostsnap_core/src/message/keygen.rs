@@ -19,6 +19,9 @@ pub enum Keygen {
     Finalize {
         keygen_id: KeygenId,
     },
+    /// `Begin` for a key whose shares get verifiable backup cards. Firmware that doesn't know
+    /// it drops it, so the app sends it only to devices that support cards.
+    Begin2(Begin2),
 }
 
 impl From<Keygen> for CoordinatorToDeviceMessage {
@@ -35,6 +38,13 @@ pub struct Begin {
     pub key_name: String,
     pub purpose: KeyPurpose,
     pub coordinator_public_keys: Vec<Point>,
+}
+
+#[derive(Clone, Debug, bincode::Encode, bincode::Decode)]
+pub struct Begin2 {
+    pub begin: Begin,
+    /// Each share gets a 32-word verifiable card instead of a 25-word backup.
+    pub card: bool,
 }
 
 impl From<Begin> for Keygen {

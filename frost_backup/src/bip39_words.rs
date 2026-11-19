@@ -154,6 +154,97 @@ impl ValidLetters {
     }
 }
 
+fn levenshtein(a: &[u8], b: &[u8]) -> usize {
+    const MAX_LEN: usize = 9;
+    let mut prev = [0usize; MAX_LEN];
+    let mut curr = [0usize; MAX_LEN];
+
+    let b_len = b.len();
+    for (j, slot) in prev.iter_mut().enumerate().take(b_len + 1) {
+        *slot = j;
+    }
+
+    for i in 1..=a.len() {
+        curr[0] = i;
+        for j in 1..=b_len {
+            let cost = if a[i - 1] == b[j - 1] { 0 } else { 1 };
+            curr[j] = (prev[j] + 1).min(curr[j - 1] + 1).min(prev[j - 1] + cost);
+        }
+        core::mem::swap(&mut prev, &mut curr);
+    }
+    prev[b_len]
+}
+
+fn shared_suffix_len(a: &[u8], b: &[u8]) -> usize {
+    a.iter()
+        .rev()
+        .zip(b.iter().rev())
+        .take_while(|(x, y)| x == y)
+        .count()
+}
+
+/// How alike two words look: edit distance weighted by 3, minus twice the shared suffix.
+/// Lower is closer.
+fn lookalike_score(target: &[u8], candidate: &[u8]) -> i32 {
+    let edit_dist = levenshtein(target, candidate) as i32;
+    let suffix = shared_suffix_len(target, candidate) as i32;
+    edit_dist * 3 - suffix * 2
+}
+
+/// The two words in the whole list that look most like word `index`, closest first; ties go
+/// to the earlier word, and `None` if `index` is 2048 or more. It reads the list at `index` and
+/// branches on the scores, so on a device use it only for a word that's on the screen anyway
+/// (spec L1.7.4).
+pub fn closest_lookalikes(index: u16) -> Option<[u16; 2]> {
+    closest_among(index, 0..BIP39_WORDS.len() as u16)
+}
+
+/// The six words in the whole list that look most like word `index`, closest first, with
+/// [`closest_lookalikes`]' scoring and ties, so the first two are `closest_lookalikes(index)`;
+/// `None` if `index` is 2048 or more. A challenge round picks its distractors from these, so a
+/// liar can't know which lookalikes will be shown.
+pub fn lookalike_pool(index: u16) -> Option<[u16; 6]> {
+    let target = BIP39_WORDS.get(index as usize)?.as_bytes();
+    let mut best = [(i32::MAX, u16::MAX); 6];
+    for (i, word) in BIP39_WORDS.iter().enumerate() {
+        let i = i as u16;
+        if i == index {
+            continue;
+        }
+        let score = lookalike_score(target, word.as_bytes());
+        if let Some(at) = best.iter().position(|&(best, _)| score < best) {
+            best.copy_within(at..5, at + 1);
+            best[at] = (score, i);
+        }
+    }
+    Some(best.map(|(_, i)| i))
+}
+
+fn closest_among(index: u16, range: core::ops::Range<u16>) -> Option<[u16; 2]> {
+    let target = BIP39_WORDS.get(index as usize)?.as_bytes();
+
+    let mut best = [(i32::MAX, u16::MAX); 2];
+
+    for i in range {
+        if i == index {
+            continue;
+        }
+        let score = lookalike_score(target, BIP39_WORDS.get(i as usize)?.as_bytes());
+
+        if score < best[0].0 {
+            best[1] = best[0];
+            best[0] = (score, i);
+        } else if score < best[1].0 {
+            best[1] = (score, i);
+        }
+    }
+
+    if best[1].1 == u16::MAX {
+        return None;
+    }
+    Some([best[0].1, best[1].1])
+}
+
 /// The complete BIP39 English word list (2048 words)
 pub static BIP39_WORDS: [&str; 2048] = [
     "ABANDON", "ABILITY", "ABLE", "ABOUT", "ABOVE", "ABSENT", "ABSORB", "ABSTRACT", "ABSURD",

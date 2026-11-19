@@ -1,14 +1,21 @@
 import 'package:collection/collection.dart';
+import 'package:dynamic_color/dynamic_color.dart';
 import 'package:flutter/material.dart';
 import 'package:frostsnap/contexts.dart';
-import 'package:frostsnap/device_action_backup.dart';
-import 'package:frostsnap/device_action_backup_check.dart';
 import 'package:frostsnap/global.dart';
+import 'package:frostsnap/maybe_fullscreen_dialog.dart';
+import 'package:frostsnap/snackbar.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/backup_run.dart';
 import 'package:frostsnap/src/rust/api/coordinator.dart';
 import 'package:frostsnap/src/rust/api/device_list.dart';
+import 'package:frostsnap/src/rust/api/verifiable_card.dart';
 import 'package:frostsnap/theme.dart';
+import 'package:frostsnap/verifiable_card/alarm_view.dart';
+import 'package:frostsnap/verifiable_card/card_flow.dart';
+import 'package:frostsnap/verifiable_card/card_lines.dart';
+import 'package:frostsnap/verifiable_card/card_platform.dart';
+import 'package:frostsnap/wallet_key_mismatch.dart';
 import 'package:glowy_borders/glowy_borders.dart';
 
 extension BackupDeviceX on BackupDevice {
@@ -16,7 +23,24 @@ extension BackupDeviceX on BackupDevice {
   /// complete, OR when there is no tracking record at all (legacy wallets
   /// created before backup-run tracking existed). Only `complete == false`
   /// means a backup run is in progress and this share still needs recording.
-  bool get isBackedUp => complete != false;
+  /// A card share is backed up only once its card is checked: the receive
+  /// lock and the banner wait for PASSED (design §3.10).
+  bool get isBackedUp => switch (cardStatus) {
+    null => complete != false,
+    final status => status == CardBackupStatus.checked,
+  };
+
+  /// Both halves of the card are recorded, or the share was marked by hand:
+  /// the backup run's step, which a card's check comes after.
+  bool get isRecorded => complete == true;
+
+  /// No card status: a key this install didn't create as a card key and
+  /// holds no card record of. One restored from its cards has one card per
+  /// share, so it offers no backup and no check (design §0, §5.4); a 25-word
+  /// key from before cards is one too (spec PK-O24). Owner B15: on an install
+  /// that didn't create the wallet, a card written here unverified has a
+  /// status, and is never backed up in the checked sense.
+  bool get restoredFromCard => cardStatus == null;
 }
 
 extension BackupRunX on BackupRun {
@@ -264,77 +288,8 @@ class BackupChecklist extends StatefulWidget {
 }
 
 class _BackupChecklistState extends State<BackupChecklist> {
-  late final DeviceActionBackupController _backupDialogController;
-  late final DeviceActionBackupCheckController _checkDialogController;
-
-  @override
-  void initState() {
-    super.initState();
-    _backupDialogController = DeviceActionBackupController(
-      accessStructure: widget.accessStructure,
-    );
-    _checkDialogController = DeviceActionBackupCheckController(
-      accessStructure: widget.accessStructure,
-    );
-  }
-
-  @override
-  void dispose() {
-    _backupDialogController.dispose();
-    _checkDialogController.dispose();
-    super.dispose();
-  }
-
-  Future<bool> showBackupInvalidDialog(BuildContext context) async {
-    final tryAgain = await showDialog<bool>(
-      context: context,
-      barrierDismissible: false,
-      builder: (BuildContext context) => AlertDialog(
-        title: Text('Backup check failed'),
-        content: ConstrainedBox(
-          constraints: BoxConstraints(maxWidth: 480),
-          child: Text(
-            'This can happen if the device gets disconnected, or your backup is invalid/inputted incorrectly.',
-          ),
-        ),
-        actionsAlignment: MainAxisAlignment.spaceBetween,
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: Text('Exit'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: Text('Try again'),
-          ),
-        ],
-      ),
-    );
-    return tryAgain ?? false;
-  }
-
-  Future<void> showBackupOkayDialog(BuildContext context) async {
-    return await showDialog<void>(
-      context: context,
-      barrierDismissible: true,
-      builder: (BuildContext context) => AlertDialog(
-        title: Text('Backup is valid'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text('Done'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void showBackupDialog(BuildContext context, DeviceId deviceId) async {
-    final confirmed = await showBackupConfirmationDialog(context, deviceId);
-    if (confirmed == true) {
-      await _backupDialogController.show(context, deviceId);
-    }
-  }
+  // Every new key is a card, so the 25-word display and check from the
+  // app aren't offered: [Backup] and [Check] open the card flow.
 
   Future<bool?> showBackupConfirmationDialog(
     BuildContext context,
@@ -361,15 +316,51 @@ class _BackupChecklistState extends State<BackupChecklist> {
     );
   }
 
-  void showCheckDialog(BuildContext context, DeviceId deviceId) async {
-    final result = await _checkDialogController.show(context, deviceId);
-    if (result?.backupManuallyEnteredValid == true) {
-      await showBackupOkayDialog(context);
-    } else if (result?.backupManuallyEnteredValid == false) {
-      final tryAgain = await showBackupInvalidDialog(context);
-      if (tryAgain) {
-        showCheckDialog(context, deviceId);
+  /// A card flow is opening or open, so a second tap on [Backup] doesn't
+  /// start another one for the same device.
+  bool _cardFlowOpen = false;
+
+  /// A card key's [Backup] and [Check]: the split card flow on [deviceId],
+  /// which also runs a later check of a PASSED card (design §3.9). [Backup]
+  /// shows the standard "Record backup information" sheet first.
+  void showCardFlow(
+    BuildContext context,
+    DeviceId deviceId, {
+    bool infoSheet = false,
+  }) async {
+    if (!cardFlowsSupported) {
+      showMessageSnackbar(context, cardFlowsUnsupportedMessage);
+      return;
+    }
+    if (_cardFlowOpen) return;
+    _cardFlowOpen = true;
+    try {
+      if (infoSheet) {
+        final confirmed = await showBackupConfirmationDialog(context, deviceId);
+        if (confirmed != true || !context.mounted) return;
       }
+      final walletCtx = WalletContext.of(context)!;
+      final accessStructureRef = widget.accessStructure.accessStructureRef();
+      final encryptionKey = await existingWalletKey(
+        context: context,
+        accessStructureRef: accessStructureRef,
+        action: 'make this backup card',
+      );
+      if (encryptionKey == null || !context.mounted) return;
+      await MaybeFullscreenDialog.show(
+        context: context,
+        child: walletCtx.wrap(
+          VerifiableCardFlow(
+            driver: CoordCardFlowDriver(
+              deviceId: deviceId,
+              accessStructureRef: accessStructureRef,
+              encryptionKey: encryptionKey,
+            ),
+          ),
+        ),
+      );
+    } finally {
+      _cardFlowOpen = false;
     }
   }
 
@@ -380,6 +371,7 @@ class _BackupChecklistState extends State<BackupChecklist> {
     final frostKey = walletCtx.wallet.frostKey()!;
     final accessStructure = frostKey.accessStructures().first;
     final backupStream = walletCtx.backupStream;
+    final usesCard = coord.keyUsesCard(keyId: frostKey.keyId());
 
     final topBar = TopBarSliver(
       title: Text('Backup keys'),
@@ -436,7 +428,9 @@ class _BackupChecklistState extends State<BackupChecklist> {
                       const SizedBox(width: 12),
                       Expanded(
                         child: Text(
-                          "Each backup is an unencrypted copy of the device's key, allowing you to recover your wallet if the device is lost or damaged.",
+                          usesCard
+                              ? "Each key's backup is a 64-word card: words 1–32 from the device and words 33–64 from your phone."
+                              : unverifiedChecklistLine,
                           style: theme.textTheme.bodyMedium,
                         ),
                       ),
@@ -483,10 +477,26 @@ class _BackupChecklistState extends State<BackupChecklist> {
                   return devicesByShareIndex.entries.map((entry) {
                     final shareIndex = entry.key;
                     final devices = entry.value;
-                    final isComplete = devices.first.isBackedUp;
+                    // A failed card offers no [Backup]: its row repeats the
+                    // alarm's next step instead (owner B10, app review M1),
+                    // so it's never a dead end.
+                    final nextStep =
+                        devices.first.cardStatus == CardBackupStatus.failed
+                        ? devices.first.cardNextStep
+                        : null;
 
                     return ListTile(
                       dense: true,
+                      // Owner B12: a check after N has no Stop, here or in
+                      // the flow.
+                      subtitle: nextStep != null
+                          ? Text(
+                              nextStepLine(nextStep),
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.colorScheme.error,
+                              ),
+                            )
+                          : null,
                       title: Row(
                         spacing: 4,
                         crossAxisAlignment: CrossAxisAlignment.center,
@@ -517,9 +527,11 @@ class _BackupChecklistState extends State<BackupChecklist> {
                         ],
                       ),
                       trailing: _BackupStatusTrailing(
-                        isComplete: isComplete,
+                        isRecorded: devices.first.isRecorded,
                         shareIndex: shareIndex,
                         accessStructure: accessStructure,
+                        cardStatus: devices.first.cardStatus,
+                        createdHere: usesCard,
                       ),
                     );
                   }).toList();
@@ -594,35 +606,44 @@ class _BackupChecklistState extends State<BackupChecklist> {
                                 ),
                               ],
                             ),
-                            if (deviceInfo.isBackedUp)
-                              Row(
-                                mainAxisSize: MainAxisSize.min,
-                                spacing: 8,
-                                children: [
-                                  FilledButton(
-                                    onPressed: () => showBackupDialog(
-                                      context,
-                                      connectedDeviceId,
-                                    ),
-                                    child: Text('Backup'),
-                                  ),
-                                  FilledButton(
-                                    onPressed: () => showCheckDialog(
-                                      context,
-                                      connectedDeviceId,
-                                    ),
-                                    child: Text('Check'),
-                                  ),
-                                ],
-                              )
-                            else
-                              FilledButton(
-                                onPressed: () => showBackupDialog(
-                                  context,
-                                  connectedDeviceId,
+                            // Every new key is a card: [Backup]
+                            // until it passes, then [Check], which repeats
+                            // the quizzes (design §3.9). A failed card offers
+                            // neither. Owner B15: on an install that didn't
+                            // create the wallet, [Backup] writes the card
+                            // unverified, if the device has one to write (its
+                            // own answer); a card written here offers nothing
+                            // more.
+                            ...switch (deviceInfo.cardStatus) {
+                              null when !usesCard => [
+                                FilledButton(
+                                  onPressed: () =>
+                                      showCardFlow(context, connectedDeviceId),
+                                  child: Text('Backup'),
                                 ),
-                                child: Text('Backup'),
-                              ),
+                              ],
+                              CardBackupStatus.noCard ||
+                              CardBackupStatus.notChecked => [
+                                FilledButton(
+                                  onPressed: () => showCardFlow(
+                                    context,
+                                    connectedDeviceId,
+                                    infoSheet: true,
+                                  ),
+                                  child: Text('Backup'),
+                                ),
+                              ],
+                              CardBackupStatus.checked => [
+                                FilledButton(
+                                  onPressed: () =>
+                                      showCardFlow(context, connectedDeviceId),
+                                  child: Text('Check'),
+                                ),
+                              ],
+                              CardBackupStatus.failed ||
+                              CardBackupStatus.unverified ||
+                              null => [],
+                            },
                           ],
                         );
                       }
@@ -701,59 +722,115 @@ class _BackupChecklistState extends State<BackupChecklist> {
 }
 
 class _BackupStatusTrailing extends StatelessWidget {
-  final bool isComplete;
+  final bool isRecorded;
   final int shareIndex;
   final AccessStructure accessStructure;
 
+  /// A card key's share, whose PASSED and FAILED come from the card check.
+  /// Marking it backed up by hand only records it, never checks it. Null for a
+  /// key with no card status (see [restoredFromCard]).
+  final CardBackupStatus? cardStatus;
+
+  /// Owner B15: this install created the wallet, so its cards are checked
+  /// here. Otherwise a card written here is unverified.
+  final bool createdHere;
+
   const _BackupStatusTrailing({
-    required this.isComplete,
+    required this.isRecorded,
     required this.shareIndex,
     required this.accessStructure,
+    this.cardStatus,
+    this.createdHere = true,
   });
 
-  @override
-  Widget build(BuildContext context) {
+  Widget _buildCardStatus(BuildContext context, CardBackupStatus status) {
     final theme = Theme.of(context);
+    final (text, color, icon) = switch (status) {
+      CardBackupStatus.noCard || CardBackupStatus.notChecked when isRecorded =>
+        ('Recorded, not checked', cautionColor, Icons.pending_outlined),
+      CardBackupStatus.noCard => (
+        'Not backed up',
+        theme.colorScheme.onSurfaceVariant,
+        Icons.radio_button_unchecked,
+      ),
+      // Owner B15: an unverified card being written on this install.
+      CardBackupStatus.notChecked when !createdHere => (
+        'Not written yet: continue',
+        cautionColor,
+        Icons.pending_outlined,
+      ),
+      // NotChecked always has a pinned seal, so the flow can continue.
+      CardBackupStatus.notChecked => (
+        'Not checked yet: continue',
+        cautionColor,
+        Icons.pending_outlined,
+      ),
+      CardBackupStatus.checked => (
+        'Backup checked',
+        Colors.green.harmonizeWith(theme.colorScheme.primary),
+        Icons.check_circle,
+      ),
+      CardBackupStatus.failed => (
+        'Backup failed',
+        theme.colorScheme.error,
+        Icons.error_rounded,
+      ),
+      // Owner B15: written on this install, which didn't create the wallet.
+      CardBackupStatus.unverified => (
+        unverifiedRow,
+        cautionColor,
+        Icons.gpp_maybe_outlined,
+      ),
+    };
     final iconSlot = Padding(
       padding: const EdgeInsets.all(8),
-      child: Icon(
-        isComplete ? Icons.check_circle : Icons.radio_button_unchecked,
-        size: 18,
-        color: theme.colorScheme.primary,
-      ),
+      child: Icon(icon, size: 18, color: color),
     );
+    // "Mark as backed up" records the halves, never PASSED (design §5.4).
+    final markable =
+        !isRecorded &&
+        (status == CardBackupStatus.noCard ||
+            status == CardBackupStatus.notChecked);
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text(
-          isComplete ? 'Backed up' : 'Not backed up',
-          style: theme.textTheme.bodyMedium?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
-        ),
-        if (isComplete)
-          iconSlot
-        else
-          Tooltip(
-            message: 'Mark as backed up',
-            child: InkWell(
-              customBorder: const CircleBorder(),
-              onTap: () async {
-                final confirmed = await _confirmMarkBackupComplete(
-                  context,
-                  shareIndex,
-                );
-                if (!confirmed) return;
-                if (!context.mounted) return;
-                await coord.markBackupComplete(
-                  accessStructureRef: accessStructure.accessStructureRef(),
-                  shareIndex: shareIndex,
-                );
-              },
-              child: iconSlot,
-            ),
-          ),
+        Text(text, style: theme.textTheme.bodyMedium?.copyWith(color: color)),
+        if (markable) _markButton(context, iconSlot) else iconSlot,
       ],
+    );
+  }
+
+  Widget _markButton(BuildContext context, Widget iconSlot) => Tooltip(
+    message: 'Mark as backed up',
+    child: InkWell(
+      customBorder: const CircleBorder(),
+      onTap: () async {
+        final confirmed = await _confirmMarkBackupComplete(context, shareIndex);
+        if (!confirmed) return;
+        if (!context.mounted) return;
+        await coord.markBackupComplete(
+          accessStructureRef: accessStructure.accessStructureRef(),
+          shareIndex: shareIndex,
+        );
+      },
+      child: iconSlot,
+    ),
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    final cardStatus = this.cardStatus;
+    if (cardStatus != null) return _buildCardStatus(context, cardStatus);
+
+    final theme = Theme.of(context);
+    // An install that didn't create the wallet, with no card written here
+    // (owner B15): a key restored from its cards has nothing to do, and a
+    // device with a card to write offers it when connected.
+    return Text(
+      'No card written here',
+      style: theme.textTheme.bodyMedium?.copyWith(
+        color: theme.colorScheme.onSurfaceVariant,
+      ),
     );
   }
 }

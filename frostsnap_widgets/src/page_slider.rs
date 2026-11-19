@@ -43,8 +43,14 @@ where
     L::Widget: Widget<Color = Rgb565>,
 {
     pub fn new(list: L) -> Self {
+        Self::new_at(list, 0)
+    }
+
+    /// Start on page `start` instead of the first, e.g. to return to a review page.
+    pub fn new_at(list: L, start: usize) -> Self {
+        let start = start.min(list.len().saturating_sub(1));
         let item = list
-            .get(0)
+            .get(start)
             .expect("PageSlider requires at least one widget in the list");
 
         let transition = SlideInTransition::new(
@@ -61,7 +67,7 @@ where
 
         Self {
             list,
-            current_index: 0,
+            current_index: start,
             stack,
             drag_start: None,
             slide_distance: DEFAULT_SLIDE_DISTANCE,
@@ -69,6 +75,11 @@ where
             page_ready_triggered: false,
             screen_size: None,
         }
+    }
+
+    /// Whether a page transition is still animating.
+    pub fn is_sliding(&self) -> bool {
+        !self.stack.children.0.is_transition_complete()
     }
 
     pub fn with_slide_distance(mut self, slide_distance: u32) -> Self {

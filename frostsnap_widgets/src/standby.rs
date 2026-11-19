@@ -62,15 +62,50 @@ impl StandbyBlank {
     }
 }
 
+/// The line under the key name for a key with a verifiable card that hasn't passed its
+/// check (spec §0.6.4.5, design §7.5 D21): core's `HomeLine`, from `card_home_line`. It shows
+/// at every start-up until the key is erased.
+pub use frostsnap_core::device::card::HomeLine as CardHomeLine;
+
+/// What the home line says.
+pub fn card_home_line_text(line: CardHomeLine) -> &'static str {
+    match line {
+        CardHomeLine::NotChecked => "Backup not checked",
+        CardHomeLine::Failed => "Backup failed: don't use",
+    }
+}
+
+/// The home line's colour: a warning until the check passes, an error once it failed.
+pub fn card_home_line_color(line: CardHomeLine) -> Rgb565 {
+    match line {
+        CardHomeLine::NotChecked => PALETTE.warning,
+        CardHomeLine::Failed => PALETTE.error,
+    }
+}
+
 /// Standby content showing key information
 #[derive(frostsnap_macros::Widget)]
 pub struct StandbyHasKey {
     #[widget_delegate]
-    content: Column<(Option<Row<(Image, Text)>>, Text, Text, DeviceName)>,
+    content: Column<(
+        Option<Row<(Image, Text)>>,
+        Text,
+        Option<Text>,
+        Text,
+        DeviceName,
+    )>,
 }
 
 impl StandbyHasKey {
     pub fn new(device_name: impl Into<String>, held_share: HeldShare2) -> Self {
+        Self::with_card_line(device_name, held_share, None)
+    }
+
+    pub fn with_card_line(
+        device_name: impl Into<String>,
+        held_share: HeldShare2,
+        card_line: Option<CardHomeLine>,
+    ) -> Self {
         let recovery_warning = if held_share.access_structure_ref.is_none() {
             let warning_bmp =
                 Bmp::<Gray8>::from_slice(WARNING_ICON_DATA).expect("Failed to load warning BMP");
@@ -96,6 +131,14 @@ impl StandbyHasKey {
         let key_text = Text::new(held_share.key_name.unwrap_or("??".to_string()), key_style)
             .with_alignment(Alignment::Center);
 
+        let card_line = card_line.map(|line| {
+            Text::new(
+                card_home_line_text(line),
+                DefaultTextStyle::new(crate::FONT_SMALL, card_home_line_color(line)),
+            )
+            .with_alignment(Alignment::Center)
+        });
+
         let share_index: u16 = held_share.share_image.index.try_into().unwrap();
         let key_index_text = Text::new(
             format!("Key #{}", share_index),
@@ -109,7 +152,9 @@ impl StandbyHasKey {
             .push(recovery_warning)
             .gap(8)
             .push(key_text)
-            .gap(12)
+            .gap(4)
+            .push(card_line)
+            .gap(8)
             .push(key_index_text)
             .gap(4)
             .push(device_name_widget)
@@ -171,7 +216,17 @@ impl Standby {
 
     /// Set to has-key mode with key information
     pub fn set_key(&mut self, device_name: impl Into<String>, held_share: HeldShare2) {
-        let has_key_content = StandbyHasKey::new(device_name, held_share);
+        self.set_key_with_card_line(device_name, held_share, None);
+    }
+
+    /// Has-key mode, with the card line under the key name when there is one.
+    pub fn set_key_with_card_line(
+        &mut self,
+        device_name: impl Into<String>,
+        held_share: HeldShare2,
+        card_line: Option<CardHomeLine>,
+    ) {
+        let has_key_content = StandbyHasKey::with_card_line(device_name, held_share, card_line);
         self.body().switch_to(Some(AnyOf::new(has_key_content)));
     }
 

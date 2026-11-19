@@ -9,6 +9,7 @@ import 'package:frostsnap/psbt.dart';
 import 'package:frostsnap/settings.dart';
 import 'package:frostsnap/sign_message.dart';
 import 'package:frostsnap/theme.dart';
+import 'package:frostsnap/verifiable_card/not_checked_dialog.dart';
 import 'package:frostsnap/wallet_stranded_coins.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
 
@@ -230,12 +231,16 @@ class _WalletMoreState extends State<WalletMore> {
             title: Text('Descriptor'),
             subtitle: Text('Show the wallet\'s miniscript descriptor'),
             leading: Icon(Icons.code),
-            onTap: () => showExportWalletDialog(
-              context,
-              walletCtx.network.descriptorForKey(
-                masterAppkey: walletCtx.wallet.masterAppkey,
-              ),
-            ),
+            onTap: () async {
+              if (await showCardLockIfHeld(context, walletCtx)) return;
+              if (!context.mounted) return;
+              showExportWalletDialog(
+                context,
+                walletCtx.network.descriptorForKey(
+                  masterAppkey: walletCtx.wallet.masterAppkey,
+                ),
+              );
+            },
           ),
           ListTile(
             contentPadding: contentPadding,

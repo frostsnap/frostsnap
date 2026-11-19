@@ -96,6 +96,14 @@ impl BackupState {
         }
     }
 
+    /// The share indices `access_structure_ref`'s backup run started with, complete or not.
+    pub fn backup_run_share_indices(&self, access_structure_ref: AccessStructureRef) -> Vec<u32> {
+        self.runs
+            .get(&access_structure_ref)
+            .map(|run| run.keys().copied().collect())
+            .unwrap_or_default()
+    }
+
     pub fn get_backup_run(&self, key_id: KeyId) -> BTreeMap<u32, bool> {
         let access_structure_ref = match self.guess_access_structure_ref_for_key(key_id) {
             Some(asref) => asref,

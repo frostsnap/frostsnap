@@ -687,6 +687,9 @@ impl Env for ProptestEnv {
             VerifyAddress { .. } => {
                 // we dont actually confirm on the device
             }
+            Card(_) => {
+                // TODO: proptest card flows
+            }
             NonceJobs(mut batch) => {
                 // Run the batch to completion and send a single response
                 batch.run_until_finished(&mut TestDeviceKeyGen);

@@ -6,6 +6,7 @@ import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbManager
 import android.os.Bundle
 import android.util.Log
+import android.view.WindowManager
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -21,6 +22,8 @@ class MainActivity : FlutterActivity() {
 
     private val USB_PERMISSIONS_CHANNEL_TO_DART = "com.frostsnap/usb_permissions_channel"
     private var mainActivityToDartMethodChannel: MethodChannel? = null
+
+    private val SECURE_WINDOW_CHANNEL = "com.frostsnap/secure_window"
 
     override fun configureFlutterEngine(@NonNull flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -39,6 +42,28 @@ class MainActivity : FlutterActivity() {
             Log.i("configureFlutterEngine", "SecureKeyManager successfully registered with FlutterEngine.")
         } catch (e: Exception) {
             Log.e("configureFlutterEngine", "Error REGISTERING SecureKeyManager: ${e.message}", e)
+        }
+
+        // Card pages: block screen capture and keep the screen on while a card route is up
+        // (secure_screen.dart; spec §0.6.1.5).
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, SECURE_WINDOW_CHANNEL).setMethodCallHandler { call, result ->
+            val flag = when (call.method) {
+                "setSecure" -> WindowManager.LayoutParams.FLAG_SECURE
+                "keepScreenOn" -> WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
+                else -> {
+                    result.notImplemented()
+                    return@setMethodCallHandler
+                }
+            }
+            val on = call.arguments as? Boolean
+            if (on == null) {
+                result.error("bad_argument", "${call.method} takes a bool", null)
+                return@setMethodCallHandler
+            }
+            runOnUiThread {
+                if (on) window.addFlags(flag) else window.clearFlags(flag)
+                result.success(null)
+            }
         }
     }
 

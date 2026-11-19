@@ -1,5 +1,8 @@
 pub use crate::api::KeyPurpose;
-use crate::{frb_generated::StreamSink, sink_wrap::SinkWrap};
+use crate::{
+    frb_generated::StreamSink,
+    sink_wrap::{report_start_failure, SinkWrap},
+};
 use anyhow::Result;
 use bitcoin::Network as BitcoinNetwork;
 use flutter_rust_bridge::frb;
@@ -180,13 +183,16 @@ impl super::coordinator::Coordinator {
         encryption_key: SymmetricKey,
         sink: StreamSink<CheckBackupState>,
     ) -> Result<()> {
-        self.0.tell_device_to_check_backup(
-            device_id,
-            access_structure_ref,
-            share_index,
-            encryption_key,
-            SinkWrap(sink),
-        )
+        // A card key's share is refused here, and the refusal goes to the stream.
+        report_start_failure(sink, |sink| {
+            self.0.tell_device_to_check_backup(
+                device_id,
+                access_structure_ref,
+                share_index,
+                encryption_key,
+                sink,
+            )
+        })
     }
 
     pub fn check_physical_backup_for_restoration(
@@ -263,6 +269,7 @@ impl PhysicalBackupPhase {
 #[frb(mirror(CheckBackupState))]
 pub struct _CheckBackupState {
     pub backup_manually_entered_valid: Option<bool>,
+    pub refused: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -273,6 +280,8 @@ pub struct _EnterPhysicalBackupState {
     /// null if the user is entering the backup not to save but to check it
     pub saved: bool,
     pub abort: Option<String>,
+    /// What a card restore's page shows; null for a 25-word backup.
+    pub card_restore: Option<crate::api::verifiable_card::CardRestoreView>,
 }
 
 #[frb(mirror(RecoverShare))]

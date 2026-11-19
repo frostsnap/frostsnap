@@ -19,6 +19,7 @@ pub mod address_display;
 pub mod animation_speed;
 pub mod backup;
 pub mod bitmap;
+pub mod card;
 pub mod checkmark;
 pub mod cursor;
 pub mod debug;

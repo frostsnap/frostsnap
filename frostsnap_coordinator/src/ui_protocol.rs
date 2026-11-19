@@ -18,6 +18,8 @@ pub trait UiProtocol: Send + Any + 'static {
     fn is_complete(&self) -> Option<Completion>;
     fn connected(&mut self, _id: DeviceId, _state: DeviceMode) {}
     fn disconnected(&mut self, _id: DeviceId) {}
+    /// Another protocol ended with a `Cancel` to every device.
+    fn devices_cancelled(&mut self) {}
     fn process_to_user_message(&mut self, _message: CoordinatorToUserMessage) -> bool {
         false
     }
@@ -67,7 +69,8 @@ impl UiStack {
         None
     }
 
-    pub fn process_to_user_message(&mut self, message: CoordinatorToUserMessage) {
+    /// Says whether a protocol took `message`.
+    pub fn process_to_user_message(&mut self, message: CoordinatorToUserMessage) -> bool {
         let mut found = false;
         for protocol in self.protocols.iter_mut().rev() {
             found = protocol.process_to_user_message(message.clone());
@@ -83,6 +86,7 @@ impl UiStack {
                 "got unexpected to user message"
             );
         }
+        found
     }
 
     pub fn process_comms_message(&mut self, from: DeviceId, message: frostsnap_comms::CommsMisc) {
@@ -156,7 +160,28 @@ impl UiStack {
             }
         }
 
+        // The caller sends the cancel; the protocols still running are told it's coming.
+        if send_cancel_to_all {
+            for protocol in self.protocols.iter_mut().rev() {
+                protocol.devices_cancelled();
+            }
+        }
+
         send_cancel_to_all
+    }
+
+    /// Cancels only the protocols of type `T` that `which` picks. Like
+    /// [`cancel_all`](Self::cancel_all) it says whether the devices need a cancel.
+    #[must_use]
+    pub fn cancel_where<T: UiProtocol>(&mut self, which: impl Fn(&T) -> bool) -> bool {
+        for protocol in self.protocols.iter_mut() {
+            if let Some(protocol) = protocol.as_mut_any().downcast_mut::<T>() {
+                if which(protocol) {
+                    protocol.cancel();
+                }
+            }
+        }
+        self.clean_finished()
     }
 
     #[must_use]

@@ -19,6 +19,7 @@ pub mod settings;
 pub mod signing;
 pub mod super_wallet;
 pub mod transaction;
+pub mod verifiable_card;
 
 use flutter_rust_bridge::frb;
 

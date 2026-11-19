@@ -2,13 +2,14 @@
 mod common;
 
 use frostsnap_core::coordinator::{
+    card::{BackupFormat, CardFailReason, CardMutation, CardPin, SecretN},
     keys::KeyMutation,
     restoration::{PendingConsolidation, RestorationMutation},
     signing::SigningMutation,
     ActiveSignSession, CompleteKey, CoordAccessStructure, Mutation, SignSessionProgress, StartSign,
 };
 use frostsnap_core::device::KeyPurpose;
-use frostsnap_core::message::HeldShare2;
+use frostsnap_core::message::{card::CardRefusal, HeldShare2};
 use frostsnap_core::message::{EncodedSignature, GroupSignReq};
 use frostsnap_core::nonce_stream::{CoordNonceStreamState, NonceStreamId, NonceStreamSegment};
 use frostsnap_core::tweak::AppTweak;
@@ -300,11 +301,296 @@ fn test_all_coordinator_mutations() {
         Mutation::Signing(SigningMutation::ForgetFinishedSignSession {
             session_id: SignSessionId([12u8; 32]),
         }),
+        // Card mutations
+        Mutation::Card(CardMutation::KeyFormat {
+            key_id: KeyId([3u8; 32]),
+            format: BackupFormat::Card64,
+        }),
+        Mutation::Card(CardMutation::Pinned {
+            access_structure_ref,
+            share_index: s!(1).public(),
+            pin: Box::new(CardPin {
+                format_id: 1,
+                proof_version: 1,
+                h_c: [20u8; 32],
+                coin_commit: [21u8; 32],
+                commitments: vec![[22u8; 33], [23u8; 33]],
+            }),
+        }),
+        Mutation::Card(CardMutation::ProofsVerified {
+            access_structure_ref,
+            share_index: s!(1).public(),
+            from: 300,
+            count: 11,
+        }),
+        Mutation::Card(CardMutation::Checked {
+            access_structure_ref,
+            share_index: s!(1).public(),
+            words_hash: [28u8; 32],
+        }),
+        Mutation::Card(CardMutation::CheckStarted {
+            access_structure_ref,
+            share_index: s!(1).public(),
+            n: SecretN([24u8; 32]),
+        }),
+        Mutation::Card(CardMutation::BoxesDrawn {
+            access_structure_ref,
+            share_index: s!(1).public(),
+            coin: [25u8; 32],
+            d: [1, 2, 3, 4, 31],
+        }),
+        Mutation::Card(CardMutation::BoxAnswered {
+            access_structure_ref,
+            share_index: s!(1).public(),
+            j: 31,
+            correct: true,
+        }),
+        Mutation::Card(CardMutation::OpeningRejected {
+            access_structure_ref,
+            share_index: s!(1).public(),
+            j: 4,
+        }),
+        Mutation::Card(CardMutation::RoundResult {
+            access_structure_ref,
+            share_index: s!(1).public(),
+            pass: false,
+            reason: Some(CardFailReason::Refused(CardRefusal::RunCap)),
+            words_hash: None,
+        }),
+        Mutation::Card(CardMutation::DeviceVerdict {
+            access_structure_ref,
+            share_index: s!(1).public(),
+            passed: true,
+        }),
+        Mutation::Card(CardMutation::Failed {
+            access_structure_ref,
+            share_index: s!(1).public(),
+            reason: CardFailReason::BadProof,
+        }),
+        Mutation::Card(CardMutation::DeviceSuspect {
+            device_id: DeviceId([5u8; 33]),
+        }),
+        Mutation::Card(CardMutation::RoundResult {
+            access_structure_ref,
+            share_index: s!(1).public(),
+            pass: true,
+            reason: None,
+            words_hash: Some([29u8; 32]),
+        }),
+        Mutation::Card(CardMutation::Finished {
+            access_structure_ref,
+            share_index: s!(1).public(),
+        }),
+        Mutation::Card(CardMutation::DeviceRoundPending {
+            access_structure_ref,
+            share_index: s!(1).public(),
+            n: SecretN([27u8; 32]),
+        }),
+        Mutation::Card(CardMutation::DeviceRoundResult {
+            access_structure_ref,
+            share_index: s!(1).public(),
+            pass: true,
+        }),
+        // Format C′ (owner B1): the user's confirm of words 1–32 on the phone.
+        Mutation::Card(CardMutation::DeviceHalfWritten {
+            access_structure_ref,
+            share_index: s!(1).public(),
+        }),
+        // Owner B9: an interruption of the check after N, and the user's "it was me".
+        Mutation::Card(CardMutation::CheckInterrupted {
+            access_structure_ref,
+            share_index: s!(1).public(),
+        }),
+        Mutation::Card(CardMutation::InterruptionAnswered {
+            access_structure_ref,
+            share_index: s!(1).public(),
+        }),
+        // Owner B15: a card written unverified, on an install that didn't run the keygen.
+        Mutation::Card(CardMutation::UnverifiedWriteStarted {
+            access_structure_ref,
+            share_index: s!(1).public(),
+            h_c: [0x14; 32],
+        }),
+        Mutation::Card(CardMutation::UnverifiedWritten {
+            access_structure_ref,
+            share_index: s!(1).public(),
+        }),
     ];
+
+    // A suspect mark is tied to no key, so it survives the key's deletion.
+    assert_eq!(
+        Mutation::Card(CardMutation::DeviceSuspect {
+            device_id: DeviceId([5u8; 33]),
+        })
+        .tied_to_key(&frostsnap_core::coordinator::FrostCoordinator::new()),
+        None
+    );
+
+    // A fail reason: the phone's timeout after N.
+    assert_bincode_hex_eq!(
+        Mutation::Card(CardMutation::RoundResult {
+            access_structure_ref,
+            share_index: s!(1).public(),
+            pass: false,
+            reason: Some(CardFailReason::PhoneTimeout),
+            words_hash: None,
+        }),
+        "030803030303030303030303030303030303030303030303030303030303030303030404040404040404040404040404040404040404040404040404040404040404000000000000000000000000000000000000000000000000000000000000000100010c00"
+    );
+
+    // A fail reason (owner B9): an interruption the user didn't cause.
+    assert_bincode_hex_eq!(
+        Mutation::Card(CardMutation::RoundResult {
+            access_structure_ref,
+            share_index: s!(1).public(),
+            pass: false,
+            reason: Some(CardFailReason::Interrupted),
+            words_hash: None,
+        }),
+        "030803030303030303030303030303030303030303030303030303030303030303030404040404040404040404040404040404040404040404040404040404040404000000000000000000000000000000000000000000000000000000000000000100011000"
+    );
+
+    // A fail reason (owner R2-2): a 4th "yes" past the cap of 3 resumes.
+    assert_bincode_hex_eq!(
+        Mutation::Card(CardMutation::RoundResult {
+            access_structure_ref,
+            share_index: s!(1).public(),
+            pass: false,
+            reason: Some(CardFailReason::TooManyInterruptions),
+            words_hash: None,
+        }),
+        "030803030303030303030303030303030303030303030303030303030303030303030404040404040404040404040404040404040404040404040404040404040404000000000000000000000000000000000000000000000000000000000000000100011100"
+    );
 
     // Test each mutation
     for mutation in mutations {
         match mutation.clone() {
+            Mutation::Card(CardMutation::KeyFormat { .. }) => {
+                assert_bincode_hex_eq!(
+                    mutation,
+                    "0300030303030303030303030303030303030303030303030303030303030303030301"
+                );
+            }
+            Mutation::Card(CardMutation::Pinned { .. }) => {
+                assert_bincode_hex_eq!(
+                    mutation,
+                    "030103030303030303030303030303030303030303030303030303030303030303030404040404040404040404040404040404040404040404040404040404040404000000000000000000000000000000000000000000000000000000000000000101011414141414141414141414141414141414141414141414141414141414141414151515151515151515151515151515151515151515151515151515151515151502161616161616161616161616161616161616161616161616161616161616161616171717171717171717171717171717171717171717171717171717171717171717"
+                );
+            }
+            Mutation::Card(CardMutation::ProofsVerified { .. }) => {
+                assert_bincode_hex_eq!(
+                    mutation,
+                    "0302030303030303030303030303030303030303030303030303030303030303030304040404040404040404040404040404040404040404040404040404040404040000000000000000000000000000000000000000000000000000000000000001fb2c010b"
+                );
+            }
+            Mutation::Card(CardMutation::Checked { .. }) => {
+                assert_bincode_hex_eq!(
+                    mutation,
+                    "03030303030303030303030303030303030303030303030303030303030303030303040404040404040404040404040404040404040404040404040404040404040400000000000000000000000000000000000000000000000000000000000000011c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c"
+                );
+            }
+            Mutation::Card(CardMutation::CheckStarted { .. }) => {
+                assert_bincode_hex_eq!(
+                    mutation,
+                    "03040303030303030303030303030303030303030303030303030303030303030303040404040404040404040404040404040404040404040404040404040404040400000000000000000000000000000000000000000000000000000000000000011818181818181818181818181818181818181818181818181818181818181818"
+                );
+            }
+            Mutation::Card(CardMutation::BoxesDrawn { .. }) => {
+                assert_bincode_hex_eq!(
+                    mutation,
+                    "03050303030303030303030303030303030303030303030303030303030303030303040404040404040404040404040404040404040404040404040404040404040400000000000000000000000000000000000000000000000000000000000000011919191919191919191919191919191919191919191919191919191919191919010203041f"
+                );
+            }
+            Mutation::Card(CardMutation::BoxAnswered { .. }) => {
+                assert_bincode_hex_eq!(
+                    mutation,
+                    "03060303030303030303030303030303030303030303030303030303030303030303040404040404040404040404040404040404040404040404040404040404040400000000000000000000000000000000000000000000000000000000000000011f01"
+                );
+            }
+            Mutation::Card(CardMutation::OpeningRejected { .. }) => {
+                assert_bincode_hex_eq!(
+                    mutation,
+                    "030703030303030303030303030303030303030303030303030303030303030303030404040404040404040404040404040404040404040404040404040404040404000000000000000000000000000000000000000000000000000000000000000104"
+                );
+            }
+            Mutation::Card(CardMutation::RoundResult { pass: true, .. }) => {
+                assert_bincode_hex_eq!(
+                    mutation,
+                    "03080303030303030303030303030303030303030303030303030303030303030303040404040404040404040404040404040404040404040404040404040404040400000000000000000000000000000000000000000000000000000000000000010100011d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d"
+                );
+            }
+            Mutation::Card(CardMutation::RoundResult { .. }) => {
+                assert_bincode_hex_eq!(
+                    mutation,
+                    "03080303030303030303030303030303030303030303030303030303030303030303040404040404040404040404040404040404040404040404040404040404040400000000000000000000000000000000000000000000000000000000000000010001080800"
+                );
+            }
+            Mutation::Card(CardMutation::DeviceVerdict { .. }) => {
+                assert_bincode_hex_eq!(
+                    mutation,
+                    "030903030303030303030303030303030303030303030303030303030303030303030404040404040404040404040404040404040404040404040404040404040404000000000000000000000000000000000000000000000000000000000000000101"
+                );
+            }
+            Mutation::Card(CardMutation::Failed { .. }) => {
+                assert_bincode_hex_eq!(
+                    mutation,
+                    "030a03030303030303030303030303030303030303030303030303030303030303030404040404040404040404040404040404040404040404040404040404040404000000000000000000000000000000000000000000000000000000000000000101"
+                );
+            }
+            Mutation::Card(CardMutation::DeviceSuspect { .. }) => {
+                assert_bincode_hex_eq!(
+                    mutation,
+                    "030b050505050505050505050505050505050505050505050505050505050505050505"
+                );
+            }
+            Mutation::Card(CardMutation::Finished { .. }) => {
+                assert_bincode_hex_eq!(
+                    mutation,
+                    "030c030303030303030303030303030303030303030303030303030303030303030304040404040404040404040404040404040404040404040404040404040404040000000000000000000000000000000000000000000000000000000000000001"
+                );
+            }
+            Mutation::Card(CardMutation::DeviceRoundPending { .. }) => {
+                assert_bincode_hex_eq!(
+                    mutation,
+                    "030d0303030303030303030303030303030303030303030303030303030303030303040404040404040404040404040404040404040404040404040404040404040400000000000000000000000000000000000000000000000000000000000000011b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b"
+                );
+            }
+            Mutation::Card(CardMutation::DeviceRoundResult { .. }) => {
+                assert_bincode_hex_eq!(
+                    mutation,
+                    "030e03030303030303030303030303030303030303030303030303030303030303030404040404040404040404040404040404040404040404040404040404040404000000000000000000000000000000000000000000000000000000000000000101"
+                );
+            }
+            Mutation::Card(CardMutation::DeviceHalfWritten { .. }) => {
+                assert_bincode_hex_eq!(
+                    mutation,
+                    "030f030303030303030303030303030303030303030303030303030303030303030304040404040404040404040404040404040404040404040404040404040404040000000000000000000000000000000000000000000000000000000000000001"
+                );
+            }
+            Mutation::Card(CardMutation::CheckInterrupted { .. }) => {
+                assert_bincode_hex_eq!(
+                    mutation,
+                    "0310030303030303030303030303030303030303030303030303030303030303030304040404040404040404040404040404040404040404040404040404040404040000000000000000000000000000000000000000000000000000000000000001"
+                );
+            }
+            Mutation::Card(CardMutation::InterruptionAnswered { .. }) => {
+                assert_bincode_hex_eq!(
+                    mutation,
+                    "0311030303030303030303030303030303030303030303030303030303030303030304040404040404040404040404040404040404040404040404040404040404040000000000000000000000000000000000000000000000000000000000000001"
+                );
+            }
+            Mutation::Card(CardMutation::UnverifiedWriteStarted { .. }) => {
+                assert_bincode_hex_eq!(
+                    mutation,
+                    "03120303030303030303030303030303030303030303030303030303030303030303040404040404040404040404040404040404040404040404040404040404040400000000000000000000000000000000000000000000000000000000000000011414141414141414141414141414141414141414141414141414141414141414"
+                );
+            }
+            Mutation::Card(CardMutation::UnverifiedWritten { .. }) => {
+                assert_bincode_hex_eq!(
+                    mutation,
+                    "0313030303030303030303030303030303030303030303030303030303030303030304040404040404040404040404040404040404040404040404040404040404040000000000000000000000000000000000000000000000000000000000000001"
+                );
+            }
             Mutation::Restoration(RestorationMutation::NewRestoration { .. }) => {
                 assert_bincode_hex_eq!(
                     mutation,
@@ -429,5 +715,37 @@ fn test_all_coordinator_mutations() {
                 );
             }
         }
+    }
+}
+
+/// The coordinator's `CardFailReason`s are persisted inside `Failed` and `RoundResult`, so their
+/// numbers are pinned: append-only, never renumbered.
+#[test]
+fn card_fail_reasons_are_pinned() {
+    use CardFailReason::*;
+    let reasons = [
+        (DifferentCard, "00"),
+        (BadProof, "01"),
+        (CoinMismatch, "02"),
+        (BadOpening, "03"),
+        (WrongBox, "04"),
+        (WordRange, "05"),
+        (TwoMisses, "06"),
+        (Stopped, "07"),
+        (Refused(CardRefusal::NotInPhoneHalf), "080f"),
+        (Refused(CardRefusal::NoRecord), "0810"),
+        (DeviceVerdictMismatch, "09"),
+        (UnexpectedVerdict, "0a"),
+        (BoxesMismatch, "0b"),
+        (PhoneTimeout, "0c"),
+        (DeviceRoundFailed, "0d"),
+        (PhoneHalfChanged, "0e"),
+        (SealChanged, "0f"),
+        (Interrupted, "10"),
+        (TooManyInterruptions, "11"),
+    ];
+    for (reason, hex) in reasons {
+        let bytes = bincode::encode_to_vec(reason, bincode::config::standard()).unwrap();
+        assert_eq!(frostsnap_core::hex::encode(&bytes), hex, "{reason:?}");
     }
 }

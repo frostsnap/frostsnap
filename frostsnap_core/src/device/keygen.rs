@@ -27,6 +27,8 @@ pub struct KeyGenPhase1 {
     pub threshold: u16,
     pub key_name: String,
     pub key_purpose: KeyPurpose,
+    /// The share gets a 32-word verifiable card (`Keygen::Begin2`).
+    pub card: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -35,6 +37,7 @@ pub struct KeyGenPhase2 {
     share_receiver: certpedpop::SecretShareReceiver,
     key_name: String,
     key_purpose: KeyPurpose,
+    card: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -46,6 +49,7 @@ pub struct KeyGenPhase3 {
     n_receivers: u16,
     shared_key: SharedKey,
     secret_share: PairedSecretShare,
+    card: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -56,6 +60,7 @@ pub struct KeyGenPhase4 {
     pub(in crate::device) access_structure_kind: AccessStructureKind,
     pub(in crate::device) encrypted_secret_share: EncryptedSecretShare,
     pub(in crate::device) threshold: u16,
+    pub(in crate::device) card: bool,
 }
 
 impl KeyGenPhase2 {
@@ -89,7 +94,10 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
         rng: &mut impl rand_core::RngCore,
     ) -> MessageResult<Vec<DeviceSend>> {
         match keygen_msg {
-            self::Keygen::Begin(begin) => self.keygen_begin(begin, message, rng),
+            self::Keygen::Begin(begin) => self.keygen_begin(begin, false, message, rng),
+            self::Keygen::Begin2(begin2) => {
+                self.keygen_begin(begin2.begin, begin2.card, message, rng)
+            }
             self::Keygen::CertifyPlease {
                 keygen_id,
                 agg_input,
@@ -106,6 +114,7 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
     fn keygen_begin(
         &mut self,
         begin: crate::message::keygen::Begin,
+        card: bool,
         message: &CoordinatorToDeviceMessage,
         rng: &mut impl rand_core::RngCore,
     ) -> MessageResult<Vec<DeviceSend>> {
@@ -145,6 +154,7 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
                 threshold: begin.threshold,
                 key_name: begin.key_name.clone(),
                 key_purpose: begin.purpose,
+                card,
             },
         );
         Ok(vec![DeviceSend::ToCoordinator(Box::new(
@@ -208,6 +218,7 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
                 share_receiver,
                 key_name: phase1.key_name.clone(),
                 key_purpose: phase1.key_purpose,
+                card: phase1.card,
             },
         );
         Ok(vec![DeviceSend::ToCoordinator(Box::new(
@@ -255,6 +266,7 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
             shared_key: agg_input.shared_key(),
             secret_share,
             session_hash,
+            card: phase2.card,
         };
 
         Ok(vec![DeviceSend::ToUser(Box::new(
@@ -279,6 +291,14 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
                 format!("device doesn't have keygen for {keygen_id}"),
             ))?;
         let key_name = keygen_pending_finalize.key_name.clone();
+        // Before the share: pushes are in order, so a power cut leaves at most an orphan
+        // origin (design §9 R1).
+        self.mutate(Mutation::Card(super::card::CardMutation::Origin {
+            share_image: keygen_pending_finalize.encrypted_secret_share.share_image,
+            origin: super::card::ShareOrigin::Keygen {
+                card: keygen_pending_finalize.card,
+            },
+        }));
         self.save_complete_share(keygen_pending_finalize);
 
         Ok(vec![DeviceSend::ToUser(Box::new(
@@ -341,6 +361,7 @@ impl<S: NonceStreamSlot + core::fmt::Debug> FrostSigner<S> {
                     access_structure_kind: AccessStructureKind::Master,
                     threshold,
                     encrypted_secret_share,
+                    card: phase.card,
                 },
             ),
         );
