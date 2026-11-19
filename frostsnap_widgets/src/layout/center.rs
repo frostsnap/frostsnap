@@ -61,7 +61,7 @@ impl<W: Widget> crate::DynWidget for Center<W> {
         is_release: bool,
     ) -> Option<crate::KeyTouch> {
         // Check if the touch is within the child's bounds
-        if self.child_rect.contains(point) {
+        if self.child_rect.contains(point) || is_release {
             // Translate the touch point to the child's coordinate system
             let translated_point = Point::new(
                 point.x - self.child_rect.top_left.x,
@@ -109,5 +109,24 @@ impl<W: Widget> Widget for Center<W> {
             .draw(&mut target.clone().crop(self.child_rect), current_time)?;
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{circle_button::CircleButtonState, CircleButton, DynWidget};
+
+    #[test]
+    fn release_outside_child_reaches_child() {
+        let mut center = Center::new(CircleButton::new());
+        center.set_constraints(Size::new(240, 280));
+        let now = Instant::from_millis(0);
+
+        center.handle_touch(Point::new(120, 140), now, false);
+        assert_eq!(center.child.state(), CircleButtonState::Pressed);
+
+        center.handle_touch(Point::new(0, 0), now, true);
+        assert_eq!(center.child.state(), CircleButtonState::Idle);
     }
 }
