@@ -130,6 +130,45 @@ class _WalletSendPageState extends State<WalletSendPage> {
     );
   }
 
+  /// What sits under the recipient's address: the to-self pill, and the label and message a
+  /// BIP21 URI carried. Those come from whoever made the URI, so they're shown as the
+  /// request's words, not as anything we checked.
+  Widget? _recipientSubtitle(BuildContext context, Recipient? recipient) {
+    final theme = Theme.of(context);
+    final requestStyle = theme.textTheme.bodySmall?.copyWith(
+      color: theme.colorScheme.onSurfaceVariant,
+    );
+    final ownedLabel = ownedRecipientLabel;
+    final label = recipient?.label;
+    final message = recipient?.message;
+
+    final children = [
+      if (ownedLabel != null) _toSelfPill(context, ownedLabel),
+      if (label != null)
+        Text(
+          'Request label: $label',
+          style: requestStyle,
+          textAlign: TextAlign.right,
+        ),
+      if (message != null)
+        Text(
+          'Request message: $message',
+          style: requestStyle,
+          textAlign: TextAlign.right,
+        ),
+    ];
+    if (children.isEmpty) return null;
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 4.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        spacing: 4.0,
+        children: children,
+      ),
+    );
+  }
+
   @override
   void dispose() {
     amountController.dispose();
@@ -245,16 +284,7 @@ class _WalletSendPageState extends State<WalletSendPage> {
                 textAlign: TextAlign.right,
                 style: monospaceTextStyle,
               ),
-              subtitle: switch (ownedRecipientLabel) {
-                null => null,
-                final label => Padding(
-                  padding: const EdgeInsets.only(top: 4.0),
-                  child: Align(
-                    alignment: Alignment.centerRight,
-                    child: _toSelfPill(context, label),
-                  ),
-                ),
-              },
+              subtitle: _recipientSubtitle(context, recipient),
             ),
           if (pageIndex.index > SendPageIndex.amount.index)
             _buildCompletedAmountAndFee(context),

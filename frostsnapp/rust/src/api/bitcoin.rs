@@ -46,6 +46,8 @@ enum _BitcoinNetwork {
 pub struct SendToRecipient {
     pub address: Address,
     pub amount: Option<u64>,
+    pub label: Option<String>,
+    pub message: Option<String>,
 }
 
 pub trait BitcoinNetworkExt {
@@ -128,11 +130,20 @@ impl BitcoinNetworkExt for BitcoinNetwork {
                     format!("Invalid BIP21 URI: {detail}")
                 })?;
             let amount = parsed.amount.map(|amt| amt.to_sat());
+            // Optional human-readable text from whoever made the URI. A value that doesn't
+            // decode to UTF-8 is dropped rather than rejecting an otherwise payable URI.
+            let label = parsed.label.and_then(|l| String::try_from(l).ok());
+            let message = parsed.message.and_then(|m| String::try_from(m).ok());
             let address = parsed
                 .address
                 .require_network(*self)
                 .map_err(|e| format!("Wrong network: {}", e))?;
-            return Ok(SendToRecipient { address, amount });
+            return Ok(SendToRecipient {
+                address,
+                amount,
+                label,
+                message,
+            });
         }
 
         let address = bitcoin::Address::from_str(uri)
@@ -143,6 +154,8 @@ impl BitcoinNetworkExt for BitcoinNetwork {
         Ok(SendToRecipient {
             address,
             amount: None,
+            label: None,
+            message: None,
         })
     }
 
@@ -984,5 +997,30 @@ mod test {
         assert!(BitcoinNetwork::Signet
             .validate_destination_address("bitcoin\u{2236}x")
             .is_err());
+    }
+
+    #[test]
+    fn uri_label_and_message_are_decoded() {
+        let uri = format!("bitcoin:{TESTNET_ADDR}?label=Alice%20Smith&message=Pizza%20%26%20coke");
+        let r = BitcoinNetwork::Signet
+            .validate_destination_address(&uri)
+            .unwrap();
+        assert_eq!(r.address.to_string(), TESTNET_ADDR);
+        assert_eq!(r.label.as_deref(), Some("Alice Smith"));
+        assert_eq!(r.message.as_deref(), Some("Pizza & coke"));
+    }
+
+    /// A label or message is display text only, so one that doesn't decode to valid UTF-8
+    /// is dropped (`None`) rather than rejecting an otherwise payable URI.
+    #[test]
+    fn a_label_that_is_not_utf8_is_dropped_and_the_uri_still_pays() {
+        let uri = format!("bitcoin:{TESTNET_ADDR}?amount=0.001&label=%FF&message=%FE");
+        let r = BitcoinNetwork::Signet
+            .validate_destination_address(&uri)
+            .unwrap();
+        assert_eq!(r.address.to_string(), TESTNET_ADDR);
+        assert_eq!(r.amount, Some(100_000));
+        assert_eq!(r.label, None);
+        assert_eq!(r.message, None);
     }
 }
