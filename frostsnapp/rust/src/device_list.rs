@@ -92,12 +92,9 @@ impl DeviceList {
         match change {
             DeviceChange::Connected {
                 id,
-                firmware_digest,
-                latest_firmware_digest,
+                firmware,
+                latest_firmware,
             } => {
-                use frostsnap_coordinator::FirmwareVersion;
-
-                let firmware = FirmwareVersion::new(firmware_digest);
                 self.connected.insert(
                     id,
                     api::ConnectedDevice {
@@ -105,7 +102,7 @@ impl DeviceList {
                             firmware_supports_check: firmware.features().genuine_check,
                         },
                         firmware,
-                        latest_firmware: latest_firmware_digest.map(FirmwareVersion::new),
+                        latest_firmware,
                         name: None,
                         id,
                         recovery_mode: api::RecoveryMode::Off,
@@ -240,6 +237,7 @@ mod test {
         genuine_certificate::{CaseColor, CertificateBody, DsPublicKeyDer},
         Sha256Digest,
     };
+    use frostsnap_coordinator::{DeviceFirmware, DeviceVersion};
 
     const A: DeviceId = DeviceId([2; 33]);
 
@@ -258,8 +256,11 @@ mod test {
     fn connect(list: &mut DeviceList, name: &str) {
         list.consume_manager_event(DeviceChange::Connected {
             id: A,
-            firmware_digest: Sha256Digest([0xab; 32]),
-            latest_firmware_digest: None,
+            firmware: DeviceFirmware {
+                digest: Sha256Digest([0xab; 32]),
+                version: DeviceVersion::Unreported,
+            },
+            latest_firmware: None,
         });
         list.consume_manager_event(DeviceChange::Registered {
             id: A,
@@ -326,8 +327,11 @@ mod test {
         let mut list = DeviceList::default();
         list.consume_manager_event(DeviceChange::Connected {
             id: A,
-            firmware_digest: Sha256Digest([0xab; 32]),
-            latest_firmware_digest: None,
+            firmware: DeviceFirmware {
+                digest: Sha256Digest([0xab; 32]),
+                version: DeviceVersion::Unreported,
+            },
+            latest_firmware: None,
         });
         assert!(list.update_ready());
         let update = list.take_update();

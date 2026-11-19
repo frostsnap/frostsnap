@@ -1,113 +1,232 @@
 use crate::HOLD_TO_CONFIRM_TIME_SHORT_MS;
 use crate::{
-    gray4_style::Gray4TextStyle, palette::PALETTE, prelude::*, Frac, GrayToAlpha, HoldToConfirm,
-    Image, Padding, ProgressIndicator,
+    any_of::AnyOf, gray4_style::Gray4TextStyle, palette::PALETTE, prelude::*,
+    super_draw_target::SuperDrawTarget, DynWidget, FadeConfig, FadeSwitcher, Frac, GrayToAlpha,
+    HoldToConfirm, IconWidget, Image, Instant, KeyTouch, Padding, ProgressIndicator, Sizing,
 };
 use alloc::{boxed::Box, format, string::String, string::ToString};
-use embedded_graphics::geometry::Size;
+use embedded_graphics::draw_target::DrawTarget;
+use embedded_graphics::geometry::{Point, Size};
 use embedded_graphics::pixelcolor::{Gray8, Rgb565};
-use frostsnap_fonts::{NOTO_SANS_17_REGULAR, NOTO_SANS_18_MEDIUM, NOTO_SANS_MONO_17_REGULAR};
+use embedded_graphics::primitives::Rectangle;
+use embedded_iconoir::prelude::*;
+use embedded_iconoir::{size24px::identity::Fingerprint, size48px::navigation::ArrowUpCircle};
+use frostsnap_fonts::{
+    Gray4Font, NOTO_SANS_14_LIGHT, NOTO_SANS_17_REGULAR, NOTO_SANS_18_MEDIUM, NOTO_SANS_24_BOLD,
+    NOTO_SANS_MONO_14_REGULAR, NOTO_SANS_MONO_17_REGULAR,
+};
 use tinybmp::Bmp;
 
 const WARNING_ICON_DATA: &[u8] = include_bytes!("../assets/warning-icon-24x24.bmp");
 
+const BOX_SIZE: Size = Size::new(230, 146);
+const DIGEST_PANEL_SIZE: Size = Size::new(184, 90);
+const FINGERPRINT_BYTES: usize = 4;
+
+/// The firmware an upgrade installs, as the confirm screen names it.
+#[derive(Clone)]
+pub struct UpgradeTarget {
+    pub version: String,
+    pub dev: bool,
+}
+
+type Label = Text<Gray4TextStyle>;
+type Icon<I> = IconWidget<embedded_iconoir::Icon<Rgb565, I>>;
+type Chip = Container<Padding<Row<(Icon<Fingerprint>, Label)>>>;
+
+type TargetContent = Center<Column<(Icon<ArrowUpCircle>, Column<(Label, Option<Label>)>, Chip)>>;
+
+type DigestContent = Center<Container<Center<Column<(Row<(Label, Label)>, Label, Label, Label)>>>>;
+
+fn label(text: impl Into<String>, font: &'static Gray4Font, color: Rgb565) -> Label {
+    Text::new(text.into(), Gray4TextStyle::new(font, color))
+}
+
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{:02x}", b)).collect()
+}
+
+fn target_content(target: &UpgradeTarget, firmware_digest: &[u8; 32]) -> TargetContent {
+    let chip = Container::new(Padding::symmetric(
+        8,
+        3,
+        Row::builder()
+            .push(IconWidget::new(Fingerprint::new(PALETTE.text_secondary)))
+            .gap(6)
+            .push(label(
+                hex(&firmware_digest[..FINGERPRINT_BYTES]),
+                &NOTO_SANS_MONO_14_REGULAR,
+                PALETTE.text_secondary,
+            ))
+            .with_cross_axis_alignment(CrossAxisAlignment::Center),
+    ))
+    .with_border(PALETTE.surface_variant, 1)
+    .with_corner_radius(Size::new(11, 11));
+    Center::new(
+        Column::new((
+            IconWidget::new(ArrowUpCircle::new(PALETTE.primary)),
+            Column::new((
+                label(
+                    target.version.clone(),
+                    &NOTO_SANS_24_BOLD,
+                    PALETTE.on_background,
+                ),
+                target
+                    .dev
+                    .then(|| label("development build", &NOTO_SANS_14_LIGHT, PALETTE.warning)),
+            ))
+            .with_cross_axis_alignment(CrossAxisAlignment::Center),
+            chip,
+        ))
+        .with_main_axis_alignment(MainAxisAlignment::SpaceEvenly)
+        .with_cross_axis_alignment(CrossAxisAlignment::Center),
+    )
+}
+
+fn digest_content(firmware_digest: &[u8; 32]) -> DigestContent {
+    let row = |i: usize| {
+        label(
+            hex(&firmware_digest[i * 8..(i + 1) * 8]),
+            &NOTO_SANS_MONO_17_REGULAR,
+            PALETTE.on_surface,
+        )
+    };
+    let first = Row::new((
+        label(
+            hex(&firmware_digest[..FINGERPRINT_BYTES]),
+            &NOTO_SANS_MONO_17_REGULAR,
+            PALETTE.primary,
+        ),
+        label(
+            hex(&firmware_digest[FINGERPRINT_BYTES..8]),
+            &NOTO_SANS_MONO_17_REGULAR,
+            PALETTE.on_surface,
+        ),
+    ));
+    Center::new(
+        Container::with_size(
+            Center::new(
+                Column::new((first, row(1), row(2), row(3)))
+                    .with_cross_axis_alignment(CrossAxisAlignment::Center),
+            ),
+            DIGEST_PANEL_SIZE,
+        )
+        .with_border(PALETTE.outline, 2)
+        .with_corner_radius(Size::new(8, 8)),
+    )
+}
+
+/// The box naming what's being installed. It has a fixed size so that switching what it shows
+/// can't move the rest of the screen.
+pub struct DigestBox {
+    container: Container<FadeSwitcher<AnyOf<(TargetContent, DigestContent)>>>,
+    firmware_digest: [u8; 32],
+    target: Option<UpgradeTarget>,
+    showing_digest: bool,
+    pressed: bool,
+}
+
+impl DigestBox {
+    fn new(firmware_digest: [u8; 32], target: Option<UpgradeTarget>) -> Self {
+        let content = match &target {
+            Some(target) => AnyOf::new(target_content(target, &firmware_digest)),
+            None => AnyOf::new(digest_content(&firmware_digest)),
+        };
+        let container = Container::with_size(
+            FadeSwitcher::new(content).with_fade_config(FadeConfig::new(200)),
+            BOX_SIZE,
+        );
+        Self {
+            container,
+            firmware_digest,
+            showing_digest: target.is_none(),
+            target,
+            pressed: false,
+        }
+    }
+
+    fn toggle(&mut self) {
+        let Some(target) = &self.target else {
+            return;
+        };
+        self.showing_digest = !self.showing_digest;
+        let content = if self.showing_digest {
+            AnyOf::new(digest_content(&self.firmware_digest))
+        } else {
+            AnyOf::new(target_content(target, &self.firmware_digest))
+        };
+        self.container.child.switch_to(content);
+    }
+}
+
+impl DynWidget for DigestBox {
+    fn set_constraints(&mut self, max_size: Size) {
+        self.container.set_constraints(max_size);
+    }
+
+    fn sizing(&self) -> Sizing {
+        self.container.sizing()
+    }
+
+    fn handle_touch(
+        &mut self,
+        point: Point,
+        _current_time: Instant,
+        is_release: bool,
+    ) -> Option<KeyTouch> {
+        let inside = Rectangle::new(Point::zero(), BOX_SIZE).contains(point);
+        // A column sends a release to every child, wherever it lands, so a finger lifted off the
+        // hold button also arrives here.
+        if !is_release {
+            self.pressed = inside;
+        } else if core::mem::take(&mut self.pressed) && inside {
+            self.toggle();
+        }
+        None
+    }
+
+    fn force_full_redraw(&mut self) {
+        self.container.force_full_redraw();
+    }
+}
+
+impl Widget for DigestBox {
+    type Color = Rgb565;
+
+    fn draw<D>(
+        &mut self,
+        target: &mut SuperDrawTarget<D, Self::Color>,
+        current_time: Instant,
+    ) -> Result<(), D::Error>
+    where
+        D: DrawTarget<Color = Self::Color>,
+    {
+        self.container.draw(target, current_time)
+    }
+}
+
 #[derive(frostsnap_macros::Widget)]
 pub struct FirmwareUpgradeConfirm {
     #[widget_delegate]
-    hold_to_confirm: HoldToConfirm<
-        Column<(
-            Text<Gray4TextStyle>,
-            Container<
-                Padding<
-                    Column<(
-                        Text<Gray4TextStyle>,
-                        Text<Gray4TextStyle>,
-                        Text<Gray4TextStyle>,
-                        Text<Gray4TextStyle>,
-                    )>,
-                >,
-            >,
-            Text<Gray4TextStyle>,
-            Text<Gray4TextStyle>,
-        )>,
-    >,
+    hold_to_confirm: HoldToConfirm<Column<(DigestBox, Label)>>,
 }
 
 impl FirmwareUpgradeConfirm {
-    pub fn new(firmware_digest: [u8; 32], size_bytes: u32) -> Self {
-        let mut chunks = firmware_digest.chunks(8);
-        let hash1 = Text::new(
-            chunks
-                .next()
-                .unwrap()
-                .iter()
-                .map(|b| format!("{:02x}", b))
-                .collect::<String>(),
-            Gray4TextStyle::new(&NOTO_SANS_MONO_17_REGULAR, PALETTE.primary),
-        );
-        let hash2 = Text::new(
-            chunks
-                .next()
-                .unwrap()
-                .iter()
-                .map(|b| format!("{:02x}", b))
-                .collect::<String>(),
-            Gray4TextStyle::new(&NOTO_SANS_MONO_17_REGULAR, PALETTE.primary),
-        );
-        let hash3 = Text::new(
-            chunks
-                .next()
-                .unwrap()
-                .iter()
-                .map(|b| format!("{:02x}", b))
-                .collect::<String>(),
-            Gray4TextStyle::new(&NOTO_SANS_MONO_17_REGULAR, PALETTE.primary),
-        );
-        let hash4 = Text::new(
-            chunks
-                .next()
-                .unwrap()
-                .iter()
-                .map(|b| format!("{:02x}", b))
-                .collect::<String>(),
-            Gray4TextStyle::new(&NOTO_SANS_MONO_17_REGULAR, PALETTE.primary),
-        );
+    pub fn new(firmware_digest: [u8; 32], target: Option<UpgradeTarget>) -> Self {
+        let content = Column::new((
+            DigestBox::new(firmware_digest, target),
+            label(
+                "Hold to upgrade",
+                &NOTO_SANS_14_LIGHT,
+                PALETTE.text_secondary,
+            ),
+        ))
+        .with_main_axis_alignment(MainAxisAlignment::SpaceBetween)
+        .with_cross_axis_alignment(CrossAxisAlignment::Center);
 
-        let size_text = if size_bytes < 1024 * 1024 {
-            format!("{} KB", size_bytes / 1024)
-        } else {
-            format!("{:.1} MB", size_bytes as f32 / (1024.0 * 1024.0))
-        };
-
-        let title_text = Text::new(
-            "Firmware upgrade".to_string(),
-            Gray4TextStyle::new(&NOTO_SANS_17_REGULAR, PALETTE.text_secondary),
-        );
-
-        let version_size_display = Text::new(
-            size_text,
-            Gray4TextStyle::new(&NOTO_SANS_17_REGULAR, PALETTE.text_secondary),
-        );
-
-        let hold_text = Text::new(
-            "Hold to upgrade".to_string(),
-            Gray4TextStyle::new(&NOTO_SANS_18_MEDIUM, PALETTE.on_background),
-        );
-
-        let hash_column = Column::new((hash1, hash2, hash3, hash4))
-            .with_cross_axis_alignment(CrossAxisAlignment::Center);
-        let hash_with_padding = Padding::symmetric(10, 5, hash_column);
-        let hash_container = Container::new(hash_with_padding)
-            .with_border(PALETTE.outline, 2)
-            .with_corner_radius(Size::new(8, 8));
-
-        let content = Column::new((title_text, hash_container, version_size_display, hold_text))
-            .with_main_axis_alignment(MainAxisAlignment::SpaceEvenly)
-            .with_cross_axis_alignment(CrossAxisAlignment::Center);
-
-        let hold_to_confirm = HoldToConfirm::new(HOLD_TO_CONFIRM_TIME_SHORT_MS, content);
-
-        Self { hold_to_confirm }
+        Self {
+            hold_to_confirm: HoldToConfirm::new(HOLD_TO_CONFIRM_TIME_SHORT_MS, content),
+        }
     }
 
     pub fn is_confirmed(&self) -> bool {

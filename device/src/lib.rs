@@ -2,8 +2,7 @@
 
 use alloc::{collections::VecDeque, string::ToString};
 use frostsnap_comms::{
-    firmware_version::{self, VersionNumber},
-    DeviceSendBody, DeviceSendMessage, WireDeviceSendBody,
+    firmware_version::VersionNumber, DeviceSendBody, DeviceSendMessage, WireDeviceSendBody,
 };
 use frostsnap_core::DeviceId;
 use ui::UserInteraction;
@@ -11,26 +10,22 @@ use ui::UserInteraction;
 #[macro_use]
 extern crate alloc;
 
-/// The version of the firmware built from this tree.
-///
-/// A literal because an image can never contain its own digest, so running
-/// firmware cannot look itself up in the released-version table. It is accurate
-/// because exactly one binary is ever signed as a given release. From v0.5.0 the
-/// version is embedded in the image at build time and this goes away.
-pub const FIRMWARE_VERSION: VersionNumber = {
-    let (major, minor, patch) = include!("../firmware_version.rs");
-    VersionNumber::new(major, minor, patch)
-};
+esp_bootloader_esp_idf::esp_app_desc!(
+    env!("CARGO_PKG_VERSION"),
+    env!("CARGO_PKG_NAME"),
+    esp_bootloader_esp_idf::BUILD_TIME,
+    esp_bootloader_esp_idf::BUILD_DATE,
+    esp_bootloader_esp_idf::ESP_IDF_COMPATIBLE_VERSION,
+    esp_bootloader_esp_idf::MMU_PAGE_SIZE,
+    0,
+    u16::MAX,
+    esp_bootloader_esp_idf::SECURE_VERSION
+);
 
-const _: () = {
-    const fn ordered(v: VersionNumber) -> u32 {
-        (v.major as u32) << 16 | (v.minor as u32) << 8 | v.patch as u32
-    }
-    assert!(
-        ordered(firmware_version::EARLIEST_ACCEPTABLE) <= ordered(FIRMWARE_VERSION),
-        "a release bump moved the downgrade floor past the version this tree builds"
-    );
-};
+/// The version embedded in the running image.
+pub fn firmware_version() -> VersionNumber {
+    VersionNumber::parse(ESP_APP_DESC.version()).expect("the device crate's version is X.Y.Z")
+}
 
 /// Display refresh frequency in milliseconds (25ms = 40 FPS)
 pub const DISPLAY_REFRESH_MS: u64 = 25;

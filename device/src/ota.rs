@@ -9,8 +9,10 @@ use alloc::boxed::Box;
 use bincode::config::{Fixint, LittleEndian};
 use esp_hal::time::{Duration, Instant};
 use frostsnap_comms::{
-    firmware_version, CommsMisc, DeviceSendBody, Sha256Digest, BAUDRATE,
-    FIRMWARE_NEXT_CHUNK_READY_SIGNAL, FIRMWARE_UPGRADE_CHUNK_LEN,
+    firmware_reader,
+    firmware_version::{self, VersionNumber},
+    CommsMisc, DeviceSendBody, Sha256Digest, BAUDRATE, FIRMWARE_NEXT_CHUNK_READY_SIGNAL,
+    FIRMWARE_UPGRADE_CHUNK_LEN,
 };
 use frostsnap_widgets::Frac;
 use nb::block;
@@ -27,6 +29,7 @@ pub enum RefuseReason {
     DigestMismatch,
     SecureBootInvalid,
     DowngradeBlocked,
+    VersionMismatch,
 }
 
 impl core::fmt::Display for RefuseReason {
@@ -36,12 +39,13 @@ impl core::fmt::Display for RefuseReason {
             RefuseReason::DigestMismatch => "Download corrupted",
             RefuseReason::SecureBootInvalid => "Signature invalid",
             RefuseReason::DowngradeBlocked => "Downgrade blocked",
+            RefuseReason::VersionMismatch => "Version mismatch",
         })
     }
 }
 
 /// Decide whether to commit the downloaded upgrade sitting in `partition`,
-/// against the digest the coordinator announced. Everything examined here is
+/// against the digest and version the coordinator announced. Everything examined here is
 /// attacker-controlled, so every failure is a verdict, never a panic. When
 /// more than one thing is wrong the reason follows the check order below,
 /// most fundamental first; that only picks the reason shown, never whether it
@@ -49,6 +53,7 @@ impl core::fmt::Display for RefuseReason {
 fn decide_upgrade<'a>(
     partition: &EspFlashPartition<'a>,
     announced_digest: &Sha256Digest,
+    announced_version: Option<VersionNumber>,
     firmware: &mut NormalMode<'_, 'a>,
 ) -> UpgradeVerdict {
     let Ok((firmware_size, _)) = partition.firmware_size() else {
@@ -68,16 +73,17 @@ fn decide_upgrade<'a>(
         return UpgradeVerdict::Refuse(RefuseReason::SecureBootInvalid);
     }
 
-    // Only body digests are compared: the shared list's v0.0.1 full-image
-    // digest can never equal any image's body digest.
-    let downgrade_blocked = firmware_version::EARLIEST_ACCEPTABLE
-        .versions_before()
-        .any(|(digest, _)| *digest == body_digest);
-    if downgrade_blocked {
-        return UpgradeVerdict::Refuse(RefuseReason::DowngradeBlocked);
+    // Read only after the secure-boot check, so the version is signature-covered.
+    let embedded = firmware_reader::embedded_version(partition).unwrap_or(None);
+    match firmware_version::upgrade_version_check(embedded, announced_version) {
+        Ok(()) => UpgradeVerdict::Commit,
+        Err(firmware_version::VersionRefusal::BelowFloor) => {
+            UpgradeVerdict::Refuse(RefuseReason::DowngradeBlocked)
+        }
+        Err(firmware_version::VersionRefusal::NotAnnounced) => {
+            UpgradeVerdict::Refuse(RefuseReason::VersionMismatch)
+        }
     }
-
-    UpgradeVerdict::Commit
 }
 
 #[derive(Clone, Debug)]
@@ -216,6 +222,7 @@ impl<'a> OtaPartitions<'a> {
         &self,
         size: u32,
         expected_digest: Sha256Digest,
+        expected_version: Option<VersionNumber>,
         active_partition_digest: Sha256Digest,
     ) -> FirmwareUpgradeMode<'a> {
         let slot = self.next_slot();
@@ -239,6 +246,7 @@ impl<'a> OtaPartitions<'a> {
                 ota: self.clone(),
                 ota_slot: slot,
                 expected_digest,
+                expected_version,
                 size,
                 state: State::WaitingForConfirm { sent_prompt: false },
             }
@@ -252,6 +260,7 @@ pub enum FirmwareUpgradeMode<'a> {
         ota: OtaPartitions<'a>,
         ota_slot: usize,
         expected_digest: Sha256Digest,
+        expected_version: Option<VersionNumber>,
         size: u32,
         state: State,
     },
@@ -285,6 +294,7 @@ impl<'a> FirmwareUpgradeMode<'a> {
                 ota,
                 ota_slot,
                 expected_digest,
+                expected_version,
                 size,
                 state,
             } => {
@@ -294,6 +304,7 @@ impl<'a> FirmwareUpgradeMode<'a> {
                         *sent_prompt = true;
                         ui.set_workflow(ui::Workflow::prompt(ui::Prompt::ConfirmFirmwareUpgrade {
                             firmware_digest: *expected_digest,
+                            version: *expected_version,
                             size: *size,
                         }));
                         None
@@ -480,6 +491,7 @@ impl<'a> FirmwareUpgradeMode<'a> {
         if let FirmwareUpgradeMode::Upgrading {
             ota_slot,
             expected_digest,
+            expected_version,
             ota,
             ..
         } = &self
@@ -490,7 +502,7 @@ impl<'a> FirmwareUpgradeMode<'a> {
             // here, against the bytes actually written. Any refusal leaves the active
             // slot unchanged and returns Rejected; the running firmware survives and
             // boots again on the power cycle the refusal screen asks for.
-            match decide_upgrade(partition, expected_digest, firmware) {
+            match decide_upgrade(partition, expected_digest, *expected_version, firmware) {
                 UpgradeVerdict::Commit => ota.switch_partition(*ota_slot, OtaMetadata {}),
                 UpgradeVerdict::Refuse(reason) => {
                     ui.set_workflow(ui::Workflow::FirmwareUpgrade(

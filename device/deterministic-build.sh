@@ -20,5 +20,8 @@ cd "${BUILD_DIR}"
 nix develop --command just build-firmware frontier --locked
 nix develop --command just save-image frontier
 
-echo "Build complete - $(stat -c%s "${BUILD_DIR}/${FIRMWARE_PATH}") bytes"
-echo "$(sha256sum "${BUILD_DIR}/${FIRMWARE_PATH}")"
+# The shell's rustflags are the firmware's reproducibility settings, with GNU linker arguments
+# that a host build on macOS can't link with. This tool only reads the finished image.
+nix develop --command env -u CARGO_BUILD_RUSTFLAGS cargo run --locked -p frostsnap_factory -- firmware-info -i "${FIRMWARE_PATH}"
+echo "Build complete - $(wc -c < "${FIRMWARE_PATH}" | tr -d ' ') bytes"
+echo "$(shasum -a 256 "${BUILD_DIR}/${FIRMWARE_PATH}")"

@@ -1,9 +1,5 @@
-/// The one release literal, shared with the device by inclusion because a host
-/// crate cannot depend on the riscv32-only device crate.
-pub fn firmware_version() -> alloc::string::String {
-    let (major, minor, patch): (u8, u8, u8) = include!("../../device/firmware_version.rs");
-    alloc::format!("{}.{}.{}", major, minor, patch)
-}
+pub const DEMO_FIRMWARE_VERSION: &str = "0.5.0";
+pub const DEMO_DEV_FIRMWARE_VERSION: &str = "0.5.0 dev 1a2b3c4d";
 
 /// Macro for selecting and running demo widgets
 #[macro_export]
@@ -144,7 +140,7 @@ macro_rules! demo_widget {
             }
             "welcome" => {
                 use $crate::Standby;
-                let mut widget = Standby::new($crate::demo_widget::firmware_version());
+                let mut widget = Standby::new($crate::demo_widget::DEMO_FIRMWARE_VERSION);
                 widget.set_welcome();
                 $run_macro!(widget);
             }
@@ -671,19 +667,26 @@ macro_rules! demo_widget {
 
                 $run_macro!(widget);
             }
-            "firmware_upgrade" => {
-                use $crate::FirmwareUpgradeConfirm;
+            "firmware_upgrade" | "firmware_upgrade_dev" | "firmware_upgrade_widest" | "firmware_upgrade_no_version" => {
+                use $crate::{FirmwareUpgradeConfirm, UpgradeTarget};
 
-                // Create a test firmware digest (SHA256 hash)
-                let firmware_digest: [u8; 32] = [
+                let mut firmware_digest: [u8; 32] = [
                     0xab, 0xcd, 0xef, 0x12, 0x34, 0x56, 0x78, 0x90,
                     0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x11, 0x22,
                     0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0x00,
                     0xde, 0xad, 0xbe, 0xef, 0xca, 0xfe, 0xba, 0xbe,
                 ];
-                let size_bytes = 1_234_567; // ~1.2 MB
+                let target = match $demo.as_ref() {
+                    "firmware_upgrade" => Some(UpgradeTarget { version: "v0.5.0".into(), dev: false }),
+                    "firmware_upgrade_dev" => Some(UpgradeTarget { version: "v0.5.0".into(), dev: true }),
+                    "firmware_upgrade_widest" => {
+                        firmware_digest[..4].copy_from_slice(&[0xdd; 4]);
+                        Some(UpgradeTarget { version: "v99.99.99".into(), dev: true })
+                    }
+                    _ => None,
+                };
 
-                let widget = FirmwareUpgradeConfirm::new(firmware_digest, size_bytes);
+                let widget = FirmwareUpgradeConfirm::new(firmware_digest, target);
 
                 $run_macro!(widget);
             }
@@ -968,7 +971,7 @@ macro_rules! demo_widget {
                 let widget = AddressDisplay::new(address);
                 $run_macro!(widget);
             }
-            "standby" => {
+            "standby" | "standby_dev" => {
                 use $crate::Standby;
                 use frostsnap_core::{message::HeldShare2, device::KeyPurpose, schnorr_fun::frost::SecretShare};
                 use bitcoin;
@@ -994,7 +997,11 @@ macro_rules! demo_widget {
                 };
 
                 let device_name = "Alice";
-                let mut widget = Standby::new($crate::demo_widget::firmware_version());
+                let version = match $demo.as_ref() {
+                    "standby_dev" => $crate::demo_widget::DEMO_DEV_FIRMWARE_VERSION,
+                    _ => $crate::demo_widget::DEMO_FIRMWARE_VERSION,
+                };
+                let mut widget = Standby::new(version);
                 widget.set_key(device_name, held_share);
                 $run_macro!(widget);
             }
@@ -1021,7 +1028,7 @@ macro_rules! demo_widget {
                 };
 
                 let device_name = "Alice";
-                let mut widget = Standby::new($crate::demo_widget::firmware_version());
+                let mut widget = Standby::new($crate::demo_widget::DEMO_FIRMWARE_VERSION);
                 widget.set_key(device_name, held_share);
                 $run_macro!(widget);
             }
@@ -1163,7 +1170,7 @@ macro_rules! demo_widget {
                 impl StandbyTransitionsDemo {
                     fn new() -> Self {
                         Self {
-                            widget: Standby::new($crate::demo_widget::firmware_version()),
+                            widget: Standby::new($crate::demo_widget::DEMO_FIRMWARE_VERSION),
                             last_switch_time: None,
                             state_index: 0,
                         }
@@ -1407,7 +1414,7 @@ macro_rules! demo_widget {
                 $run_macro!(widget);
             }
             _ => {
-                panic!("Unknown demo: '{}'. Valid demos: hello_world, bip39_entry, log_touches, numeric_keyboard, hold_confirm, welcome, column_cross_axis, column_center, row_cross_axis, row_center, row_inside_column, bip39_backup, all_words, fade_in, fade_switcher, device_name, device_name_cursor, bobbing_icon, swipe_up_chevron, keygen_check, sign_prompt, bitcoin_amount, slide_in, firmware_upgrade_progress, firmware_upgrade_download, firmware_upgrade_erase, firmware_upgrade_passive, progress, firmware_upgrade, array_column, vec_column, word_selector, address, standby, standby_recovery, screen_test, multiline_string, logo_colors, standby_transitions, erase_device, aa_compare, border_iter, check_backup", $demo);
+                panic!("Unknown demo: '{}'. Valid demos: hello_world, bip39_entry, log_touches, numeric_keyboard, hold_confirm, welcome, column_cross_axis, column_center, row_cross_axis, row_center, row_inside_column, bip39_backup, all_words, fade_in, fade_switcher, device_name, device_name_cursor, bobbing_icon, swipe_up_chevron, keygen_check, sign_prompt, bitcoin_amount, slide_in, firmware_upgrade_progress, firmware_upgrade_download, firmware_upgrade_erase, firmware_upgrade_passive, progress, firmware_upgrade, firmware_upgrade_dev, firmware_upgrade_widest, firmware_upgrade_no_version, array_column, vec_column, word_selector, address, standby, standby_dev, standby_recovery, screen_test, multiline_string, logo_colors, standby_transitions, erase_device, aa_compare, border_iter, check_backup", $demo);
             }
         }
     };
