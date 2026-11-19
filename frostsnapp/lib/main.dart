@@ -13,6 +13,7 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 
 import 'package:frostsnap/contexts.dart';
 import 'package:frostsnap/copy_feedback.dart';
+import 'package:frostsnap/device_busy_banner.dart';
 import 'package:frostsnap/global.dart';
 import 'package:frostsnap/serialport.dart';
 import 'package:frostsnap/settings.dart';
@@ -184,6 +185,10 @@ class MyApp extends StatefulWidget {
 class _MyAppState extends State<MyApp> {
   late final Future<List<void>> googleFontsPending;
   late ColorScheme colorScheme;
+  // Only read once startup succeeded, since it needs the coordinator.
+  late final Stream<bool> devicePortBusy = anyDevicePortBusy(
+    GlobalStreams.deviceListSubject,
+  );
 
   void _setColorTheme() => colorScheme = ColorScheme.fromSeed(
     brightness: Brightness.dark,
@@ -230,6 +235,10 @@ class _MyAppState extends State<MyApp> {
           home: widget.startupError == null
               ? const MyHomePage()
               : StartupErrorWidget(error: widget.startupError!),
+          builder: widget.startupError == null
+              ? (context, child) =>
+                    DeviceBusyBanner(busy: devicePortBusy, child: child!)
+              : null,
           debugShowCheckedModeBanner: false,
         );
       },
