@@ -311,7 +311,7 @@ pub const fn default_electrum_server(network: bitcoin::Network) -> &'static str 
     // a tooling bug means we need this
     #[allow(unreachable_patterns)]
     match network {
-        bitcoin::Network::Bitcoin => "ssl://blockstream.info:700",
+        bitcoin::Network::Bitcoin => "ssl://bitcoin-mainnet.blockstream.info:50002",
         // we're using the tcp:// version since ssl ain't working for some reason
         bitcoin::Network::Testnet => "tcp://electrum.blockstream.info:60001",
         bitcoin::Network::Testnet4 => "ssl://blackie.c3-soft.com:57010",
