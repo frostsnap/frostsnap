@@ -161,11 +161,11 @@ class TxDetailsModel {
 
   update(Transaction tx) => this.tx = tx;
 
-  int get netValue => tx.balanceDelta() ?? 0;
+  int get netValue => tx.balanceDelta();
 
   int get confirmations => tx.confirmations;
   bool get isConfirmed => confirmations > 0;
-  bool get isSend => (tx.balanceDelta() ?? 0) < 0;
+  bool get isSend => tx.balanceDelta() < 0;
 
   /// Human-readable string of the last update. This is either the confirmation time or when we last
   /// saw the tx in the mempool.
