@@ -70,9 +70,8 @@ impl WireSignTask {
             template
                 .as_seen_by(master_appkey)
                 .iter_our_outputs()
-                .filter_map(move |(_, _, spk)| {
-                    (spk.bip32_path.account_keychain == internal)
-                        .then_some(spk.bip32_path.index.to_u32())
+                .filter_map(move |(_, _, path)| {
+                    (path.account_keychain == internal).then_some(path.index.to_u32())
                 })
                 .collect::<Vec<_>>()
         })
@@ -108,18 +107,20 @@ impl WireSignTask {
                 // while the wallet's account and address-issuance model is still implicit. Not a
                 // considered final model.
                 //
-                // Outputs only. An input path is self-certifying: `Input::txout` builds the
+                // Outputs only. A key-path input is self-certifying: `Input::txout` builds the
                 // prevout from the claimed path's own spk, so the sighash commits to it and a
-                // forged path signs against a prevout that is not on chain. Policing inputs would
-                // buy nothing and would strand coins a PSBT legitimately imports.
+                // forged path signs against a prevout that is not on chain. A script-path input
+                // is not: its prevout spk is the coordinator's word. What binds it is the leaf
+                // sighash, which commits to every prevout's spk and amount and to the leaf hash,
+                // so a signature over a prevout or leaf that is not the real one is valid for
+                // nothing. Policing inputs would buy nothing and would strand coins a PSBT
+                // legitimately imports.
                 //
                 // The known cost is that only this side is bounded: an honest coordinator that
                 // allocated change or revealed an address past the ceiling would have its own task
                 // refused here. Reaching that is implausible today, and closing it properly means
                 // one shared issuance boundary in the wallet, which is the cleanup.
-                for (_, _, owner) in tx_template.iter_our_outputs() {
-                    let path = owner.bip32_path;
-
+                for (_, _, path) in tx_template.iter_our_outputs() {
                     if path.account_keychain.account != BitcoinAccount::default() {
                         return Err(SignTaskError::UnwatchedAccount {
                             account: path.account_keychain.account,
@@ -128,6 +129,20 @@ impl WireSignTask {
 
                     if path.index.to_u32() >= OUTPUT_INDEX_LIMIT {
                         return Err(SignTaskError::OutputIndexOutOfRange { index: path.index });
+                    }
+                }
+
+                // The sighash binds a script-path input's leaf but not which leaves we are given
+                // or their control blocks, and both size the witness and so the feerate we show.
+                // A padded control block, or a big leaf of the coin that holds no key of ours,
+                // could make any fee look modest; each leaf must be one we can sign.
+                for (input, _, owner) in tx_template.iter_our_inputs() {
+                    if !owner
+                        .leaves()
+                        .iter()
+                        .all(|leaf| leaf.is_ours_in(owner.master_appkey, &owner.spk()))
+                    {
+                        return Err(SignTaskError::UnprovenLeaf { input });
                     }
                 }
 
@@ -179,9 +194,9 @@ impl CheckedSignTask {
             }],
             SignTask::BitcoinTransaction { tx_template, .. } => tx_template
                 .iter_our_input_sighashes()
-                .map(|(owner, sighash)| SignItem {
+                .map(|(app_tweak, sighash)| SignItem {
                     message: sighash.as_raw_hash().to_byte_array().to_vec(),
-                    app_tweak: AppTweak::Bitcoin(owner.bip32_path),
+                    app_tweak,
                 })
                 .collect(),
         }
@@ -222,6 +237,7 @@ pub enum SignTaskError {
     WrongPurpose,
     InvalidBitcoinTransaction,
     NothingToSign,
+    UnprovenLeaf { input: usize },
 }
 
 impl core::fmt::Display for SignTaskError {
@@ -241,6 +257,10 @@ impl core::fmt::Display for SignTaskError {
             SignTaskError::NothingToSign => {
                 write!(f, "Transaction has no inputs that belong to this wallet")
             }
+            SignTaskError::UnprovenLeaf { input } => write!(
+                f,
+                "input {input} has a leaf that holds no key of ours or is not committed to the coin it spends"
+            ),
             SignTaskError::WrongPurpose => {
                 write!(
                     f,
@@ -279,17 +299,11 @@ mod test {
     fn an_output_under_another_key_is_presented_as_leaving() {
         let signing = signing_key();
         let other = other_key();
-        let their_spk = LocalSpk {
-            master_appkey: other,
-            bip32_path: BitcoinBip32Path::internal(NormalIndex::ZERO),
-        };
+        let their_spk = LocalSpk::key_spend(other, BitcoinBip32Path::internal(NormalIndex::ZERO));
 
         let mut tx_template = TransactionTemplate::new();
         tx_template.push_imaginary_owned_input(
-            LocalSpk {
-                master_appkey: signing,
-                bip32_path: BitcoinBip32Path::external(NormalIndex::ZERO),
-            },
+            LocalSpk::key_spend(signing, BitcoinBip32Path::external(NormalIndex::ZERO)),
             Amount::from_sat(100_000),
         );
         tx_template.push_owned_output(Amount::from_sat(90_000), their_spk.clone());
@@ -335,6 +349,201 @@ mod test {
         assert_eq!(prompt.fee, Amount::from_sat(10_000));
     }
 
+    /// Only a plain BIP86 output is ours. A coordinator could otherwise claim an output it
+    /// controls as our change — by naming any script as a script-path owner, or a script tree
+    /// as a key-spend's merkle root — and the device would hide the payment.
+    #[test]
+    fn a_scripted_output_claimed_as_ours_is_shown_as_leaving() {
+        let signing = signing_key();
+        let change_path = BitcoinBip32Path::internal(NormalIndex::new(1).unwrap());
+        let attacker_spk = ScriptBuf::from_bytes([&[0x51u8, 0x20][..], &[0xee; 32][..]].concat());
+
+        for disguised in [
+            LocalSpk::script_spend(
+                signing,
+                attacker_spk.clone(),
+                alloc::vec![crate::bitcoin_transaction::LeafSpend::new(
+                    change_path,
+                    ScriptBuf::new(),
+                    bitcoin::taproot::LeafVersion::TapScript,
+                    alloc::vec![],
+                )],
+            ),
+            LocalSpk::key_spend_with_merkle_root(
+                signing,
+                change_path,
+                Some(bitcoin::taproot::TapNodeHash::from_byte_array([0xee; 32])),
+            ),
+        ] {
+            let mut tx_template = TransactionTemplate::new();
+            tx_template.push_imaginary_owned_input(
+                LocalSpk::key_spend(signing, BitcoinBip32Path::external(NormalIndex::ZERO)),
+                Amount::from_sat(100_000),
+            );
+            tx_template.push_foreign_output(TxOut {
+                value: Amount::from_sat(50_000),
+                script_pubkey: ScriptBuf::from_bytes(
+                    [&[0x51u8, 0x20][..], &[0xcc; 32][..]].concat(),
+                ),
+            });
+            // The shape of an ordinary send's single change output, which the prompt hides.
+            tx_template.push_owned_output(Amount::from_sat(49_000), disguised.clone());
+
+            let checked = WireSignTask::BitcoinTransaction(tx_template)
+                .check(signing, KeyPurpose::Bitcoin(Network::Bitcoin))
+                .expect("the task is signable; it just isn't change");
+            let SignTask::BitcoinTransaction { tx_template, .. } = &checked.inner else {
+                panic!("expected a bitcoin task")
+            };
+            assert_eq!(
+                tx_template.to_rust_bitcoin_tx().output[1].script_pubkey,
+                disguised.spk(),
+                "the signed transaction pays the disguised script"
+            );
+            assert_eq!(tx_template.iter_our_outputs().count(), 0);
+
+            let prompt = tx_template.user_prompt(Network::Bitcoin);
+            let address =
+                bitcoin::Address::from_script(&disguised.spk(), bitcoin::params::Params::MAINNET)
+                    .expect("p2tr has an address");
+            assert_eq!(
+                prompt.recipients.get(1),
+                Some(&PromptRecipient {
+                    destination: PromptDestination::Address(address),
+                    amount: Amount::from_sat(49_000),
+                    owned: None,
+                }),
+                "the disguised output is shown, as a recipient and not as ours"
+            );
+        }
+    }
+
+    /// The sighash does not cover a script-path input's control block, or whether its leaf holds
+    /// our key, yet both size the witness behind the feerate shown. A coordinator padding a
+    /// control block, forging one that commits to nothing, or handing over a real leaf that is
+    /// not ours, must be refused rather than shown a flattering rate. Spliced into the
+    /// encoding, because pushing such an input is already refused on this side.
+    #[test]
+    fn a_leaf_we_cannot_sign_is_refused() {
+        use bitcoin::taproot::{LeafVersion, TaprootBuilder};
+        let signing = signing_key();
+        let secp = bitcoin::secp256k1::Secp256k1::new();
+        let leaf_path = BitcoinBip32Path::external(NormalIndex::new(3).unwrap());
+        let leaf_key: bitcoin::XOnlyPublicKey =
+            crate::tweak::AppTweak::Bitcoin(crate::tweak::BitcoinTweak::ScriptSpend {
+                leaf_path: leaf_path.into(),
+            })
+            .derive_xonly_key(&signing.to_xpub())
+            .into();
+        let leaf_script = bitcoin::script::Builder::new()
+            .push_x_only_key(&leaf_key)
+            .push_opcode(bitcoin::opcodes::all::OP_CHECKSIG)
+            .into_script();
+        let internal_key = bitcoin::secp256k1::Keypair::from_seckey_slice(&secp, &[9u8; 32])
+            .unwrap()
+            .x_only_public_key()
+            .0;
+        // A real leaf of the same coin, the same size as ours, that holds someone else's key.
+        let stranger_leaf = bitcoin::script::Builder::new()
+            .push_x_only_key(&internal_key)
+            .push_opcode(bitcoin::opcodes::all::OP_CHECKSIG)
+            .into_script();
+        let spend_info = TaprootBuilder::new()
+            .add_leaf(1, leaf_script.clone())
+            .unwrap()
+            .add_leaf(1, stranger_leaf.clone())
+            .unwrap()
+            .finalize(&secp, internal_key)
+            .unwrap();
+        let stranger_control_block = spend_info
+            .control_block(&(stranger_leaf.clone(), LeafVersion::TapScript))
+            .unwrap()
+            .serialize();
+        let control_block = spend_info
+            .control_block(&(leaf_script.clone(), LeafVersion::TapScript))
+            .unwrap()
+            .serialize();
+
+        let mut tx_template = TransactionTemplate::new();
+        tx_template.push_imaginary_owned_input(
+            LocalSpk::script_spend(
+                signing,
+                ScriptBuf::new_p2tr(&secp, internal_key, spend_info.merkle_root()),
+                alloc::vec![crate::bitcoin_transaction::LeafSpend::new(
+                    leaf_path,
+                    leaf_script.clone(),
+                    LeafVersion::TapScript,
+                    control_block.clone(),
+                )],
+            ),
+            Amount::from_sat(100_000),
+        );
+        tx_template.push_foreign_output(TxOut {
+            value: Amount::from_sat(10_000),
+            script_pubkey: ScriptBuf::from_bytes([&[0x51u8, 0x20][..], &[0xcc; 32][..]].concat()),
+        });
+        let cfg = bincode::config::standard();
+        let bytes =
+            bincode::encode_to_vec(WireSignTask::BitcoinTransaction(tx_template), cfg).unwrap();
+        let encoded_control_block = bincode::encode_to_vec(&control_block, cfg).unwrap();
+        let at = bytes
+            .windows(encoded_control_block.len())
+            .position(|w| w == encoded_control_block)
+            .expect("the control block is in the encoding");
+
+        let splice = |replacement: Vec<u8>| {
+            let replacement = bincode::encode_to_vec(&replacement, cfg).unwrap();
+            let patched = [
+                &bytes[..at],
+                &replacement[..],
+                &bytes[at + encoded_control_block.len()..],
+            ]
+            .concat();
+            let (task, _): (WireSignTask, _) = bincode::decode_from_slice(&patched, cfg).unwrap();
+            task.check(signing, KeyPurpose::Bitcoin(Network::Bitcoin))
+        };
+
+        assert!(
+            splice(control_block.clone()).is_ok(),
+            "the honest one is signed"
+        );
+        let padded = [&control_block[..], &[0xab; 32 * 8]].concat();
+        let mut wrong_parity = control_block.clone();
+        wrong_parity[0] ^= 1;
+        let mut other_internal_key = control_block.clone();
+        other_internal_key[1..33].copy_from_slice(&leaf_key.serialize());
+        for forged in [
+            padded,
+            wrong_parity,
+            other_internal_key,
+            alloc::vec![0xc0; 40],
+        ] {
+            assert!(matches!(
+                splice(forged),
+                Err(SignTaskError::UnprovenLeaf { input: 0 })
+            ));
+        }
+
+        // The stranger's leaf with its own, honest control block: committed to the coin, but
+        // not ours to sign, so it must not be signed or weighed into the feerate.
+        assert_eq!(stranger_leaf.len(), leaf_script.len());
+        assert_eq!(stranger_control_block.len(), control_block.len());
+        let swap = |bytes: &[u8], from: &[u8], to: &[u8]| {
+            let at = bytes
+                .windows(from.len())
+                .position(|w| w == from)
+                .expect("present in the encoding");
+            [&bytes[..at], to, &bytes[at + from.len()..]].concat()
+        };
+        let patched = swap(&bytes, leaf_script.as_bytes(), stranger_leaf.as_bytes());
+        let patched = swap(&patched, &control_block, &stranger_control_block);
+        let (task, _): (WireSignTask, _) = bincode::decode_from_slice(&patched, cfg).unwrap();
+        assert!(matches!(
+            task.check(signing, KeyPurpose::Bitcoin(Network::Bitcoin)),
+            Err(SignTaskError::UnprovenLeaf { input: 0 })
+        ));
+    }
+
     /// An OP_RETURN output is legal and a PSBT can carry one. `Address::from_script` has no
     /// rendering for it, so building the prompt used to panic — on the device.
     #[test]
@@ -343,10 +552,7 @@ mod test {
 
         let mut tx_template = TransactionTemplate::new();
         tx_template.push_imaginary_owned_input(
-            LocalSpk {
-                master_appkey: signing,
-                bip32_path: BitcoinBip32Path::external(NormalIndex::ZERO),
-            },
+            LocalSpk::key_spend(signing, BitcoinBip32Path::external(NormalIndex::ZERO)),
             Amount::from_sat(100_000),
         );
         let op_return = ScriptBuf::from_bytes(vec![0x6a, 0x04, 0xde, 0xad, 0xbe, 0xef]);
@@ -408,10 +614,7 @@ mod test {
 
         let mut tx_template = TransactionTemplate::new();
         tx_template.push_imaginary_owned_input(
-            LocalSpk {
-                master_appkey: signing,
-                bip32_path: BitcoinBip32Path::external(NormalIndex::ZERO),
-            },
+            LocalSpk::key_spend(signing, BitcoinBip32Path::external(NormalIndex::ZERO)),
             Amount::from_sat(100_000),
         );
         tx_template.push_foreign_output(TxOut {
@@ -447,10 +650,7 @@ mod test {
 
         let mut tx_template = TransactionTemplate::new();
         tx_template.push_imaginary_owned_input(
-            LocalSpk {
-                master_appkey: other,
-                bip32_path: BitcoinBip32Path::external(NormalIndex::ZERO),
-            },
+            LocalSpk::key_spend(other, BitcoinBip32Path::external(NormalIndex::ZERO)),
             Amount::from_sat(100_000),
         );
         tx_template.push_foreign_output(bitcoin::TxOut {
@@ -477,10 +677,7 @@ mod test {
 
         let mut tx_template = TransactionTemplate::new();
         tx_template.push_imaginary_owned_input(
-            LocalSpk {
-                master_appkey: signing,
-                bip32_path: BitcoinBip32Path::external(NormalIndex::ZERO),
-            },
+            LocalSpk::key_spend(signing, BitcoinBip32Path::external(NormalIndex::ZERO)),
             Amount::from_sat(100_000),
         );
         tx_template.push_foreign_output(TxOut {
@@ -512,18 +709,12 @@ mod test {
         let spend_to_self = |input: BitcoinBip32Path, output: BitcoinBip32Path| {
             let mut tx = TransactionTemplate::new();
             tx.push_imaginary_owned_input(
-                LocalSpk {
-                    master_appkey: signing,
-                    bip32_path: input,
-                },
+                LocalSpk::key_spend(signing, input),
                 Amount::from_sat(100_000),
             );
             tx.push_owned_output(
                 Amount::from_sat(90_000),
-                LocalSpk {
-                    master_appkey: signing,
-                    bip32_path: output,
-                },
+                LocalSpk::key_spend(signing, output),
             );
             WireSignTask::BitcoinTransaction(tx)
                 .check(signing, KeyPurpose::Bitcoin(Network::Bitcoin))

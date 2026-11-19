@@ -5,10 +5,7 @@ use frostsnap_core::MasterAppkey;
 use schnorr_fun::fun::G;
 
 fn local_spk(bip32_path: BitcoinBip32Path) -> LocalSpk {
-    LocalSpk {
-        master_appkey: MasterAppkey::derive_from_rootkey(G.normalize()),
-        bip32_path,
-    }
+    LocalSpk::key_spend(MasterAppkey::derive_from_rootkey(G.normalize()), bip32_path)
 }
 
 fn template_with_input(input_sats: u64) -> TransactionTemplate {

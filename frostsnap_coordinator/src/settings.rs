@@ -46,6 +46,8 @@ pub struct Settings {
     pub electrum_enabled: BTreeMap<bitcoin::Network, ElectrumEnabled>,
     pub developer_mode: bool,
     pub hide_balance: bool,
+    /// The user has been told, once, what signing a scripted output means for recovering it.
+    pub scripted_spend_warning_seen: bool,
 }
 
 impl Settings {
@@ -55,6 +57,10 @@ impl Settings {
 
     pub fn set_hide_balance(&mut self, value: bool, mutations: &mut Vec<Mutation>) {
         self.mutate(Mutation::SetHideBalance { value }, mutations);
+    }
+
+    pub fn set_scripted_spend_warning_seen(&mut self, mutations: &mut Vec<Mutation>) {
+        self.mutate(Mutation::SetScriptedSpendWarningSeen, mutations);
     }
 
     pub fn get_electrum_server(&self, network: bitcoin::Network) -> String {
@@ -128,6 +134,9 @@ impl Settings {
             Mutation::SetHideBalance { value } => {
                 self.hide_balance = value;
             }
+            Mutation::SetScriptedSpendWarningSeen => {
+                self.scripted_spend_warning_seen = true;
+            }
             Mutation::SetElectrumEnabled { network, enabled } => {
                 self.electrum_enabled.insert(network, enabled);
             }
@@ -151,6 +160,7 @@ pub enum Mutation {
     SetHideBalance {
         value: bool,
     },
+    SetScriptedSpendWarningSeen,
     SetElectrumEnabled {
         network: bitcoin::Network,
         enabled: ElectrumEnabled,
@@ -203,6 +213,7 @@ impl Persist<rusqlite::Connection> for Settings {
                     "hide_balance" => Mutation::SetHideBalance {
                         value: bool::from_str(value.as_str())?,
                     },
+                    "scripted_spend_warning_seen" => Mutation::SetScriptedSpendWarningSeen,
                     electrum_server if electrum_server.starts_with("electrum_server_") => {
                         let network = electrum_server.strip_prefix("electrum_server_").unwrap();
                         match bitcoin::Network::from_str(network) {
@@ -320,6 +331,13 @@ impl Persist<rusqlite::Connection> for Settings {
                         params!["hide_balance", value.to_string()],
                     )?;
                 }
+                Mutation::SetScriptedSpendWarningSeen => {
+                    event!(Level::DEBUG, "scripted spend warning seen");
+                    conn.execute(
+                        "INSERT OR REPLACE INTO fs_app_global_settings (key, value) VALUES (?1, ?2)",
+                        params!["scripted_spend_warning_seen", true.to_string()],
+                    )?;
+                }
                 Mutation::SetElectrumEnabled { network, enabled } => {
                     event!(
                         Level::DEBUG,
@@ -336,5 +354,29 @@ impl Persist<rusqlite::Connection> for Settings {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    /// The scripted-spend warning is shown once, so having seen it must survive a restart.
+    #[test]
+    fn scripted_spend_warning_seen_is_persisted() {
+        let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+        Settings::migrate(&mut conn).unwrap();
+        let mut settings = Settings::load(&mut conn, ()).unwrap();
+        assert!(!settings.scripted_spend_warning_seen);
+
+        let mut mutations = vec![];
+        settings.set_scripted_spend_warning_seen(&mut mutations);
+        settings.persist_update(&mut conn, mutations).unwrap();
+
+        assert!(
+            Settings::load(&mut conn, ())
+                .unwrap()
+                .scripted_spend_warning_seen
+        );
     }
 }

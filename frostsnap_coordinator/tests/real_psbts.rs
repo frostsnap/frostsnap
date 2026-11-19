@@ -19,10 +19,7 @@ fn wallet_key() -> MasterAppkey {
 }
 
 fn owned(key: MasterAppkey, path: BitcoinBip32Path) -> Option<LocalSpk> {
-    Some(LocalSpk {
-        master_appkey: key,
-        bip32_path: path,
-    })
+    Some(LocalSpk::key_spend(key, path))
 }
 
 /// Core annotates an output paying the wallet's own *receive* address, not just its change.

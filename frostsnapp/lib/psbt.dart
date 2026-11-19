@@ -8,6 +8,7 @@ import 'package:frostsnap/camera/camera.dart';
 import 'package:frostsnap/contexts.dart';
 import 'package:frostsnap/copy_feedback.dart';
 import 'package:frostsnap/maybe_fullscreen_dialog.dart';
+import 'package:frostsnap/settings.dart';
 import 'package:frostsnap/sign_message.dart';
 import 'package:frostsnap/snackbar.dart';
 import 'package:frostsnap/src/rust/api.dart';
@@ -19,6 +20,36 @@ import 'package:frostsnap/theme.dart';
 import 'package:frostsnap/wallet.dart';
 import 'package:frostsnap/wallet_tx_details.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
+
+/// Shown once, before the first signing of a scripted output: such coins are only found and
+/// spent again with the wallet descriptor that made them, which the Frostsnap backup does not
+/// hold.
+Future<bool> showScriptedSpendWarning(BuildContext context) async {
+  final result = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: Text('EXPERIMENTAL: Scripted Output'),
+      content: Text(
+        'This transaction spends a taproot output with script conditions. '
+        'Signing these is experimental.\n\n'
+        'Your Frostsnap backup alone cannot recover these coins. '
+        'Back up the wallet descriptor that created them.',
+      ),
+      actionsAlignment: MainAxisAlignment.spaceBetween,
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(context, true),
+          child: Text('I Understand'),
+        ),
+      ],
+    ),
+  );
+  return result ?? false;
+}
 
 class LoadPsbtPage extends StatefulWidget {
   final Wallet wallet;
@@ -44,6 +75,7 @@ class LoadPsbtPageState extends State<LoadPsbtPage> {
 
     final walletCtx = WalletContext.of(context)!;
     final wallet = widget.wallet;
+    final settings = SettingsContext.of(context)!.settings;
 
     final Psbt psbt;
     final UnsignedTx unsignedTx;
@@ -65,6 +97,7 @@ class LoadPsbtPageState extends State<LoadPsbtPage> {
       unsignedTx = await wallet.superWallet.psbtToUnsignedTx(
         psbt: psbt,
         masterAppkey: wallet.masterAppkey,
+        allowScriptedSpends: settings.isInDeveloperMode(),
       );
     } on PsbtValidationError catch (e) {
       if (context.mounted) {
@@ -75,6 +108,14 @@ class LoadPsbtPageState extends State<LoadPsbtPage> {
         );
       }
       return false;
+    }
+
+    if (unsignedTx.spendsScriptedOutput() &&
+        !settings.scriptedSpendWarningSeen()) {
+      if (!context.mounted) return false;
+      final understood = await showScriptedSpendWarning(context);
+      if (!understood) return false;
+      await settings.setScriptedSpendWarningSeen();
     }
 
     final txDetails = TxDetailsModel(

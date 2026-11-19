@@ -193,6 +193,19 @@ impl Settings {
         self.settings.hide_balance
     }
 
+    pub fn set_scripted_spend_warning_seen(&mut self) -> Result<()> {
+        let mut db = self.db.lock().unwrap();
+        self.settings.mutate2(&mut *db, |settings, update| {
+            settings.set_scripted_spend_warning_seen(update);
+            Ok(())
+        })
+    }
+
+    #[frb(sync)]
+    pub fn scripted_spend_warning_seen(&self) -> bool {
+        self.settings.scripted_spend_warning_seen
+    }
+
     pub fn check_and_set_electrum_server(
         &mut self,
         network: BitcoinNetwork,

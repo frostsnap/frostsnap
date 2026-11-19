@@ -9,7 +9,7 @@ use crate::{
     widget_list::{WidgetList, WidgetListItem},
     GrayToAlpha, HoldToConfirm, Image,
 };
-use alloc::{boxed::Box, format, string::ToString};
+use alloc::{boxed::Box, format, string::ToString, vec::Vec};
 use embedded_graphics::{
     geometry::Size,
     pixelcolor::{Gray8, Rgb565},
@@ -35,6 +35,15 @@ const HIGH_FEE_PERCENTAGE_THRESHOLD: u64 = 5;
 const HOLD_TO_SIGN_TIME_MS: u32 = 3000;
 
 const FONT_TO_SELF_FOOTNOTE: &Gray4Font = &NOTO_SANS_17_REGULAR;
+
+/// A caution page shown between the recipient pages and the fee/confirmation pages.
+#[derive(Clone, Copy, PartialEq)]
+enum SignWarning {
+    /// This transaction spends a taproot output that commits to a script tree.
+    ScriptedOutput,
+    /// The fee is unusually high (absolute or relative to the value at risk).
+    HighFee,
+}
 
 /// Widget list that generates sign prompt pages
 #[derive(Clone)]
@@ -234,7 +243,7 @@ impl FeePage {
 
 const WARNING_ICON_DATA: &[u8] = include_bytes!("../assets/warning-icon-24x24.bmp");
 
-/// Page widget for high fee warning
+/// Page widget for a caution: a high fee or a scripted output
 #[derive(frostsnap_macros::Widget)]
 pub struct WarningPage {
     #[widget_delegate]
@@ -253,7 +262,7 @@ pub struct WarningPage {
 
 impl WarningPage {
     #[inline(never)]
-    fn new(fee_sats: u64, leaves_wallet: bool) -> Self {
+    fn new(warning: SignWarning, fee_sats: u64, leaves_wallet: bool) -> Self {
         let warning_bmp =
             Bmp::<Gray8>::from_slice(WARNING_ICON_DATA).expect("Failed to load warning icon BMP");
         let warning_icon = Image::new(GrayToAlpha::new(warning_bmp, PALETTE.warning));
@@ -271,27 +280,29 @@ impl WarningPage {
         let caution_row = Row::new((warning_icon, icon_spacer, text_with_spacer))
             .with_main_axis_alignment(MainAxisAlignment::Center);
 
-        let title_text = Text::new(
-            "High Fee".to_string(),
-            Gray4TextStyle::new(FONT_CAUTION_TITLE, PALETTE.on_background),
-        );
-
         // The wording must name the quantity the rule divided by: in a mixed send every
         // output is titled "Send Amount #n", owned ones included, so anything reading as
         // the total is wrong — the proportional rule uses only what leaves.
-        let (line1, line2) = if fee_sats > HIGH_FEE_ABSOLUTE_THRESHOLD_SATS {
-            ("Fee is greater".to_string(), "than 0.001 BTC".to_string())
-        } else if leaves_wallet {
-            (
-                "Fee exceeds 5% of".to_string(),
-                "the amount leaving".to_string(),
-            )
-        } else {
-            (
-                "Fee exceeds 5% of".to_string(),
-                "the value moved".to_string(),
-            )
+        let (title, line1, line2) = match warning {
+            SignWarning::ScriptedOutput => (
+                "Scripted Output",
+                "Spends an output with",
+                "extra script conditions",
+            ),
+            SignWarning::HighFee if fee_sats > HIGH_FEE_ABSOLUTE_THRESHOLD_SATS => {
+                ("High Fee", "Fee is greater", "than 0.001 BTC")
+            }
+            SignWarning::HighFee if leaves_wallet => {
+                ("High Fee", "Fee exceeds 5% of", "the amount leaving")
+            }
+            SignWarning::HighFee => ("High Fee", "Fee exceeds 5% of", "the value moved"),
         };
+        let (line1, line2) = (line1.to_string(), line2.to_string());
+
+        let title_text = Text::new(
+            title.to_string(),
+            Gray4TextStyle::new(FONT_CAUTION_TITLE, PALETTE.on_background),
+        );
 
         let warning_text = Column::new((
             Text::new(
@@ -379,15 +390,28 @@ type SignPromptPage = AnyOf<(
 impl SignPromptPageList {
     pub fn new_with_seed(prompt: PromptSignBitcoinTx, rand_seed: u32) -> Self {
         let num_recipients = prompt.recipients.len();
-        let has_warning = Self::has_high_fee(&prompt);
+        let warning_pages = Self::warnings(&prompt).len();
 
-        let total_pages = num_recipients * 2 + has_warning as usize + 2;
+        // recipient pages (amount + address each) + warnings + fee + confirmation
+        let total_pages = num_recipients * 2 + warning_pages + 2;
 
         Self {
             prompt,
             total_pages,
             rand_seed,
         }
+    }
+
+    /// The caution pages to show, in display order, for this transaction.
+    fn warnings(prompt: &PromptSignBitcoinTx) -> Vec<SignWarning> {
+        let mut warnings = Vec::new();
+        if prompt.spends_scripted_output {
+            warnings.push(SignWarning::ScriptedOutput);
+        }
+        if Self::has_high_fee(prompt) {
+            warnings.push(SignWarning::HighFee);
+        }
+        warnings
     }
 
     fn has_high_fee(prompt: &PromptSignBitcoinTx) -> bool {
@@ -416,14 +440,8 @@ impl WidgetList for SignPromptPageList {
 
         let num_recipients = self.prompt.recipients.len();
         let recipient_pages = num_recipients * 2;
-        let has_warning = Self::has_high_fee(&self.prompt);
-
-        let warning_page = if has_warning {
-            Some(recipient_pages)
-        } else {
-            None
-        };
-        let fee_page = recipient_pages + has_warning as usize;
+        let warnings = Self::warnings(&self.prompt);
+        let fee_page = recipient_pages + warnings.len();
 
         let (page, use_fb) = if index < recipient_pages {
             let recipient_idx = index / 2;
@@ -456,9 +474,10 @@ impl WidgetList for SignPromptPageList {
                     ),
                 }
             }
-        } else if Some(index) == warning_page {
+        } else if index < fee_page {
             (
                 SignPromptPage::new(WarningPage::new(
+                    warnings[index - recipient_pages],
                     self.prompt.fee.to_sat(),
                     self.prompt.foreign_value().is_some(),
                 )),
@@ -574,6 +593,7 @@ mod test {
                 .collect(),
             fee: bitcoin::Amount::from_sat(100),
             fee_rate_sats_per_vbyte: Some(1.0),
+            spends_scripted_output: false,
         }
     }
 
@@ -604,5 +624,23 @@ mod test {
             one_unrenderable.get(3).is_some(),
             "the second output still has its destination page"
         );
+    }
+    /// Spending a scripted output puts its caution between the recipients and the fee.
+    #[test]
+    fn a_scripted_spend_adds_its_warning_before_the_fee() {
+        let plain = prompt_of(alloc::vec![PromptDestination::Address(address())]);
+        let scripted = PromptSignBitcoinTx {
+            spends_scripted_output: true,
+            ..plain.clone()
+        };
+
+        let plain = SignPromptPageList::new_with_seed(plain, 0);
+        let scripted = SignPromptPageList::new_with_seed(scripted, 0);
+
+        assert_eq!(scripted.len(), plain.len() + 1);
+        let warning = scripted.get(2).expect("the page after the recipient");
+        assert!(warning.widget.downcast_ref::<WarningPage>().is_some());
+        let fee = scripted.get(3).expect("the fee page follows");
+        assert!(fee.widget.downcast_ref::<FeePage>().is_some());
     }
 }
