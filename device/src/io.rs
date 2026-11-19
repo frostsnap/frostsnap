@@ -279,7 +279,9 @@ impl SerialIo<'_> {
                 .write_bytes(bytes)
                 .map_err(SerialInterfaceError::UartWriteError)?,
             SerialIo::Jtag { jtag, .. } => {
-                let _infallible = jtag.write(bytes);
+                for &byte in bytes {
+                    while jtag.write_byte_nb(byte).is_err() {}
+                }
             }
         }
         Ok(())
