@@ -77,6 +77,24 @@ impl NonceCache {
         Ok(nonces_chosen)
     }
 
+    pub(crate) fn stream_start(
+        &self,
+        device_id: DeviceId,
+        stream_id: NonceStreamId,
+    ) -> Option<u32> {
+        Some(self.by_device.get(&device_id)?.get(&stream_id)?.index)
+    }
+
+    pub(crate) fn stream_starts(
+        &self,
+    ) -> impl Iterator<Item = (DeviceId, NonceStreamId, u32)> + '_ {
+        self.by_device.iter().flat_map(|(&device_id, streams)| {
+            streams
+                .iter()
+                .map(move |(&stream_id, segment)| (device_id, stream_id, segment.index))
+        })
+    }
+
     /// Returns whether a change happened or not
     pub fn consume(
         &mut self,
