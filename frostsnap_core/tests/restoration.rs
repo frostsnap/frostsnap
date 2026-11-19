@@ -227,7 +227,7 @@ fn restore_2_of_3_with_physical_backups_propagates_threshold() {
 
         // Verify the device actually has the encrypted share
         let device = run.device(device_id);
-        let share_index = backups[i].share_image().index;
+        let share_index = backups[i].share_image().unwrap().index;
         let _encrypted_share = device
             .get_encrypted_share(restored_access_structure_ref, share_index)
             .unwrap_or_else(|| {
