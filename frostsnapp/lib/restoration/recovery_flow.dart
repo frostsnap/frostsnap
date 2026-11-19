@@ -367,6 +367,7 @@ class _WalletRecoveryFlowState extends State<WalletRecoveryFlow> {
                   );
 
                   if (error != null) {
+                    await coord.cancelRestoration(restorationId: restorationId);
                     popOnError(
                       errorTitle: 'Cannot add backup',
                       errorMessage: error.toString(),

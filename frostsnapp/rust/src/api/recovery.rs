@@ -101,6 +101,13 @@ impl super::coordinator::Coordinator {
         self.0.get_restoration_state(restoration_id)
     }
 
+    #[frb(sync)]
+    pub fn restored_wallet_already_exists(&self, restoration_id: RestorationId) -> Option<String> {
+        self.0
+            .inner()
+            .restored_wallet_already_exists(restoration_id)
+    }
+
     pub fn cancel_restoration(&self, restoration_id: RestorationId) -> Result<()> {
         self.0.cancel_restoration(restoration_id)
     }
@@ -127,11 +134,11 @@ impl super::coordinator::Coordinator {
         encryption_key: SymmetricKey,
     ) -> Option<StartRestorationError> {
         // Use find_share to check if this share already exists
-        if let Some(location) = self
-            .0
-            .inner()
-            .find_share(recover_share.held_share.share_image, encryption_key)
-        {
+        if let Some(location) = self.0.inner().find_share(
+            recover_share.held_share.share_image,
+            recover_share.held_share.access_structure_ref,
+            encryption_key,
+        ) {
             return Some(StartRestorationError::ShareBelongsElsewhere {
                 location: Box::new(location),
             });

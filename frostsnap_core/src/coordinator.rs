@@ -511,9 +511,12 @@ impl FrostCoordinator {
         complete_wallet_shares.chain(restoration_shares)
     }
 
+    /// `claimed_access_structure` is the access structure the share says it belongs to, if any:
+    /// the only way to recognise a restoration that hasn't recovered its key yet.
     pub fn find_share(
         &self,
         share_image: ShareImage,
+        claimed_access_structure: Option<AccessStructureRef>,
         encryption_key: SymmetricKey,
     ) -> Option<ShareLocation> {
         // Check complete wallets first (they have priority)
@@ -553,12 +556,26 @@ impl FrostCoordinator {
 
         // Check restorations
         for restoration in self.restoration.restorations.values() {
-            let share_image_to_devices = restoration.access_structure.share_image_to_devices();
+            let mut device_ids = restoration
+                .access_structure
+                .share_image_to_devices()
+                .remove(&share_image)
+                .unwrap_or_default();
+            // A save is recorded without rechecking when the device confirms it.
+            device_ids.extend(
+                self.restoration
+                    .shares_being_saved()
+                    .filter(|(_, restoration_id, held)| {
+                        *restoration_id == restoration.restoration_id
+                            && held.share_image == share_image
+                    })
+                    .map(|(device_id, _, _)| device_id),
+            );
 
             // Check physical shares
-            if let Some(device_ids) = share_image_to_devices.get(&share_image) {
+            if !device_ids.is_empty() {
                 return Some(ShareLocation {
-                    device_ids: device_ids.clone(),
+                    device_ids,
                     share_index: share_image.index,
                     key_name: restoration.key_name.clone(),
                     key_purpose: restoration.key_purpose,
@@ -568,20 +585,23 @@ impl FrostCoordinator {
                 });
             }
 
-            // Check virtual shares (via cached SharedKey)
-            if let Some(shared_key) = &restoration.access_structure.shared_key {
-                let computed_share_image = shared_key.share_image(share_image.index);
-                if computed_share_image == share_image {
-                    return Some(ShareLocation {
-                        device_ids: Vec::new(),
-                        share_index: share_image.index,
-                        key_name: restoration.key_name.clone(),
-                        key_purpose: restoration.key_purpose,
-                        key_state: KeyLocationState::Restoring {
-                            restoration_id: restoration.restoration_id,
-                        },
-                    });
-                }
+            let on_key = restoration
+                .access_structure
+                .shared_key
+                .as_ref()
+                .is_some_and(|key| key.share_image(share_image.index) == share_image);
+            let claims_this_restoration = claimed_access_structure.is_some()
+                && claimed_access_structure == restoration.access_structure.access_structure_ref();
+            if on_key || claims_this_restoration {
+                return Some(ShareLocation {
+                    device_ids: Vec::new(),
+                    share_index: share_image.index,
+                    key_name: restoration.key_name.clone(),
+                    key_purpose: restoration.key_purpose,
+                    key_state: KeyLocationState::Restoring {
+                        restoration_id: restoration.restoration_id,
+                    },
+                });
             }
         }
 
