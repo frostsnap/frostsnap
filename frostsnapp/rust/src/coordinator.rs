@@ -51,6 +51,13 @@ use std::time::Duration;
 use tracing::{event, Level};
 const N_NONCE_STREAMS: usize = 4;
 
+/// Lock order: when holding more than one of these at once, take them in this order:
+///
+/// `coordinator` → `db` → `ui_stack` → `device_list`
+///
+/// The worker thread in [`FfiCoordinator::start`] holds them in that order on every
+/// poll, so taking them in any other order from an API call can deadlock it (#652).
+/// `backup_state` goes before `db` and is never taken while holding `coordinator`.
 pub struct FfiCoordinator {
     usb_manager: Mutex<Option<UsbSerialManager>>,
     key_event_stream: Arc<Mutex<Option<Box<dyn Sink<KeyState>>>>>,
@@ -566,21 +573,18 @@ impl FfiCoordinator {
         session_id: SignSessionId,
         encryption_key: SymmetricKey,
     ) -> anyhow::Result<()> {
+        // Same order as the worker thread: coordinator, db, ui_stack (#652).
+        let mut coordinator = self.coordinator.lock().unwrap();
+        let mut db = self.db.lock().unwrap();
         let mut ui_stack = self.ui_stack.lock().unwrap();
 
         let signing = ui_stack
             .get_mut::<frostsnap_coordinator::signing::SigningDispatcher>()
             .ok_or(anyhow!("somehow UI was not in KeyGen state"))?;
 
-        let mut db = self.db.lock().unwrap();
-
-        let sign_req = self
-            .coordinator
-            .lock()
-            .unwrap()
-            .staged_mutate(&mut *db, |coordinator| {
-                Ok(coordinator.request_device_sign(session_id, device_id, encryption_key))
-            })?;
+        let sign_req = coordinator.staged_mutate(&mut *db, |coordinator| {
+            Ok(coordinator.request_device_sign(session_id, device_id, encryption_key))
+        })?;
 
         signing.send_sign_request(sign_req);
 
@@ -870,8 +874,8 @@ impl FfiCoordinator {
         key_purpose: KeyPurpose,
     ) -> Result<RestorationId> {
         let restoration_id = {
-            let mut db = self.db.lock().unwrap();
             let mut coordinator = self.coordinator.lock().unwrap();
+            let mut db = self.db.lock().unwrap();
             coordinator.staged_mutate(&mut *db, |coordinator| {
                 let restoration_id = RestorationId::new(&mut rand::thread_rng());
                 coordinator.start_restoring_key(name, threshold, key_purpose, restoration_id);
@@ -919,8 +923,8 @@ impl FfiCoordinator {
         encryption_key: SymmetricKey,
     ) -> Result<()> {
         {
-            let mut db = self.db.lock().unwrap();
             let mut coordinator = self.coordinator.lock().unwrap();
+            let mut db = self.db.lock().unwrap();
 
             coordinator.staged_mutate(&mut *db, |coordinator| {
                 coordinator.add_recovery_share_to_restoration(
@@ -944,8 +948,8 @@ impl FfiCoordinator {
     ) -> Result<()> {
         let held_by = recover_share.held_by;
         {
-            let mut db = self.db.lock().unwrap();
             let mut coordinator = self.coordinator.lock().unwrap();
+            let mut db = self.db.lock().unwrap();
             coordinator.staged_mutate(&mut *db, |coordinator| {
                 coordinator.recover_share(access_structure_ref, recover_share, encryption_key)?;
                 Ok(())
@@ -972,8 +976,8 @@ impl FfiCoordinator {
         encryption_key: SymmetricKey,
     ) -> Result<AccessStructureRef> {
         let (assid, needs_consolidation) = {
-            let mut db = self.db.lock().unwrap();
             let mut coordinator = self.coordinator.lock().unwrap();
+            let mut db = self.db.lock().unwrap();
             let restoration_state = coordinator
                 .get_restoration_state(restoration_id)
                 .ok_or(anyhow!("can't finish restoration that doesn't exist"))?;
@@ -1001,16 +1005,18 @@ impl FfiCoordinator {
 
     pub fn delete_key(&self, key_id: KeyId) -> Result<()> {
         {
-            let mut db = self.db.lock().unwrap();
             let mut coordinator = self.coordinator.lock().unwrap();
+            let mut db = self.db.lock().unwrap();
             coordinator.staged_mutate(&mut *db, |coordinator| {
                 coordinator.delete_key(key_id);
                 Ok(())
             })?;
-            drop(coordinator);
-
-            // Clean up backup runs for deleted key
+        }
+        {
+            // Clean up backup runs for deleted key. backup_state goes before db, as in
+            // `mark_backup_complete` and `finalize_keygen`.
             let mut backup_state = self.backup_state.lock().unwrap();
+            let mut db = self.db.lock().unwrap();
             backup_state.mutate2(&mut *db, |state, mutations| {
                 state.clear_backup_run(key_id, mutations);
                 Ok(())
@@ -1028,8 +1034,8 @@ impl FfiCoordinator {
         device_id: DeviceId,
     ) -> Result<()> {
         {
-            let mut db = self.db.lock().unwrap();
             let mut coordinator = self.coordinator.lock().unwrap();
+            let mut db = self.db.lock().unwrap();
             coordinator.staged_mutate(&mut *db, |coordinator| {
                 coordinator
                     .delete_share(access_structure_ref, device_id)
@@ -1071,13 +1077,13 @@ impl FfiCoordinator {
 
     pub fn cancel_sign_session(&self, ssid: SignSessionId) -> anyhow::Result<()> {
         let session = {
-            let mut db = self.db.lock().unwrap();
             event!(
                 Level::INFO,
                 ssid = ssid.to_string(),
                 "canceling sign session"
             );
             let mut coord = self.coordinator.lock().unwrap();
+            let mut db = self.db.lock().unwrap();
             let session = coord.active_signing_sessions_by_ssid().get(&ssid).cloned();
             coord.staged_mutate(&mut *db, |coordinator| {
                 coordinator.cancel_sign_session(ssid);
@@ -1094,13 +1100,13 @@ impl FfiCoordinator {
 
     pub fn forget_finished_sign_session(&self, ssid: SignSessionId) -> anyhow::Result<()> {
         let deleted_session = {
-            let mut db = self.db.lock().unwrap();
             event!(
                 Level::INFO,
                 ssid = ssid.to_string(),
                 "forgetting finished sign session"
             );
             let mut coord = self.coordinator.lock().unwrap();
+            let mut db = self.db.lock().unwrap();
             coord.staged_mutate(&mut *db, |coordinator| {
                 Ok(coordinator.forget_finished_sign_session(ssid))
             })?
@@ -1113,8 +1119,8 @@ impl FfiCoordinator {
         Ok(())
     }
     pub fn cancel_restoration(&self, restoration_id: RestorationId) -> anyhow::Result<()> {
-        let mut db = self.db.lock().unwrap();
         let mut coordinator = self.coordinator.lock().unwrap();
+        let mut db = self.db.lock().unwrap();
 
         coordinator.staged_mutate(&mut *db, |coordinator| {
             coordinator.cancel_restoration(restoration_id);
@@ -1500,4 +1506,100 @@ fn key_state(coordinator: &FrostCoordinator) -> api::coordinator::KeyState {
     let restoring = coordinator.restoring().collect();
 
     api::coordinator::KeyState { keys, restoring }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use frostsnap_coordinator::DesktopSerial;
+
+    fn ffi_coordinator() -> Arc<FfiCoordinator> {
+        let db = Arc::new(Mutex::new(rusqlite::Connection::open_in_memory().unwrap()));
+        // The worker is never started, so no ports are ever polled.
+        let usb_manager = UsbSerialManager::new(Box::new(DesktopSerial));
+        Arc::new(FfiCoordinator::new(db, usb_manager, None).unwrap())
+    }
+
+    /// Runs `call` on another thread while this thread holds `coordinator`, as the worker does
+    /// on every poll before it takes `db` and `ui_stack`. `call` must wait for `coordinator`
+    /// without holding either of those, or the worker would deadlock with it (#652).
+    fn assert_takes_coordinator_first(
+        ffi: &Arc<FfiCoordinator>,
+        call: impl FnOnce(&FfiCoordinator) + Send + 'static,
+    ) {
+        let coordinator = ffi.coordinator.lock().unwrap();
+        let handle = std::thread::spawn({
+            let ffi = ffi.clone();
+            move || call(&ffi)
+        });
+        // Give `call` time to take whatever it takes before blocking on `coordinator`.
+        std::thread::sleep(Duration::from_millis(200));
+
+        let db_free = ffi.db.try_lock().is_ok();
+        let ui_stack_free = ffi.ui_stack.try_lock().is_ok();
+        drop(coordinator);
+        // `call` may fail or panic once it gets `coordinator`: the ids are made up. Only the
+        // locks it held while waiting matter here.
+        let _ = handle.join();
+
+        assert!(db_free, "held db while waiting for coordinator");
+        assert!(ui_stack_free, "held ui_stack while waiting for coordinator");
+    }
+
+    #[test]
+    fn request_device_sign_takes_coordinator_first() {
+        let ffi = ffi_coordinator();
+        let key_id = KeyId([1; 32]);
+        let session_id = SignSessionId([2; SignSessionId::LEN]);
+        let device_id = DeviceId([2; 33]);
+        // Without a signing dispatcher the request gives up before it reaches `db`.
+        ffi.start_protocol(frostsnap_coordinator::signing::SigningDispatcher::new(
+            [device_id].into(),
+            key_id,
+            session_id,
+            (),
+        ));
+
+        assert_takes_coordinator_first(&ffi, move |ffi| {
+            let _ = ffi.request_device_sign(device_id, session_id, SymmetricKey([3; 32]));
+        });
+    }
+
+    #[test]
+    fn api_calls_take_coordinator_before_db() {
+        let ssid = SignSessionId([2; SignSessionId::LEN]);
+        let restoration_id = RestorationId([4; 16]);
+        type ApiCall = Box<dyn FnOnce(&FfiCoordinator) + Send>;
+        let calls: Vec<(&str, ApiCall)> = vec![
+            (
+                "cancel_sign_session",
+                Box::new(move |ffi| drop(ffi.cancel_sign_session(ssid))),
+            ),
+            (
+                "forget_finished_sign_session",
+                Box::new(move |ffi| drop(ffi.forget_finished_sign_session(ssid))),
+            ),
+            (
+                "cancel_restoration",
+                Box::new(move |ffi| drop(ffi.cancel_restoration(restoration_id))),
+            ),
+            (
+                "delete_key",
+                Box::new(|ffi| drop(ffi.delete_key(KeyId([1; 32])))),
+            ),
+            (
+                "start_restoring_wallet",
+                Box::new(|ffi| {
+                    drop(ffi.start_restoring_wallet("w".into(), Some(2), KeyPurpose::Test))
+                }),
+            ),
+        ];
+        for (name, call) in calls {
+            let ffi = ffi_coordinator();
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                assert_takes_coordinator_first(&ffi, call)
+            }));
+            assert!(result.is_ok(), "{name} took db before coordinator");
+        }
+    }
 }
