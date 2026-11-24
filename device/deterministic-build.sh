@@ -20,8 +20,7 @@ cd "${BUILD_DIR}"
 nix develop --command just build-firmware frontier --locked
 nix develop --command just save-image frontier
 
-# The shell's rustflags are the firmware's reproducibility settings, with GNU linker arguments
-# that a host build on macOS can't link with. This tool only reads the finished image.
-nix develop --command env -u CARGO_BUILD_RUSTFLAGS cargo run --locked -p frostsnap_factory -- firmware-info -i "${FIRMWARE_PATH}"
+# The image embeds CARGO_PKG_VERSION, so the built tree's Cargo.toml names it without compiling a reader.
+echo "Version: v$(awk -F'"' '/^version = /{print $2; exit}' device/Cargo.toml)"
 echo "Build complete - $(wc -c < "${FIRMWARE_PATH}" | tr -d ' ') bytes"
 echo "$(shasum -a 256 "${BUILD_DIR}/${FIRMWARE_PATH}")"
