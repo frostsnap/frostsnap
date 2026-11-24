@@ -28,9 +28,11 @@ impl State {
                 // No-op: cleanup happens automatically when SaveShare mutation is applied
             }
             Save2(saved_backup) => {
-                let backup_share_image = saved_backup.share_backup.share_image();
-                self.saved_backups
-                    .insert(backup_share_image, saved_backup.clone());
+                if let Some(backup_share_image) = saved_backup.share_backup.share_image().non_zero()
+                {
+                    self.saved_backups
+                        .insert(backup_share_image, saved_backup.clone());
+                }
             }
         }
         Some(mutation)
@@ -137,7 +139,9 @@ impl<S: Debug + NonceStreamSlot> FrostSigner<S> {
                 if let Some(secret_share_backup) = maybe_backup {
                     let secret_share = secret_share_backup
                         .extract_secret(root_shared_key)
-                        .map_err(|_| {
+                        .ok()
+                        .and_then(|secret_share| secret_share.non_zero())
+                        .ok_or_else(|| {
                             // TODO: This needs to be a catastrophic error that
                             // halts the whole device.
                             Error::signer_invalid_message(
@@ -342,7 +346,10 @@ impl<S: Debug + NonceStreamSlot> FrostSigner<S> {
         let mut ret = vec![];
         let enter_physical_id = phase.enter_physical_id;
 
-        let share_image = share_backup.share_image();
+        // A `#0` isn't supported yet: it can't be held as a device's share
+        let Some(share_image) = share_backup.share_image().non_zero() else {
+            return ret;
+        };
         self.restoration
             .tmp_loaded_backups
             .insert(share_image, share_backup);

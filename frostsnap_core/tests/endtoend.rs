@@ -195,7 +195,7 @@ fn test_display_backup() {
         })
         .collect::<Vec<_>>();
 
-    let interpolated_joint_secret = schnorr_fun::frost::SecretShare::recover_secret(
+    let interpolated_joint_secret = frost_backup::schnorr_fun_shim::SecretShare::recover_secret(
         &decoded_backups
             .choose_multiple(&mut test_rng, 2)
             .cloned()

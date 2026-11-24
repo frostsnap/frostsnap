@@ -12,8 +12,6 @@ pub enum ShareBackupError {
         /// The invalid word that was provided
         word: String,
     },
-    /// The share index cannot be zero
-    InvalidShareIndex,
     /// The share index could not be parsed as a number
     ShareIndexParseError,
     /// The words checksum verification failed
@@ -35,9 +33,6 @@ impl fmt::Display for ShareBackupError {
                     "Word at position {} '{}' is not in BIP39 word list",
                     word_index, word
                 )
-            }
-            ShareBackupError::InvalidShareIndex => {
-                write!(f, "Share index cannot be zero")
             }
             ShareBackupError::ShareIndexParseError => {
                 write!(f, "Invalid share index format")

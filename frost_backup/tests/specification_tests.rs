@@ -1,6 +1,5 @@
 use core::{convert::TryInto, str::FromStr};
 use frost_backup::*;
-use schnorr_fun::frost::SharedKey;
 use secp256kfun::{marker::*, Scalar};
 
 mod common;
@@ -113,7 +112,7 @@ fn test_specification_2_of_3() {
 
     for combo in Combinations::new(3, 2) {
         let images: Vec<_> = combo.iter().map(|&i| shares[i].share_image()).collect();
-        let shared_key = SharedKey::from_share_images(images);
+        let shared_key = schnorr_fun_shim::shared_key_from_share_images(images);
 
         // Verify all combinations produce the same polynomial
         match first_polynomial {
@@ -169,7 +168,7 @@ fn test_specification_3_of_5() {
 
     for combo in Combinations::new(5, 3) {
         let images: Vec<_> = combo.iter().map(|&i| shares[i].share_image()).collect();
-        let shared_key = SharedKey::from_share_images(images);
+        let shared_key = schnorr_fun_shim::shared_key_from_share_images(images);
 
         // Verify all combinations produce the same polynomial
         match first_polynomial {
