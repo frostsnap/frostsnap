@@ -1392,24 +1392,6 @@ impl FrostCoordinator {
 
     pub fn delete_key(&mut self, key_id: KeyId) {
         if self.keys.contains_key(&key_id) {
-            // Rows tied to the key are about to be pruned, and legacy `SentSignReq` rows among them
-            // may be the only record of how far a stream was used. Applying these is a no-op, so
-            // they're staged directly or `mutate` would drop them.
-            self.mutations.extend(
-                self.nonce_cache
-                    .stream_starts()
-                    .filter(|&(_, _, start)| start > 0)
-                    .map(
-                        |(device_id, stream_id, up_to_but_not_including)| StagedMutation {
-                            mutation: Mutation::Signing(SigningMutation::ConsumeNonces {
-                                device_id,
-                                stream_id,
-                                up_to_but_not_including,
-                            }),
-                            tied_to_key: None,
-                        },
-                    ),
-            );
             self.mutate(Mutation::Keygen(keys::KeyMutation::DeleteKey(key_id)));
         }
     }
