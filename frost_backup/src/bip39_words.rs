@@ -4,9 +4,11 @@
 pub const BITS_PER_WORD: usize = 11;
 
 /// Get the index of a word in the BIP39 word list using binary search
-/// Returns None if the word is not in the list
+/// Returns None if the word is not in the list. Matching ignores letter case.
 pub fn word_to_index(word: &str) -> Option<usize> {
-    BIP39_WORDS.binary_search(&word).ok()
+    BIP39_WORDS
+        .binary_search_by(|w| w.bytes().cmp(word.bytes().map(|b| b.to_ascii_uppercase())))
+        .ok()
 }
 
 /// Check if a word is in the BIP39 word list using binary search
