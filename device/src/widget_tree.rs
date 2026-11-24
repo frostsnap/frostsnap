@@ -196,7 +196,12 @@ impl WidgetTree {
     #[inline(never)]
     pub(crate) fn build_entering_backup(phase: EnterBackupPhase) -> Self {
         let mut widget = Box::new(EnterShareScreen::new());
-        if cfg!(feature = "prefill-words") {
+        // A --cfg, NOT a cargo feature: this flips backup-entry behavior, and features are
+        // additive, so the justfile's `--all-features` runs armed it — every typist keystroke
+        // then landed on a self-filling screen. Enable for manual firmware testing with
+        // CARGO_BUILD_RUSTFLAGS='--cfg prefill_words' (it appends to .cargo/config.toml's
+        // rustflags; RUSTFLAGS would replace them and drop the linker script).
+        if cfg!(prefill_words) {
             widget.prefill_test_words();
         }
         Self::EnterBackup {
