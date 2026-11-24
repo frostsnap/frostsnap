@@ -118,6 +118,7 @@ impl TransactionTemplate {
             push_owned(candidates, bip32_path, |owner| {
                 template.push_owned_input(input_push, owner)
             })?;
+            check_supported_sighash(i, input)?;
             owned_count += 1;
         }
 
@@ -173,6 +174,20 @@ impl TransactionTemplate<ScopedTo> {
                 .inputs
                 .get_mut(i)
                 .ok_or(AttachSignaturesError::NoSuchInput(i))?;
+            // We only ever produce Default signatures. Refuse rather than write one that
+            // disagrees with the input's requested type, for callers that skipped
+            // `from_psbt`'s check.
+            if let Some(sighash_type) = input.sighash_type {
+                if !matches!(
+                    sighash_type.taproot_hash_ty(),
+                    Ok(bitcoin::sighash::TapSighashType::Default)
+                ) {
+                    return Err(AttachSignaturesError::UnsupportedSighash {
+                        input: i,
+                        sighash_type,
+                    });
+                }
+            }
             input.tap_key_sig = Some(bitcoin::taproot::Signature {
                 signature: bitcoin::secp256k1::schnorr::Signature::from_slice(&signature.0)
                     .map_err(|_| AttachSignaturesError::MalformedSignature(i))?,
@@ -190,6 +205,10 @@ pub enum AttachSignaturesError {
     /// The PSBT has fewer inputs than the template it was signed against.
     NoSuchInput(usize),
     MalformedSignature(usize),
+    UnsupportedSighash {
+        input: usize,
+        sighash_type: bitcoin::psbt::PsbtSighashType,
+    },
 }
 
 impl From<SignatureCountMismatch> for AttachSignaturesError {
@@ -208,11 +227,43 @@ impl core::fmt::Display for AttachSignaturesError {
             AttachSignaturesError::MalformedSignature(i) => {
                 write!(f, "the signature for input {i} is not a schnorr signature")
             }
+            AttachSignaturesError::UnsupportedSighash {
+                input,
+                sighash_type,
+            } => {
+                write!(
+                    f,
+                    "PSBT input {input} asks for {sighash_type}, but this wallet only signs SIGHASH_DEFAULT"
+                )
+            }
         }
     }
 }
 
 impl std::error::Error for AttachSignaturesError {}
+
+/// Refuses a PSBT asking for a sighash type this wallet cannot produce.
+///
+/// Device signing recomputes the digest as `SIGHASH_DEFAULT` and the coordinator writes a
+/// 64-byte signature, which BIP341 also reads as `SIGHASH_DEFAULT`. Producing one for a
+/// different requested type would violate BIP174 and fail at finalization, so an unsupported
+/// request is refused instead of silently downgraded. Only inputs we would otherwise sign are
+/// checked: a foreign input's sighash type is not ours to honour.
+fn check_supported_sighash(
+    input_index: usize,
+    input: &bitcoin::psbt::Input,
+) -> Result<(), PsbtValidationError> {
+    match input.sighash_type {
+        None => Ok(()),
+        Some(sighash_type) => match sighash_type.taproot_hash_ty() {
+            Ok(bitcoin::sighash::TapSighashType::Default) => Ok(()),
+            _ => Err(PsbtValidationError::UnsupportedSighash {
+                input: input_index,
+                sighash_type,
+            }),
+        },
+    }
+}
 
 /// Why a PSBT key origin doesn't name a script this key derives.
 enum NotOurs {
@@ -310,6 +361,10 @@ pub enum PsbtValidationError {
         foreign_count: usize,
         already_signed_count: usize,
     },
+    UnsupportedSighash {
+        input: usize,
+        sighash_type: bitcoin::psbt::PsbtSighashType,
+    },
     Other(String),
 }
 
@@ -352,6 +407,13 @@ impl core::fmt::Display for PsbtValidationError {
 
                 write!(f, ".")
             }
+            PsbtValidationError::UnsupportedSighash {
+                input,
+                sighash_type,
+            } => write!(
+                f,
+                "PSBT input {input} asks for {sighash_type}, but this wallet only signs SIGHASH_DEFAULT"
+            ),
             PsbtValidationError::Other(msg) => write!(f, "{msg}"),
         }
     }
@@ -518,6 +580,204 @@ mod test {
                 master_appkey: key,
                 bip32_path: path
             })
+        );
+    }
+
+    #[test]
+    fn absent_sighash_is_accepted_as_default() {
+        let key = our_key();
+        let path = BitcoinBip32Path::external(idx(4));
+        let psbt = psbt_of(
+            vec![owned_input(key, path, 100_000)],
+            vec![foreign_txout(90_000)],
+        );
+
+        assert!(TransactionTemplate::from_psbt(&psbt, &[key]).is_ok());
+    }
+
+    #[test]
+    fn explicit_default_sighash_is_accepted() {
+        let key = our_key();
+        let path = BitcoinBip32Path::external(idx(4));
+        let mut input = owned_input(key, path, 100_000);
+        input.sighash_type = Some(bitcoin::sighash::TapSighashType::Default.into());
+
+        let psbt = psbt_of(vec![input], vec![foreign_txout(90_000)]);
+
+        assert!(TransactionTemplate::from_psbt(&psbt, &[key]).is_ok());
+    }
+
+    #[test]
+    fn sighash_all_input_is_rejected() {
+        let key = our_key();
+        let path = BitcoinBip32Path::external(idx(4));
+        let mut input = owned_input(key, path, 100_000);
+        input.sighash_type = Some(bitcoin::sighash::TapSighashType::All.into());
+
+        let psbt = psbt_of(vec![input], vec![foreign_txout(90_000)]);
+        let err = TransactionTemplate::from_psbt(&psbt, &[key]).unwrap_err();
+
+        match &err {
+            PsbtValidationError::UnsupportedSighash {
+                input,
+                sighash_type,
+            } => {
+                assert_eq!(*input, 0);
+                assert_eq!(*sighash_type, bitcoin::sighash::TapSighashType::All.into());
+            }
+            other => panic!("expected UnsupportedSighash, got {other:?}"),
+        }
+        assert!(
+            err.to_string().contains("SIGHASH_ALL"),
+            "the rejection should name the requested type"
+        );
+    }
+
+    /// Every non-default Taproot type shares one rejection arm; exercise the variants that are
+    /// valid but unsupported, not just ALL.
+    #[test]
+    fn non_default_sighash_types_are_rejected() {
+        let key = our_key();
+        let path = BitcoinBip32Path::external(idx(4));
+        for ty in [
+            bitcoin::sighash::TapSighashType::None,
+            bitcoin::sighash::TapSighashType::Single,
+            bitcoin::sighash::TapSighashType::AllPlusAnyoneCanPay,
+        ] {
+            let mut input = owned_input(key, path, 100_000);
+            input.sighash_type = Some(ty.into());
+
+            let psbt = psbt_of(vec![input], vec![foreign_txout(90_000)]);
+            let err = TransactionTemplate::from_psbt(&psbt, &[key]).unwrap_err();
+
+            assert!(matches!(
+                err,
+                PsbtValidationError::UnsupportedSighash { .. }
+            ));
+        }
+    }
+
+    /// The sighash type only binds the signer for inputs it is asked to sign.
+    #[test]
+    fn non_default_sighash_on_a_foreign_input_is_ignored() {
+        let key = our_key();
+        let path = BitcoinBip32Path::external(idx(4));
+        let mut foreign = foreign_input(100_000, 0xaa);
+        foreign.sighash_type = Some(bitcoin::sighash::TapSighashType::All.into());
+
+        let psbt = psbt_of(
+            vec![foreign, owned_input(key, path, 100_000)],
+            vec![foreign_txout(150_000)],
+        );
+
+        assert!(TransactionTemplate::from_psbt(&psbt, &[key]).is_ok());
+    }
+
+    #[test]
+    fn attaching_refuses_a_non_default_sighash() {
+        let key = our_key();
+        let path = BitcoinBip32Path::external(idx(4));
+        let psbt = psbt_of(
+            vec![owned_input(key, path, 100_000)],
+            vec![foreign_txout(90_000)],
+        );
+        let template = TransactionTemplate::from_psbt(&psbt, &[key])
+            .unwrap()
+            .as_seen_by(key);
+
+        let mut tampered = psbt.clone();
+        tampered.inputs[0].sighash_type = Some(bitcoin::sighash::TapSighashType::All.into());
+
+        match template.attach_signatures_to_psbt(&[signature(1)], &tampered) {
+            Err(AttachSignaturesError::UnsupportedSighash { input, .. }) => {
+                assert_eq!(input, 0);
+            }
+            other => panic!("expected UnsupportedSighash, got {other:?}"),
+        }
+    }
+
+    /// A value that is not a valid Taproot sighash type must be refused, not mapped to Default.
+    #[test]
+    fn invalid_sighash_value_is_rejected() {
+        let key = our_key();
+        let path = BitcoinBip32Path::external(idx(4));
+        let mut input = owned_input(key, path, 100_000);
+        input.sighash_type = Some(bitcoin::psbt::PsbtSighashType::from_u32(0xff));
+
+        let psbt = psbt_of(vec![input], vec![foreign_txout(90_000)]);
+        let err = TransactionTemplate::from_psbt(&psbt, &[key]).unwrap_err();
+
+        assert!(matches!(
+            &err,
+            PsbtValidationError::UnsupportedSighash { .. }
+        ));
+        assert!(
+            err.to_string().contains("0xff"),
+            "an invalid raw value should be reported, got: {err}"
+        );
+    }
+
+    /// Locks in the whole-PSBT rejection policy: one unsupported owned input refuses the PSBT
+    /// even though another owned input is signable.
+    #[test]
+    fn a_mixed_psbt_is_rejected_whole() {
+        let key = our_key();
+        let mut signable = owned_input(key, BitcoinBip32Path::external(idx(1)), 100_000);
+        signable.sighash_type = Some(bitcoin::sighash::TapSighashType::Default.into());
+        let mut unsupported = owned_input(key, BitcoinBip32Path::external(idx(2)), 100_000);
+        unsupported.sighash_type = Some(bitcoin::sighash::TapSighashType::All.into());
+
+        let psbt = psbt_of(vec![signable, unsupported], vec![foreign_txout(150_000)]);
+        let err = TransactionTemplate::from_psbt(&psbt, &[key]).unwrap_err();
+
+        match err {
+            PsbtValidationError::UnsupportedSighash { input, .. } => assert_eq!(input, 1),
+            other => panic!("expected UnsupportedSighash, got {other:?}"),
+        }
+    }
+
+    /// `final_script_witness` short-circuits before the sighash check: a signed input is
+    /// tallied as already-signed, not rejected for its sighash type.
+    #[test]
+    fn already_signed_input_with_non_default_sighash_is_tallied() {
+        let key = our_key();
+        let path = BitcoinBip32Path::external(idx(4));
+        let mut signed = owned_input(key, path, 100_000);
+        signed.final_script_witness = Some(Witness::from_slice(&[[3u8; 64].as_slice()]));
+        signed.sighash_type = Some(bitcoin::sighash::TapSighashType::All.into());
+
+        let psbt = psbt_of(vec![signed], vec![foreign_txout(90_000)]);
+        let err = TransactionTemplate::from_psbt(&psbt, &[key]).unwrap_err();
+
+        match err {
+            PsbtValidationError::NothingToSign {
+                already_signed_count,
+                ..
+            } => assert_eq!(already_signed_count, 1),
+            other => panic!("expected NothingToSign, got {other:?}"),
+        }
+    }
+
+    /// An explicit Default request is honoured: attachment writes a Default signature.
+    #[test]
+    fn attaching_explicit_default_sighash_succeeds() {
+        let key = our_key();
+        let path = BitcoinBip32Path::external(idx(4));
+        let mut input = owned_input(key, path, 100_000);
+        input.sighash_type = Some(bitcoin::sighash::TapSighashType::Default.into());
+        let psbt = psbt_of(vec![input], vec![foreign_txout(90_000)]);
+
+        let template = TransactionTemplate::from_psbt(&psbt, &[key])
+            .unwrap()
+            .as_seen_by(key);
+
+        let signed = template
+            .attach_signatures_to_psbt(&[signature(1)], &psbt)
+            .unwrap();
+
+        assert_eq!(
+            signed.inputs[0].tap_key_sig.unwrap().sighash_type,
+            bitcoin::sighash::TapSighashType::Default
         );
     }
 
