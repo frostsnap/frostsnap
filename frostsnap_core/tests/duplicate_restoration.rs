@@ -22,7 +22,7 @@ fn held_share(
 ) -> HeldShare2 {
     HeldShare2 {
         access_structure_ref: claimed_access_structure,
-        share_image: backup.share_image(),
+        share_image: backup.share_image().non_zero().unwrap(),
         threshold: Some(2),
         key_name: Some("Savings".into()),
         purpose: Some(KeyPurpose::Test),
@@ -112,7 +112,7 @@ fn a_share_naming_a_wallet_being_restored_is_found_there() {
     let location = run
         .coordinator
         .find_share(
-            backups[1].share_image(),
+            backups[1].share_image().non_zero().unwrap(),
             Some(claimed_access_structure),
             TEST_ENCRYPTION_KEY,
         )
@@ -125,7 +125,11 @@ fn a_share_naming_a_wallet_being_restored_is_found_there() {
     );
     assert!(run
         .coordinator
-        .find_share(backups[1].share_image(), None, TEST_ENCRYPTION_KEY)
+        .find_share(
+            backups[1].share_image().non_zero().unwrap(),
+            None,
+            TEST_ENCRYPTION_KEY,
+        )
         .is_none());
 }
 
