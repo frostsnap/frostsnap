@@ -10,6 +10,7 @@ use bitcoin::Transaction as RTransaction;
 use bitcoin::Txid;
 pub use bitcoin::{Address, Network as BitcoinNetwork, Psbt};
 use flutter_rust_bridge::frb;
+use frostsnap_coordinator::bitcoin::backend::ChainBackend;
 pub use frostsnap_coordinator::bitcoin::wallet::AddressInfo;
 pub use frostsnap_coordinator::bitcoin::wallet::PsbtValidationError;
 pub use frostsnap_coordinator::bitcoin::{chain_sync::ChainClient, wallet::CoordSuperWallet};
@@ -47,7 +48,7 @@ impl PsbtValidationError {
 pub struct SuperWallet {
     pub(crate) inner: Arc<Mutex<CoordSuperWallet>>,
     pub(crate) wallet_streams: Arc<Mutex<WalletStreams>>,
-    chain_sync: ChainClient,
+    chain_sync: ChainBackend,
     pub network: BitcoinNetwork,
 }
 
@@ -56,7 +57,7 @@ impl SuperWallet {
     pub(crate) fn load_or_new(
         app_dir: impl AsRef<Path>,
         network: BitcoinNetwork,
-        chain_sync: ChainClient,
+        chain_sync: ChainBackend,
     ) -> Result<SuperWallet> {
         let db_file = network.bdk_file(app_dir);
         let db = rusqlite::Connection::open(&db_file).context(format!(
@@ -106,6 +107,11 @@ impl SuperWallet {
 
     pub fn reconnect(&self) {
         self.chain_sync.reconnect();
+    }
+
+    /// Look for a recovered wallet's past transactions. A wallet generated here has none.
+    pub fn find_history(&self, master_appkey: MasterAppkey) {
+        self.inner.lock().unwrap().find_history(master_appkey);
     }
 
     #[frb(sync)]
