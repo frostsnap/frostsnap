@@ -48,7 +48,7 @@ pub struct FrostCoordinator {
     key_order: Vec<KeyId>,
     pending_keygens: HashMap<KeygenId, KeyGenState>,
     nonce_cache: NonceCache,
-    mutations: VecDeque<Mutation>,
+    mutations: VecDeque<StagedMutation>,
     active_signing_sessions: BTreeMap<SignSessionId, ActiveSignSession>,
     active_sign_session_order: Vec<SignSessionId>,
     finished_signing_sessions: BTreeMap<SignSessionId, FinishedSignSession>,
@@ -169,9 +169,13 @@ impl FrostCoordinator {
 
     pub fn mutate(&mut self, mutation: Mutation) {
         let kind = mutation.kind();
+        let tied_to_key = mutation.tied_to_key(self);
         if let Some(reduced_mutation) = self.apply_mutation(mutation) {
             event!(Level::DEBUG, gist = reduced_mutation.gist(), "mutating");
-            self.mutations.push_back(reduced_mutation);
+            self.mutations.push_back(StagedMutation {
+                mutation: reduced_mutation,
+                tied_to_key,
+            });
         } else {
             event!(Level::DEBUG, kind = kind, "ignoring mutation");
         }
@@ -309,18 +313,13 @@ impl FrostCoordinator {
                 self.keys.remove(&key_id)?;
                 self.key_order.retain(|&entry| entry != key_id);
                 self.restoration.clear_up_key_deletion(key_id);
-                let sessions_to_delete = self
-                    .active_signing_sessions
-                    .iter()
-                    .filter(|(_, session)| session.key_id == key_id)
-                    .map(|(&key_id, _)| key_id)
-                    .collect::<Vec<_>>();
-                for session_id in sessions_to_delete {
-                    self.apply_mutation(Mutation::Signing(SigningMutation::CloseSignSession {
-                        session_id,
-                        finished: None,
-                    }));
-                }
+                self.active_signing_sessions
+                    .retain(|_, session| session.key_id != key_id);
+                let active_signing_sessions = &self.active_signing_sessions;
+                self.active_sign_session_order
+                    .retain(|ssid| active_signing_sessions.contains_key(ssid));
+                self.finished_signing_sessions
+                    .retain(|_, session| session.key_id != key_id);
             }
             Signing(SigningMutation::NewNonces {
                 device_id,
@@ -349,23 +348,24 @@ impl FrostCoordinator {
                 device_id,
                 ref signature_shares,
             }) => {
-                if let Some(session_state) = self.active_signing_sessions.get_mut(&session_id) {
-                    for (progress, share) in session_state.progress.iter_mut().zip(signature_shares)
-                    {
-                        progress.signature_shares.insert(device_id, *share);
-                    }
+                let session_state = self.active_signing_sessions.get_mut(&session_id)?;
+                for (progress, share) in session_state.progress.iter_mut().zip(signature_shares) {
+                    progress.signature_shares.insert(device_id, *share);
                 }
             }
             Signing(SigningMutation::SentSignReq {
                 session_id,
                 device_id,
             }) => {
-                if !self
-                    .active_signing_sessions
-                    .get_mut(&session_id)?
-                    .sent_req_to_device
-                    .insert(device_id)
-                {
+                let session = self.active_signing_sessions.get_mut(&session_id)?;
+                let newly_sent = session.sent_req_to_device.insert(device_id);
+                let consume_nonces = session.consume_nonces(device_id);
+                let consumed = consume_nonces
+                    .and_then(|consume_nonces| {
+                        self.apply_mutation(Mutation::Signing(consume_nonces))
+                    })
+                    .is_some();
+                if !newly_sent && !consumed {
                     return None;
                 }
             }
@@ -383,17 +383,6 @@ impl FrostCoordinator {
                     .active_signing_sessions
                     .remove(&session_id)
                     .expect("it existed in the order");
-                let n_sigs = session_state.init.group_request.n_signatures();
-                for (device_id, nonce_segment) in &session_state.init.nonces {
-                    if session_state.sent_req_to_device.contains(device_id) {
-                        let consume_to = nonce_segment
-                            .index
-                            .checked_add(n_sigs as _)
-                            .expect("no overflow");
-                        self.nonce_cache
-                            .consume(*device_id, nonce_segment.stream_id, consume_to);
-                    }
-                }
                 if let Some(signatures) = finished {
                     self.finished_signing_sessions.insert(
                         session_id,
@@ -406,7 +395,19 @@ impl FrostCoordinator {
                 }
             }
             Signing(SigningMutation::ForgetFinishedSignSession { session_id }) => {
-                self.finished_signing_sessions.remove(&session_id);
+                self.finished_signing_sessions.remove(&session_id)?;
+            }
+            Signing(SigningMutation::ConsumeNonces {
+                device_id,
+                stream_id,
+                up_to_but_not_including,
+            }) => {
+                let start = self.nonce_cache.stream_start(device_id, stream_id)?;
+                if start >= up_to_but_not_including {
+                    return None;
+                }
+                self.nonce_cache
+                    .consume(device_id, stream_id, up_to_but_not_including);
             }
             Restoration(inner) => {
                 return self
@@ -419,11 +420,11 @@ impl FrostCoordinator {
         Some(mutation)
     }
 
-    pub fn take_staged_mutations(&mut self) -> VecDeque<Mutation> {
+    pub fn take_staged_mutations(&mut self) -> VecDeque<StagedMutation> {
         core::mem::take(&mut self.mutations)
     }
 
-    pub fn staged_mutations(&self) -> &VecDeque<Mutation> {
+    pub fn staged_mutations(&self) -> &VecDeque<StagedMutation> {
         &self.mutations
     }
 
@@ -1210,6 +1211,9 @@ impl FrostCoordinator {
             .expect("device must be part of the signing session");
 
         let key_id = active_sign_session.key_id;
+        let consume_nonces = active_sign_session
+            .consume_nonces(device_id)
+            .expect("device must be part of the signing session");
 
         let complete_key = &self.keys.get(&key_id).expect("key exists").complete_key;
 
@@ -1222,6 +1226,9 @@ impl FrostCoordinator {
             )
             .expect("must be able to decrypt rootkey");
 
+        // `ConsumeNonces` goes first, or `SentSignReq` would consume the nonces itself and leave it
+        // a no-op that never gets staged.
+        self.mutate(Mutation::Signing(consume_nonces));
         self.mutate(Mutation::Signing(SigningMutation::SentSignReq {
             device_id,
             session_id,
@@ -1365,6 +1372,24 @@ impl FrostCoordinator {
 
     pub fn delete_key(&mut self, key_id: KeyId) {
         if self.keys.contains_key(&key_id) {
+            // Rows tied to the key are about to be pruned, and legacy `SentSignReq` rows among them
+            // may be the only record of how far a stream was used. Applying these is a no-op, so
+            // they're staged directly or `mutate` would drop them.
+            self.mutations.extend(
+                self.nonce_cache
+                    .stream_starts()
+                    .filter(|&(_, _, start)| start > 0)
+                    .map(
+                        |(device_id, stream_id, up_to_but_not_including)| StagedMutation {
+                            mutation: Mutation::Signing(SigningMutation::ConsumeNonces {
+                                device_id,
+                                stream_id,
+                                up_to_but_not_including,
+                            }),
+                            tied_to_key: None,
+                        },
+                    ),
+            );
             self.mutate(Mutation::Keygen(keys::KeyMutation::DeleteKey(key_id)));
         }
     }
@@ -1374,14 +1399,12 @@ impl FrostCoordinator {
         access_structure_ref: AccessStructureRef,
         device_id: DeviceId,
     ) -> Result<(), DeleteShareError> {
-        for session in self.active_signing_sessions.values() {
-            if session.access_structure_ref() == access_structure_ref {
-                let is_involved = session.sent_req_to_device.contains(&device_id)
-                    || session.has_received_from(device_id);
-                if is_involved {
-                    return Err(DeleteShareError::DeviceInActiveSignSession);
-                }
-            }
+        let signs_in_open_session = self.active_signing_sessions.values().any(|session| {
+            session.access_structure_ref() == access_structure_ref
+                && session.init.nonces.contains_key(&device_id)
+        });
+        if signs_in_open_session {
+            return Err(DeleteShareError::DeviceInActiveSignSession);
         }
 
         if let Some(key) = self.keys.get(&access_structure_ref.key_id) {
@@ -1470,7 +1493,7 @@ impl FrostCoordinator {
         self.mutate(Mutation::Signing(SigningMutation::CloseSignSession {
             session_id,
             finished: None,
-        }))
+        }));
     }
 
     pub fn forget_finished_sign_session(
@@ -1659,6 +1682,20 @@ pub struct ActiveSignSession {
 }
 
 impl ActiveSignSession {
+    /// The nonces a signing request to `device_id` spends, or `None` if the device isn't part of
+    /// this session.
+    fn consume_nonces(&self, device_id: DeviceId) -> Option<SigningMutation> {
+        let nonce_segment = self.init.nonces.get(&device_id)?;
+        Some(SigningMutation::ConsumeNonces {
+            device_id,
+            stream_id: nonce_segment.stream_id,
+            up_to_but_not_including: nonce_segment
+                .index
+                .checked_add(self.init.group_request.n_signatures() as _)
+                .expect("no overflow"),
+        })
+    }
+
     pub fn access_structure_ref(&self) -> AccessStructureRef {
         AccessStructureRef {
             key_id: self.key_id,
@@ -1672,13 +1709,6 @@ impl ActiveSignSession {
             .first()
             .into_iter()
             .flat_map(|p| p.received_from())
-    }
-
-    pub fn has_received_from(&self, device_id: DeviceId) -> bool {
-        self.progress
-            .first()
-            .map(|p| p.signature_shares.contains_key(&device_id))
-            .unwrap_or(false)
     }
 
     pub fn session_id(&self) -> SignSessionId {
@@ -1922,8 +1952,16 @@ pub enum Mutation {
     Restoration(restoration::RestorationMutation),
 }
 
+/// A mutation waiting to be persisted. `tied_to_key` is the key whose deletion prunes it, worked
+/// out before the mutation was applied since applying it can remove the state that names the key.
+#[derive(Clone, Debug, PartialEq)]
+pub struct StagedMutation {
+    pub mutation: Mutation,
+    pub tied_to_key: Option<KeyId>,
+}
+
 impl Mutation {
-    pub fn tied_to_key(&self, coord: &FrostCoordinator) -> Option<KeyId> {
+    fn tied_to_key(&self, coord: &FrostCoordinator) -> Option<KeyId> {
         Some(match self {
             Mutation::Keygen(keys::KeyMutation::NewKey { complete_key, .. }) => {
                 complete_key.master_appkey.key_id()

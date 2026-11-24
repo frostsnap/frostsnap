@@ -3,7 +3,7 @@ use frostsnap_core::bitcoin_transaction::{LocalSpk, TransactionTemplate};
 use frostsnap_core::device::KeyPurpose;
 use frostsnap_core::tweak::{BitcoinBip32Path, NormalIndex};
 use frostsnap_core::EnterPhysicalId;
-use frostsnap_core::{MasterAppkey, WireSignTask};
+use frostsnap_core::{DeviceId, MasterAppkey, WireSignTask};
 use rand::seq::IteratorRandom;
 use rand_chacha::rand_core::SeedableRng;
 use rand_chacha::ChaCha20Rng;
@@ -801,4 +801,122 @@ fn nonces_available_should_heal_itself_when_outcome_of_sign_request_is_ambigious
     let nonces_available = run.coordinator.nonces_available(device_id);
 
     assert_eq!(nonces_available, available_at_start);
+}
+
+#[test]
+fn deleting_a_key_keeps_the_nonce_usage_of_its_sign_sessions() {
+    let mut test_rng = ChaCha20Rng::from_seed([42u8; 32]);
+    let mut env = TestEnv::default();
+    let mut run =
+        Run::start_after_keygen_and_nonces(3, 2, &mut env, &mut test_rng, 2, KeyPurpose::Test);
+    let device_set = run.device_set();
+    let access_structure_ref = run
+        .coordinator
+        .iter_access_structures()
+        .next()
+        .unwrap()
+        .access_structure_ref();
+    let signing_set: BTreeSet<DeviceId> = device_set.iter().cloned().take(2).collect();
+    let start_sign = |run: &mut Run, message: &str, rng: &mut ChaCha20Rng| {
+        run.coordinator
+            .start_sign(
+                access_structure_ref,
+                WireSignTask::Test {
+                    message: message.into(),
+                },
+                &signing_set,
+                rng,
+            )
+            .unwrap()
+    };
+
+    for message in ["finished", "forgotten"] {
+        let session_id = start_sign(&mut run, message, &mut test_rng);
+        for &device_id in &signing_set {
+            let sign_req =
+                run.coordinator
+                    .request_device_sign(session_id, device_id, TEST_ENCRYPTION_KEY);
+            run.extend(sign_req);
+            run.run_until_finished(&mut env, &mut test_rng).unwrap();
+        }
+        run.check_mutations();
+        if message == "forgotten" {
+            run.coordinator
+                .forget_finished_sign_session(session_id)
+                .unwrap();
+            run.check_mutations();
+        }
+    }
+    assert_eq!(env.signatures.len(), 2);
+
+    let canceled = start_sign(&mut run, "canceled", &mut test_rng);
+    let first_signer = *signing_set.iter().next().unwrap();
+    let sign_req = run
+        .coordinator
+        .request_device_sign(canceled, first_signer, TEST_ENCRYPTION_KEY);
+    run.extend(sign_req);
+    run.run_until_finished(&mut env, &mut test_rng).unwrap();
+    run.coordinator.cancel_sign_session(canceled);
+    run.check_mutations();
+
+    let active = start_sign(&mut run, "active", &mut test_rng);
+    let sign_req = run
+        .coordinator
+        .request_device_sign(active, first_signer, TEST_ENCRYPTION_KEY);
+    run.extend(sign_req);
+    run.run_until_finished(&mut env, &mut test_rng).unwrap();
+    run.check_mutations();
+
+    run.coordinator.delete_key(access_structure_ref.key_id);
+    run.check_mutations();
+}
+
+#[test]
+fn deleting_a_key_mid_session_keeps_its_sent_nonces_used_across_a_restart() {
+    let mut test_rng = ChaCha20Rng::from_seed([42u8; 32]);
+    let mut env = TestEnv::default();
+    let mut run =
+        Run::start_after_keygen_and_nonces(2, 2, &mut env, &mut test_rng, 1, KeyPurpose::Test);
+    let signing_set = run.device_set();
+    let first_signer = *signing_set.iter().next().unwrap();
+    let sign_on_the_only_key = |run: &mut Run, rng: &mut ChaCha20Rng| {
+        let access_structure_ref = run
+            .coordinator
+            .iter_access_structures()
+            .next()
+            .unwrap()
+            .access_structure_ref();
+        run.coordinator
+            .start_sign(
+                access_structure_ref,
+                WireSignTask::Test {
+                    message: "hello".into(),
+                },
+                &signing_set,
+                rng,
+            )
+            .unwrap()
+    };
+
+    let session_id = sign_on_the_only_key(&mut run, &mut test_rng);
+    let sign_req =
+        run.coordinator
+            .request_device_sign(session_id, first_signer, TEST_ENCRYPTION_KEY);
+    run.extend(sign_req);
+    run.run_until_finished(&mut env, &mut test_rng).unwrap();
+    let key_id = run.coordinator.iter_keys().next().unwrap().key_id;
+    run.coordinator.delete_key(key_id);
+    run.restart_coordinator();
+
+    let mut env = TestEnv::default();
+    run.keygen(2, KeyPurpose::Test, &mut env, &mut test_rng);
+    let session_id = sign_on_the_only_key(&mut run, &mut test_rng);
+    for &device_id in &signing_set {
+        let sign_req =
+            run.coordinator
+                .request_device_sign(session_id, device_id, TEST_ENCRYPTION_KEY);
+        run.extend(sign_req);
+        run.run_until_finished(&mut env, &mut test_rng).unwrap();
+    }
+    assert_eq!(env.signatures.len(), 1);
 }
