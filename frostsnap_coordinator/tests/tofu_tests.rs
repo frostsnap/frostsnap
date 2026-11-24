@@ -38,7 +38,7 @@ async fn test_ssl_connection_with_letsencrypt_ca() {
         .with_root_certificates(root_store)
         .with_no_client_auth();
 
-    let addr = "blockstream.info:700";
+    let addr = "bitcoin-mainnet.blockstream.info:50002";
     let stream = match TcpStream::connect(addr).await {
         Ok(s) => s,
         Err(e) => {
@@ -48,13 +48,16 @@ async fn test_ssl_connection_with_letsencrypt_ca() {
     };
 
     let connector = TlsConnector::from(Arc::new(config));
-    let dnsname = ServerName::try_from("blockstream.info").unwrap();
+    let dnsname = ServerName::try_from("bitcoin-mainnet.blockstream.info").unwrap();
 
     let _tls_stream = connector
         .connect(dnsname, stream)
         .await
         .unwrap_or_else(|e| {
-            panic!("TLS handshake failed for blockstream.info: {:?}", e);
+            panic!(
+                "TLS handshake failed for bitcoin-mainnet.blockstream.info: {:?}",
+                e
+            );
         });
 }
 
