@@ -146,6 +146,14 @@ impl UnsignedTx {
         self.template_tx.txid().to_string()
     }
 
+    /// Whether any input this key signs spends a scripted output.
+    #[frb(sync)]
+    pub fn spends_scripted_output(&self) -> bool {
+        self.scoped()
+            .iter_our_inputs()
+            .any(|(_, _, owner)| owner.spends_extra_conditions())
+    }
+
     #[frb(sync, type_64bit_int)]
     pub fn fee(&self) -> Option<u64> {
         self.template_tx.fee()

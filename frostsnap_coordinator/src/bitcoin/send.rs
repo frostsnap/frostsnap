@@ -604,10 +604,7 @@ impl CoordSuperWallet {
             template
                 .push_owned_input(
                     PushInput::spend_tx_output(prev_tx.as_ref(), outpoint.vout),
-                    LocalSpk {
-                        master_appkey: plan.master_appkey,
-                        bip32_path,
-                    },
+                    LocalSpk::key_spend(plan.master_appkey, bip32_path),
                 )
                 .expect("must be able to add input");
         }
@@ -636,14 +633,14 @@ impl CoordSuperWallet {
 
             template.push_owned_output(
                 Amount::from_sat(value),
-                LocalSpk {
-                    master_appkey: plan.master_appkey,
-                    bip32_path: BitcoinBip32Path {
+                LocalSpk::key_spend(
+                    plan.master_appkey,
+                    BitcoinBip32Path {
                         account_keychain: BitcoinAccountKeychain::internal(),
                         index: NormalIndex::new(index)
                             .expect("bdk never reveals a change spk past BIP32_MAX_INDEX"),
                     },
-                },
+                ),
             );
         }
 
@@ -658,10 +655,7 @@ impl CoordSuperWallet {
                 Some(bip32_path) => template
                     .push_owned_output_checked(
                         txo,
-                        LocalSpk {
-                            master_appkey: plan.master_appkey,
-                            bip32_path,
-                        },
+                        LocalSpk::key_spend(plan.master_appkey, bip32_path),
                     )
                     .expect("spk_path resolved this path from this very script"),
                 None => template.push_foreign_output(txo.clone()),
@@ -1078,7 +1072,7 @@ mod test {
         let change_index = template
             .as_seen_by(plan.master_appkey)
             .iter_our_outputs()
-            .map(|(_, _, spk)| spk.bip32_path.index.to_u32())
+            .map(|(_, _, path)| path.index.to_u32())
             .next()
             .expect("send has a change output");
         assert_eq!(change_index, 1);

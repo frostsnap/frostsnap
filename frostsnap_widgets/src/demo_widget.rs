@@ -490,6 +490,7 @@ macro_rules! demo_widget {
                     ],
                     fee: bitcoin::Amount::from_sat(90_000), // >5% of the value moved, so the warning page shows
                     fee_rate_sats_per_vbyte: Some(12.5), // Example: 12.5 sats/vB fee rate
+                    spends_scripted_output: false,
                 };
 
                 // Create the sign prompt widget

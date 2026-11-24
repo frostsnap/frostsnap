@@ -30,11 +30,7 @@ fn representative_template() -> TransactionTemplate {
 
     let ours = TxOut {
         value: Amount::from_sat(123_456),
-        script_pubkey: LocalSpk {
-            master_appkey: key,
-            bip32_path: path,
-        }
-        .spk(),
+        script_pubkey: LocalSpk::key_spend(key, path).spk(),
     };
     template
         .push_owned_input(
@@ -45,10 +41,7 @@ fn representative_template() -> TransactionTemplate {
                     vout: 1,
                 },
             ),
-            LocalSpk {
-                master_appkey: key,
-                bip32_path: path,
-            },
+            LocalSpk::key_spend(key, path),
         )
         .unwrap();
 
@@ -66,10 +59,7 @@ fn representative_template() -> TransactionTemplate {
 
     template.push_owned_output(
         Amount::from_sat(50_000),
-        LocalSpk {
-            master_appkey: key,
-            bip32_path: BitcoinBip32Path::internal(idx(2)),
-        },
+        LocalSpk::key_spend(key, BitcoinBip32Path::internal(idx(2))),
     );
     template.push_foreign_output(TxOut {
         value: Amount::from_sat(150_000),
