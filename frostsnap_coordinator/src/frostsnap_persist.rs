@@ -47,7 +47,7 @@ impl Persist<rusqlite::Connection> for FrostCoordinator {
             conn.prepare("SELECT mutation, version FROM fs_coordinator_mutations ORDER BY id")?;
 
         let row_iter = stmt.query_map([], |row| {
-            let version = row.get::<_, usize>(1)?;
+            let version = row.get::<_, u32>(1)?;
             if version != 0 {
                 event!(
                     Level::ERROR,

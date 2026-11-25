@@ -34,8 +34,13 @@ tokio-rustls = { version = "0.26", default-features = false, features = ["tls12"
 tokio-util = { version = "0.7", features = ["compat"] }
 webpki-roots = "0.26"
 
+# In-process Tor for .onion Electrum servers. No default features so rustls stays on our single `ring` provider.
+arti-client = { version = "0.48", default-features = false, features = ["tokio", "rustls", "onion-service-client"] }
+tor-rtcompat = { version = "0.48", default-features = false, features = ["tokio", "rustls"] }
+
 [features]
 genuine-check = []
 
 [dev-dependencies]
 tempfile = "3.8"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

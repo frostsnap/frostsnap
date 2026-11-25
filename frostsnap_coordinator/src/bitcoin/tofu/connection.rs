@@ -10,9 +10,14 @@ use std::time::Duration;
 use tokio::net::{lookup_host, TcpStream};
 use tokio_rustls::{client::TlsStream, TlsConnector};
 
+use super::tor;
 use super::trusted_certs::TrustedCertificates;
 use super::verifier::{TofuCertVerifier, TofuError};
 use crate::persist::Persisted;
+
+/// Connecting through Tor may first have to bootstrap it, which takes tens of seconds on a cold
+/// start. The caller's timeout is sized for direct TCP, so we only stretch it for Tor.
+const TOR_CONNECT_TIMEOUT: Duration = Duration::from_secs(120);
 
 /// RFC 8305 Happy Eyeballs: try IPv6 first, start IPv4 after CONNECTION_ATTEMPT_DELAY if needed
 const CONNECTION_ATTEMPT_DELAY: Duration = Duration::from_millis(250);
@@ -95,18 +100,61 @@ async fn happy_eyeballs_connect(
 
 type SplitConn<T> = (tokio::io::ReadHalf<T>, tokio::io::WriteHalf<T>);
 
+/// A byte stream to the server: plain TCP or a Tor stream. TLS runs on top
+/// of either, so the `Conn` variants are about what the Electrum client sees, not the transport.
+pub trait AsyncStream: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + Unpin {}
+impl<T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Send + Unpin> AsyncStream for T {}
+pub type Transport = Box<dyn AsyncStream>;
+
 pub enum Conn {
-    Tcp(SplitConn<tokio::net::TcpStream>),
-    Ssl(SplitConn<TlsStream<tokio::net::TcpStream>>),
+    Tcp(SplitConn<Transport>),
+    Ssl(SplitConn<TlsStream<Transport>>),
+}
+
+fn split_host_port(socket_addr: &str) -> Result<(String, u16), TofuError> {
+    let (host, port) = socket_addr
+        .rsplit_once(':')
+        .ok_or_else(|| TofuError::Other(anyhow!("'{socket_addr}' has no port")))?;
+    let port = port
+        .parse::<u16>()
+        .map_err(|e| TofuError::Other(anyhow!("bad port in '{socket_addr}': {e}")))?;
+    Ok((host.trim_matches(['[', ']']).to_owned(), port))
+}
+
+/// Whether an Electrum url (`tcp://host:port`, `ssl://host:port` or `host:port`) names a
+/// `.onion` host.
+pub fn is_onion_url(url: &str) -> bool {
+    let socket_addr = url.split_once("://").map_or(url, |(_, addr)| addr);
+    split_host_port(socket_addr).is_ok_and(|(host, _)| tor::is_onion(&host))
+}
+
+async fn open_transport(socket_addr: &str, via_tor: bool) -> Result<Transport, TofuError> {
+    if via_tor {
+        let (host, port) = split_host_port(socket_addr)?;
+        let stream = tor::connect(&host, port).await.map_err(|e| {
+            tracing::error!("Tor connection failed to {socket_addr}: {e}");
+            TofuError::Other(e)
+        })?;
+        Ok(Box::new(stream))
+    } else {
+        let sock = happy_eyeballs_connect(socket_addr).await.map_err(|e| {
+            tracing::error!("TCP connection failed to {socket_addr}: {e}");
+            TofuError::Other(anyhow!("TCP connection failed: {e}"))
+        })?;
+        Ok(Box::new(sock))
+    }
 }
 
 impl Conn {
+    /// Connects through Tor when `use_tor` is set or the host is a `.onion`, directly otherwise.
     pub async fn new(
         genesis_hash: BlockHash,
         url: &str,
         timeout: Duration,
+        use_tor: bool,
         trusted_certificates: &mut Persisted<TrustedCertificates>,
     ) -> Result<Self, TofuError> {
+        let via_tor = use_tor || is_onion_url(url);
         let connect_fut = async {
             let (is_ssl, socket_addr) = match url.split_once("://") {
                 Some(("ssl", socket_addr)) => (true, socket_addr.to_owned()),
@@ -126,7 +174,8 @@ impl Conn {
                     .map(|(host, _)| host.to_string())
                     .unwrap_or(socket_addr.clone());
 
-                let stream = connect_with_tofu(&socket_addr, &host, trusted_certificates).await?;
+                let stream =
+                    connect_with_tofu(&socket_addr, &host, via_tor, trusted_certificates).await?;
                 let (mut rh, mut wh) = tokio::io::split(stream);
                 check_conn(&mut rh, &mut wh, genesis_hash)
                     .await
@@ -134,10 +183,7 @@ impl Conn {
                     .inspect_err(|e| tracing::error!(url, "Network check failed: {e}"))?;
                 Ok(Conn::Ssl((rh, wh)))
             } else {
-                let sock = happy_eyeballs_connect(&socket_addr).await.map_err(|e| {
-                    tracing::error!(url, "TCP connection failed: {e}");
-                    TofuError::Other(e.into())
-                })?;
+                let sock = open_transport(&socket_addr, via_tor).await?;
                 let (mut rh, mut wh) = tokio::io::split(sock);
                 check_conn(&mut rh, &mut wh, genesis_hash)
                     .await
@@ -149,6 +195,11 @@ impl Conn {
         .fuse();
         pin_mut!(connect_fut);
 
+        let timeout = if via_tor {
+            timeout.max(TOR_CONNECT_TIMEOUT)
+        } else {
+            timeout
+        };
         let timeout_fut = tokio::time::sleep(timeout).fuse();
         pin_mut!(timeout_fut);
 
@@ -170,8 +221,9 @@ impl Conn {
 async fn connect_with_tofu(
     socket_addr: &str,
     host: &str,
+    via_tor: bool,
     trusted_certificates: &mut Persisted<TrustedCertificates>,
-) -> Result<TlsStream<TcpStream>, TofuError> {
+) -> Result<TlsStream<Transport>, TofuError> {
     // webpki roots only. TOFU certs must never go in here: webpki treats every root as an
     // unconstrained CA regardless of its basicConstraints, so a TOFU'd leaf would let whoever
     // holds its key mint a cert for any other host. TOFU trust is per-host exact match in
@@ -194,10 +246,7 @@ async fn connect_with_tofu(
     let dnsname = ServerName::try_from(host.to_owned())
         .map_err(|e| TofuError::Other(anyhow!("Invalid DNS name: {}", e)))?;
 
-    let sock = happy_eyeballs_connect(socket_addr).await.map_err(|e| {
-        tracing::error!("TCP connection failed to {}: {}", socket_addr, e);
-        TofuError::Other(anyhow!("TCP connection failed: {}", e))
-    })?;
+    let sock = open_transport(socket_addr, via_tor).await?;
 
     let connector = TlsConnector::from(Arc::new(config));
 
@@ -256,6 +305,8 @@ where
     let req_id = rand::random::<u32>();
     let req = client::RawRequest::from_request(req_id, request::Header { height: 0 });
     client::io::tokio_write(&mut wh, req).await?;
+    // A Tor stream buffers writes until flushed; TCP and TLS don't need this but don't mind.
+    tokio::io::AsyncWriteExt::flush(&mut wh).await?;
 
     let mut read_stream = client::io::ReadStreamer::new(BufReader::new(rh.compat()));
     let raw_incoming = read_stream
@@ -314,7 +365,7 @@ mod tests {
         let mut certs = Persisted::<TrustedCertificates>::new(&mut db, Network::Signet).unwrap();
         let genesis = genesis_block(Params::new(Network::Signet)).block_hash();
 
-        match Conn::new(genesis, &url, Duration::from_secs(10), &mut certs).await {
+        match Conn::new(genesis, &url, Duration::from_secs(10), false, &mut certs).await {
             Ok(_) => println!(
                 "OK: {url} connected, PKI-valid cert (no TOFU prompt), signet genesis matched"
             ),
@@ -325,6 +376,47 @@ mod tests {
                 )
             }
             Err(TofuError::Other(e)) => panic!("{url}: FAILED via our stack: {e:?}"),
+        }
+    }
+
+    #[tokio::test]
+    #[ignore] // requires network, bootstraps Tor (tens of seconds cold)
+    async fn test_real_server_via_tor() {
+        use crate::persist::Persisted;
+        use bdk_chain::bitcoin::{constants::genesis_block, params::Params, Network};
+
+        // A public mainnet Electrum .onion that was up on 24 Nov 2026
+        // (https://1209k.com/bitcoin-eye/ele.php?chain=btc lists live ones). Override with
+        // TOR_TEST_URL; a clearnet url goes out through a Tor exit.
+        let url = std::env::var("TOR_TEST_URL").unwrap_or_else(|_| {
+            "tcp://icv6i4cvtso4mancisn2wjpci2cqqdazcfohdot42zppzbpmeba7gcad.onion:50001".into()
+        });
+        // Under target/ by default so the cache stays warm between runs.
+        tor::set_data_dir(std::env::var("TOR_DATA_DIR").unwrap_or_else(|_| {
+            concat!(env!("CARGO_MANIFEST_DIR"), "/../target/tor-test-data").into()
+        }));
+        let _ = tracing_subscriber::fmt()
+            .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+            .with_test_writer()
+            .try_init();
+        let mut db = rusqlite::Connection::open_in_memory().unwrap();
+        let mut certs = Persisted::<TrustedCertificates>::new(&mut db, Network::Bitcoin).unwrap();
+        let genesis = genesis_block(Params::new(Network::Bitcoin)).block_hash();
+
+        let started = std::time::Instant::now();
+        match Conn::new(genesis, &url, Duration::from_secs(5), true, &mut certs).await {
+            Ok(_) => println!(
+                "OK: {url} connected over Tor in {:?}, mainnet genesis matched",
+                started.elapsed()
+            ),
+            // Onion servers almost always use self-signed certs, so a TOFU prompt is the
+            // expected first-contact result: the TLS handshake happened over Tor.
+            Err(TofuError::NotTrusted(c)) => println!(
+                "OK: {url} TLS handshake over Tor in {:?}, would TOFU-prompt (fingerprint {})",
+                started.elapsed(),
+                c.fingerprint
+            ),
+            Err(TofuError::Other(e)) => panic!("{url}: FAILED over Tor: {e:?}"),
         }
     }
 

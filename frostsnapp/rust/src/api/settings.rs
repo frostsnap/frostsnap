@@ -6,6 +6,7 @@ use frostsnap_coordinator::bitcoin::chain_sync::{ChainClient, ElectrumConfig, SU
 pub use frostsnap_coordinator::bitcoin::chain_sync::{
     ChainStatus, ChainStatusState, ConnectionResult,
 };
+use frostsnap_coordinator::bitcoin::tofu::connection::is_onion_url;
 pub use frostsnap_coordinator::bitcoin::tofu::verifier::UntrustedCertificate;
 use frostsnap_coordinator::persist::Persisted;
 pub use frostsnap_coordinator::settings::ElectrumEnabled;
@@ -63,6 +64,8 @@ impl Settings {
             Persisted::new(&mut *db_, ())?
         };
 
+        frostsnap_coordinator::bitcoin::tofu::tor::set_data_dir(app_directory.join("tor"));
+
         let mut loaded_wallets: HashMap<BitcoinNetwork, SuperWallet> = Default::default();
         let mut chain_apis = HashMap::new();
 
@@ -71,6 +74,7 @@ impl Settings {
                 enabled: persisted.get_electrum_enabled(network),
                 primary: persisted.get_electrum_server(network),
                 backup: persisted.get_backup_electrum_server(network),
+                use_tor: persisted.use_tor,
             };
 
             let genesis_hash = genesis_block(bitcoin::params::Params::new(network)).block_hash();
@@ -210,6 +214,10 @@ impl Settings {
                 // url into the live watch (which triggers a reconnect) and emit. Ordering it
                 // this way means a persistence failure never leaves the handler on a url that
                 // wasn't saved.
+                //
+                // Choosing an onion is asking for Tor, so it also turns Tor on for the other
+                // server. The user can still turn it off to let a clearnet server go direct.
+                let turn_on_tor = is_onion_url(&url) && !self.settings.use_tor;
                 {
                     let mut db = self.db.lock().unwrap();
                     self.settings.mutate2(&mut *db, |settings, update| {
@@ -218,8 +226,16 @@ impl Settings {
                         } else {
                             settings.set_electrum_server(network, url.clone(), update);
                         }
+                        if turn_on_tor {
+                            settings.set_use_tor(true, update);
+                        }
                         Ok(())
                     })?;
+                }
+                if turn_on_tor {
+                    for chain_api in self.chain_clients.values() {
+                        chain_api.set_use_tor(true);
+                    }
                 }
                 chain_api.set_electrum_url(url, is_backup);
                 self.emit_electrum_settings();
@@ -312,6 +328,22 @@ impl Settings {
         Ok(())
     }
 
+    /// Routes every Electrum connection, on all networks, through Tor.
+    pub fn set_use_tor(&mut self, value: bool) -> Result<()> {
+        let mut db = self.db.lock().unwrap();
+        self.settings.mutate2(&mut *db, |settings, update| {
+            settings.set_use_tor(value, update);
+            Ok(())
+        })?;
+
+        for chain_api in self.chain_clients.values() {
+            chain_api.set_use_tor(value);
+        }
+
+        self.emit_electrum_settings();
+        Ok(())
+    }
+
     pub fn connect_to(&self, network: BitcoinNetwork, use_backup: bool) -> Result<()> {
         let chain_api = self
             .chain_clients
@@ -356,6 +388,7 @@ pub struct ElectrumServer {
 
 pub struct ElectrumSettings {
     pub electrum_servers: Vec<ElectrumServer>,
+    pub use_tor: bool,
 }
 
 impl ElectrumSettings {
@@ -374,7 +407,10 @@ impl ElectrumSettings {
                 }
             })
             .collect::<Vec<_>>();
-        ElectrumSettings { electrum_servers }
+        ElectrumSettings {
+            electrum_servers,
+            use_tor: settings.use_tor,
+        }
     }
 }
 

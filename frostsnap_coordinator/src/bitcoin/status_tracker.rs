@@ -123,6 +123,7 @@ mod tests {
             enabled: ElectrumEnabled::All,
             primary: "tcp://p:1".into(),
             backup: "tcp://b:1".into(),
+            use_tor: false,
         });
         let mut tracker = StatusTracker::new(rx);
         tracker.set_sink(Box::new(Recorder(log))); // emits the initial Idle

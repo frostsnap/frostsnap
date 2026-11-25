@@ -22,6 +22,7 @@ class ElectrumServerSettingsPage extends StatelessWidget {
         return (
           developerMode: developer.developerMode,
           servers: electrum.electrumServers,
+          useTor: electrum.useTor,
         );
       },
     );
@@ -33,21 +34,37 @@ class ElectrumServerSettingsPage extends StatelessWidget {
         builder: (context, snap) {
           final servers = snap.data?.servers ?? [];
           final developerMode = snap.data?.developerMode ?? false;
+          final useTor = snap.data?.useTor ?? false;
 
           return ListView(
-            children: servers.map((record) {
-              final network = record.network;
-              if (!network.isMainnet() && !developerMode) {
-                return const SizedBox.shrink();
-              }
+            children: [
+              Card(
+                margin: const EdgeInsets.only(bottom: 16),
+                clipBehavior: Clip.antiAlias,
+                child: SwitchListTile(
+                  title: const Text('Connect through Tor'),
+                  subtitle: const Text(
+                    'Send all server traffic through Tor. .onion servers always use Tor.',
+                  ),
+                  value: useTor,
+                  onChanged: (value) =>
+                      settings.settings.setUseTor(value: value),
+                ),
+              ),
+              ...servers.map((record) {
+                final network = record.network;
+                if (!network.isMainnet() && !developerMode) {
+                  return const SizedBox.shrink();
+                }
 
-              return _NetworkServerCard(
-                network: network,
-                primaryUrl: record.url,
-                backupUrl: record.backupUrl,
-                enabled: record.enabled,
-              );
-            }).toList(),
+                return _NetworkServerCard(
+                  network: network,
+                  primaryUrl: record.url,
+                  backupUrl: record.backupUrl,
+                  enabled: record.enabled,
+                );
+              }),
+            ],
           );
         },
       ),
