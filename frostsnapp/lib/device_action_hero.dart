@@ -100,8 +100,41 @@ class _DeviceActionHeroState extends State<DeviceActionHero>
   late final AnimationController _camera;
   int _cameraTarget = 0;
 
+  /// The screen the demo ends on, which a done device keeps showing, as the real one does.
+  ui.Image? _end;
+  DeviceDemoKind? _endFor;
+
   @visibleForTesting
   DeviceDemoPlayback? get playback => _playback;
+
+  @visibleForTesting
+  ui.Image? get endScreen => _end;
+
+  // Rendering the end takes a whole play of the demo, so only a hero with a done device pays for it.
+  void _ensureEnd() {
+    final demo = widget.demo;
+    final wanted = widget.chain.any((device) => device.role == ChainRole.done)
+        ? demo
+        : _endFor;
+    if (wanted == _endFor) return;
+    _endFor = wanted;
+    _end?.dispose();
+    _end = null;
+    if (wanted == null) return;
+    ui.decodeImageFromPixels(
+      DeviceDemo.endScreen(kind: wanted),
+      DeviceDemo.width(),
+      DeviceDemo.height(),
+      ui.PixelFormat.rgba8888,
+      (image) {
+        if (!mounted || _endFor != wanted) {
+          image.dispose();
+          return;
+        }
+        setState(() => _end = image);
+      },
+    );
+  }
 
   int? _indexOf(DeviceId? id) {
     final i = widget.chain.indexWhere((device) => device.id == id);
@@ -143,11 +176,13 @@ class _DeviceActionHeroState extends State<DeviceActionHero>
       value: _cameraTarget.toDouble(),
     );
     _playback = _play();
+    _ensureEnd();
   }
 
   @override
   void didUpdateWidget(DeviceActionHero old) {
     super.didUpdateWidget(old);
+    _ensureEnd();
     final focus = widget._neededFirst ?? _focus;
     final confirmed =
         focus != _focus &&
@@ -181,6 +216,7 @@ class _DeviceActionHeroState extends State<DeviceActionHero>
     _camera.dispose();
     _handTick.dispose();
     _playback?.dispose();
+    _end?.dispose();
     super.dispose();
   }
 
@@ -214,10 +250,14 @@ class _DeviceActionHeroState extends State<DeviceActionHero>
               (playback) => playback.screen,
             ),
             ChainRole.needed => screen((playback) => playback.firstScreen),
-            ChainRole.done => _Confirmed(
-              screen: screen((playback) => playback.firstScreen),
-              uprightTurns: -scene.deviceTurns,
-            ),
+            ChainRole.done => switch (_end) {
+              final end? => RawImage(
+                image: end,
+                fit: BoxFit.fill,
+                filterQuality: FilterQuality.medium,
+              ),
+              null => null,
+            },
             ChainRole.notTakingPart => null,
           },
         ),
@@ -335,7 +375,6 @@ class _Scene {
     required this.crop,
     required this.fade,
     required this.step,
-    this.deviceTurns = 0,
     required this.layers,
   });
 
@@ -344,9 +383,6 @@ class _Scene {
 
   /// From one device in the chain to the next.
   final Offset step;
-
-  /// Quarter turns the devices are drawn at.
-  final int deviceTurns;
   final List<Widget> Function(
     _Place at,
     List<Widget> devices,
@@ -434,10 +470,8 @@ _Scene _computerScene(bool chained) {
   Offset topLeft(Offset c) =>
       c - Offset(_deviceSize.height / 2, _deviceSize.width / 2);
   const step = Offset(-_bodyLength, 0);
-  const deviceTurns = 1;
   return _Scene(
     step: step,
-    deviceTurns: deviceTurns,
     crop: chained
         ? const Rect.fromLTWH(420, 330, 1240, 600)
         : const Rect.fromLTWH(560, 330, 1100, 600),
@@ -450,7 +484,7 @@ _Scene _computerScene(bool chained) {
       for (final (i, child) in devices.indexed)
         at(
           topLeft(centre + step * i.toDouble()),
-          RotatedBox(quarterTurns: deviceTurns, child: child),
+          RotatedBox(quarterTurns: 1, child: child),
         ),
       // Seen from above, the plug runs into the laptop's side under its top deck.
       at(
@@ -548,34 +582,4 @@ class _BelowPlug extends CustomClipper<Rect> {
 
   @override
   bool shouldReclip(_BelowPlug oldClipper) => false;
-}
-
-/// A device that has done its part: its screen dimmed under a check.
-class _Confirmed extends StatelessWidget {
-  const _Confirmed({required this.screen, required this.uprightTurns});
-
-  final Widget? screen;
-
-  /// Undoes the device's turn, so the check reads the right way up to the viewer.
-  final int uprightTurns;
-
-  @override
-  Widget build(BuildContext context) {
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        if (screen case final screen?) Opacity(opacity: 0.35, child: screen),
-        Center(
-          child: RotatedBox(
-            quarterTurns: uprightTurns,
-            child: Icon(
-              Icons.check_circle,
-              size: _deviceScreenSize.shortestSide * 0.4,
-              color: const Color(0xFF1E9E5A),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
 }

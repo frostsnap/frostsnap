@@ -65,19 +65,32 @@ String _asset(WidgetTester tester, int n) {
   return (image.image as AssetImage).assetName;
 }
 
-bool _checked(int n) => find
-    .descendant(of: _device(n), matching: find.byIcon(Icons.check_circle))
-    .evaluate()
-    .isNotEmpty;
+/// Whether device [n] shows the screen the demo ends on, as a device that has confirmed does.
+bool _confirmed(WidgetTester tester, int n) {
+  final end =
+      (tester.state(find.byType(DeviceActionHero)) as dynamic).endScreen
+          as ui.Image?;
+  return end != null &&
+      tester
+          .widgetList<RawImage>(
+            find.descendant(of: _device(n), matching: find.byType(RawImage)),
+          )
+          .any((image) => identical(image.image, end));
+}
 
 final _hand = find.byKey(const ValueKey('hand'));
 
 Object? _playback(WidgetTester tester) =>
     (tester.state(find.byType(DeviceActionHero)) as dynamic).playback;
 
-// Past the camera's ease, without settling: the hand keeps scheduling frames.
-Future<void> _pan(WidgetTester tester) =>
-    tester.pump(const Duration(milliseconds: 700));
+// Past the camera's ease, without settling: the hand keeps scheduling frames. The end screen
+// decodes on the engine, off the fake clock, so it gets real time too.
+Future<void> _pan(WidgetTester tester) async {
+  await tester.runAsync(
+    () => Future.delayed(const Duration(milliseconds: 300)),
+  );
+  await tester.pump(const Duration(milliseconds: 700));
+}
 
 const _needed = ChainRole.needed;
 const _done = ChainRole.done;
@@ -199,7 +212,7 @@ void main() {
 
     expect(_device(1), findsOneWidget);
     expect(_asset(tester, 1), firstAsset);
-    expect(_checked(1), isTrue);
+    expect(_confirmed(tester, 1), isTrue);
     expect(_at(tester, 2), offsetMoreOrLessEquals(focus));
     expect(_at(tester, 1), offsetMoreOrLessEquals(focus - step));
 
@@ -221,8 +234,8 @@ void main() {
     await _pan(tester);
 
     expect(_at(tester, 1), offsetMoreOrLessEquals(focus));
-    expect(_checked(2), isTrue);
-    expect(_checked(1), isFalse);
+    expect(_confirmed(tester, 2), isTrue);
+    expect(_confirmed(tester, 1), isFalse);
     expect(_playback(tester), same(playing));
 
     await tester.pumpWidget(const SizedBox());
@@ -251,7 +264,7 @@ void main() {
     final focus = _at(tester, 1);
     final step = _at(tester, 4) - focus;
 
-    expect(_checked(4), isFalse);
+    expect(_confirmed(tester, 4), isFalse);
 
     await tester.pumpWidget(
       _chainHero([(1, _done), (4, _stranger), (3, _needed)]),
@@ -260,8 +273,8 @@ void main() {
 
     expect(_at(tester, 3), offsetMoreOrLessEquals(focus));
     expect(_at(tester, 4), offsetMoreOrLessEquals(focus - step));
-    expect(_checked(4), isFalse);
-    expect(_checked(1), isTrue);
+    expect(_confirmed(tester, 4), isFalse);
+    expect(_confirmed(tester, 1), isTrue);
 
     await tester.pumpWidget(const SizedBox());
   });
@@ -318,7 +331,7 @@ void main() {
 
     expect(find.byType(DeviceActionHero), findsOneWidget);
     expect(_at(tester, 2), offsetMoreOrLessEquals(focus));
-    expect(_checked(2), isTrue);
+    expect(_confirmed(tester, 2), isTrue);
     expect(_hand, findsNothing);
 
     await tester.pumpWidget(const SizedBox());
@@ -333,7 +346,7 @@ void main() {
     await tester.pump();
 
     expect(tester.takeException(), isNull);
-    expect(_checked(1), isTrue);
+    expect(_confirmed(tester, 1), isTrue);
     expect(_hand, findsNothing);
 
     await tester.pumpWidget(const SizedBox());

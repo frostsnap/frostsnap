@@ -65,26 +65,16 @@ impl DeviceDemo {
     #[frb(sync)]
     pub fn new(kind: DeviceDemoKind) -> Self {
         Self {
-            kind: match kind {
-                DeviceDemoKind::Sign => DemoKind::Sign,
-                DeviceDemoKind::VerifyAddress => DemoKind::VerifyAddress,
-                DeviceDemoKind::Keygen {
-                    threshold,
-                    n_devices,
-                    security_check_code,
-                } => DemoKind::Keygen {
-                    t_of_n: (threshold, n_devices),
-                    security_check_code,
-                },
-                DeviceDemoKind::Backup => DemoKind::Backup,
-                DeviceDemoKind::CheckBackup => DemoKind::CheckBackup,
-                DeviceDemoKind::EnterBackup => DemoKind::EnterBackup,
-                DeviceDemoKind::Erase => DemoKind::Erase,
-                DeviceDemoKind::Upgrade => DemoKind::Upgrade,
-            },
+            kind: kind.into(),
             started: AtomicBool::new(false),
             stopped: Arc::new(AtomicBool::new(false)),
         }
+    }
+
+    /// The screen one play of `kind` ends on, as RGBA.
+    #[frb(sync)]
+    pub fn end_screen(kind: DeviceDemoKind) -> Vec<u8> {
+        device_demo::end_frame(kind.into())
     }
 
     #[frb(sync, type_64bit_int)]
@@ -143,6 +133,28 @@ impl DeviceDemo {
                 std::thread::sleep(next.saturating_duration_since(Instant::now()));
             }
         });
+    }
+}
+
+impl From<DeviceDemoKind> for DemoKind {
+    fn from(kind: DeviceDemoKind) -> Self {
+        match kind {
+            DeviceDemoKind::Sign => DemoKind::Sign,
+            DeviceDemoKind::VerifyAddress => DemoKind::VerifyAddress,
+            DeviceDemoKind::Keygen {
+                threshold,
+                n_devices,
+                security_check_code,
+            } => DemoKind::Keygen {
+                t_of_n: (threshold, n_devices),
+                security_check_code,
+            },
+            DeviceDemoKind::Backup => DemoKind::Backup,
+            DeviceDemoKind::CheckBackup => DemoKind::CheckBackup,
+            DeviceDemoKind::EnterBackup => DemoKind::EnterBackup,
+            DeviceDemoKind::Erase => DemoKind::Erase,
+            DeviceDemoKind::Upgrade => DemoKind::Upgrade,
+        }
     }
 }
 

@@ -347,6 +347,20 @@ impl Demo {
     }
 }
 
+/// The screen one play of `kind` ends on, as RGBA: for a confirmation, the widget after the
+/// finger has confirmed it, which is what the device keeps showing.
+pub fn end_frame(kind: DemoKind) -> Vec<u8> {
+    let mut demo = Demo::new(kind, NonZeroU32::MIN);
+    let mut last = Vec::new();
+    // At `loop_ms` the demo starts its next play.
+    for now_ms in (0..demo.loop_ms).step_by(FRAME_MS as usize) {
+        if let Some(frame) = demo.step(now_ms).frame {
+            last = frame;
+        }
+    }
+    last
+}
+
 fn rgba(fb: &VecFramebuffer<Rgb565>) -> Vec<u8> {
     let mut out = Vec::with_capacity(fb.width() * fb.height() * 4);
     for color in fb.contiguous_pixels() {
@@ -841,6 +855,14 @@ mod test {
             }
             assert!(frames > 0, "{kind:?}");
         }
+    }
+
+    #[test]
+    fn the_security_check_ends_on_its_confirmed_screen() {
+        let end = end_frame(KEYGEN);
+        let loop_ms = Demo::new(KEYGEN, SEED).loop_ms;
+        assert_ne!(end, frame_at(KEYGEN, 0));
+        assert_eq!(end, frame_at(KEYGEN, loop_ms - 1));
     }
 
     fn frame_at(kind: DemoKind, at_ms: u64) -> Vec<u8> {
