@@ -204,7 +204,7 @@ pub struct State {
     /// we already know the access structure.
     tmp_waiting_consolidate: BTreeSet<PendingConsolidation>,
 
-    tmp_waiting_save: BTreeMap<(DeviceId, ShareImage), (RestorationId, HeldShare2)>,
+    pub(super) tmp_waiting_save: BTreeMap<(DeviceId, ShareImage), (RestorationId, HeldShare2)>,
 }
 
 impl State {
@@ -364,14 +364,6 @@ impl State {
     pub fn clear_tmp_data(&mut self) {
         self.tmp_waiting_consolidate.clear();
         self.tmp_waiting_save.clear();
-    }
-
-    pub fn shares_being_saved(
-        &self,
-    ) -> impl Iterator<Item = (DeviceId, RestorationId, &HeldShare2)> {
-        self.tmp_waiting_save
-            .iter()
-            .map(|((device_id, _), (restoration_id, held))| (*device_id, *restoration_id, held))
     }
 }
 

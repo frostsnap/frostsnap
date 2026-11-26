@@ -565,12 +565,13 @@ impl FrostCoordinator {
             // A save is recorded without rechecking when the device confirms it.
             device_ids.extend(
                 self.restoration
-                    .shares_being_saved()
-                    .filter(|(_, restoration_id, held)| {
+                    .tmp_waiting_save
+                    .iter()
+                    .filter(|(_, (restoration_id, held))| {
                         *restoration_id == restoration.restoration_id
                             && held.share_image == share_image
                     })
-                    .map(|(device_id, _, _)| device_id),
+                    .map(|((device_id, _), _)| *device_id),
             );
 
             // Check physical shares
