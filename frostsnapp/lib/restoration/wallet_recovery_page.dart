@@ -3,13 +3,12 @@ import 'package:flutter/material.dart';
 import 'package:frostsnap/contexts.dart';
 import 'package:frostsnap/global.dart';
 import 'package:frostsnap/maybe_fullscreen_dialog.dart';
-import 'package:frostsnap/device_colors.dart';
+import 'package:frostsnap/device_identity_art.dart';
 import 'package:frostsnap/restoration.dart';
 import 'package:frostsnap/secure_key_provider.dart';
 import 'package:frostsnap/snackbar.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/recovery.dart';
-import 'package:frostsnap/theme.dart';
 
 class WalletRecoveryPage extends StatelessWidget {
   final RestorationState restorationState;
@@ -259,127 +258,88 @@ class WalletRecoveryPage extends StatelessWidget {
     );
 
     final shares = status.shares.sortedBy((share) => share.index);
-    var devicesColumn = Column(
-      spacing: 8,
-      children: shares.map((share) {
-        final deleteButton = IconButton(
-          icon: const Icon(Icons.remove_circle_outline),
-          tooltip: 'Remove key',
-          onPressed: () async {
-            if (isRecovered &&
-                share.compatibility == ShareCompatibility.compatible) {
-              final confirm = await showDialog<bool>(
-                context: context,
-                builder: (context) => AlertDialog(
-                  title: Text('Remove compatible key?'),
-                  content: Text(
-                    'This key is compatible with your wallet. '
-                    'Are you sure you want to remove it?',
-                  ),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.of(context).pop(false),
-                      child: Text('Keep'),
-                    ),
-                    TextButton(
-                      onPressed: () => Navigator.of(context).pop(true),
-                      child: Text('Remove'),
-                    ),
-                  ],
+    final devicesColumn = DeviceTileGrid(
+      tiles: shares.map((share) {
+        Future<void> remove() async {
+          if (isRecovered &&
+              share.compatibility == ShareCompatibility.compatible) {
+            final confirm = await showDialog<bool>(
+              context: context,
+              builder: (context) => AlertDialog(
+                title: Text('Remove compatible key?'),
+                content: Text(
+                  'This key is compatible with your wallet. '
+                  'Are you sure you want to remove it?',
                 ),
-              );
-              if (confirm != true) return;
-            }
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(false),
+                    child: Text('Keep'),
+                  ),
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(true),
+                    child: Text('Remove'),
+                  ),
+                ],
+              ),
+            );
+            if (confirm != true) return;
+          }
 
-            await coord.deleteRestorationShare(
-              restorationId: restorationState.restorationId,
-              deviceId: share.deviceId,
-            );
-            homeCtx.walletListController.selectRecoveringWallet(
-              restorationState.restorationId,
-            );
-          },
-        );
+          await coord.deleteRestorationShare(
+            restorationId: restorationState.restorationId,
+            deviceId: share.deviceId,
+          );
+          homeCtx.walletListController.selectRecoveringWallet(
+            restorationState.restorationId,
+          );
+        }
+
         final deviceName = coord.getDeviceName(id: share.deviceId) ?? '<empty>';
         final showCompatibility = shareCount.incompatible > 0;
-        return Card.filled(
-          color: theme.colorScheme.surfaceContainerHigh,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.all(Radius.circular(24)),
-            side:
-                showCompatibility &&
-                    share.compatibility == ShareCompatibility.compatible
-                ? BorderSide(color: theme.colorScheme.primary, width: 2)
-                : BorderSide.none,
-          ),
-          margin: EdgeInsets.zero,
-          child: ListTile(
-            contentPadding: EdgeInsets.symmetric(horizontal: 16),
-            leading: CaseAccent(
-              id: share.deviceId,
-              builder: (context, accent) => Icon(Icons.key, color: accent),
+        final Widget? compatibility;
+        if (showCompatibility) {
+          final (icon, text, color) = switch (share.compatibility) {
+            ShareCompatibility.compatible => (
+              Icons.check_circle,
+              'Compatible',
+              theme.colorScheme.primary,
             ),
-            trailing: deleteButton,
-            subtitle: !showCompatibility
-                ? null
-                : () {
-                    final icon;
-                    final text;
-                    final color;
-
-                    switch (share.compatibility) {
-                      case ShareCompatibility.compatible:
-                        icon = Icons.check_circle;
-                        text = 'Compatible';
-                        color = Theme.of(context).colorScheme.primary;
-                        break;
-                      case ShareCompatibility.incompatible:
-                        icon = Icons.cancel;
-                        text = 'Incompatible';
-                        color = Theme.of(context).colorScheme.error;
-                        break;
-                      case ShareCompatibility.uncertain:
-                        icon = Icons.pending;
-                        text = 'Compatibility uncertain';
-                        color = Theme.of(context).colorScheme.onSurfaceVariant;
-                        break;
-                    }
-
-                    return Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(icon, size: 14, color: color),
-                        SizedBox(width: 4),
-                        Text(
-                          text,
-                          style: TextStyle(fontSize: 12, color: color),
-                        ),
-                      ],
-                    );
-                  }(),
-            title: Row(
-              spacing: 8,
-              children: [
-                Tooltip(
-                  message: "key number ${share.index}",
-                  child: Text(
-                    "#${share.index}",
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      fontWeight: FontWeight.w500,
-                      fontSize: 18,
-                    ),
-                  ),
-                ),
-                Flexible(
-                  child: Text(
-                    deviceName,
-                    style: monospaceTextStyle.copyWith(fontSize: 18),
-                  ),
-                ),
-              ],
+            ShareCompatibility.incompatible => (
+              Icons.cancel,
+              'Incompatible',
+              theme.colorScheme.error,
             ),
-          ),
+            ShareCompatibility.uncertain => (
+              Icons.pending,
+              'Compatibility uncertain',
+              theme.colorScheme.onSurfaceVariant,
+            ),
+          };
+          compatibility = Row(
+            mainAxisSize: MainAxisSize.min,
+            spacing: 4,
+            children: [
+              Icon(icon, size: 14, color: color),
+              Flexible(
+                child: Text(text, style: TextStyle(fontSize: 12, color: color)),
+              ),
+            ],
+          );
+        } else {
+          compatibility = null;
+        }
+        return DeviceTile(
+          id: share.deviceId,
+          name: deviceName,
+          shareIndex: share.index,
+          selected:
+              showCompatibility &&
+              share.compatibility == ShareCompatibility.compatible,
+          footer: compatibility,
+          corner: Icon(Icons.close, size: 18, color: theme.colorScheme.outline),
+          cornerTooltip: 'Remove key',
+          onCornerTap: remove,
         );
       }).toList(),
     );

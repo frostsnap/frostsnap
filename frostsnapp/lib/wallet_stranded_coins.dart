@@ -8,6 +8,7 @@ import 'package:frostsnap/src/rust/api/send.dart';
 import 'package:frostsnap/src/rust/api/signing.dart';
 import 'package:frostsnap/src/rust/api/super_wallet.dart';
 import 'package:frostsnap/src/rust/api/transaction.dart';
+import 'package:frostsnap/device_identity_art.dart';
 import 'package:frostsnap/theme.dart';
 import 'package:frostsnap/wallet.dart';
 import 'package:frostsnap/wallet_send_feerate_picker.dart';
@@ -405,8 +406,10 @@ class _ConsolidatePageState extends State<ConsolidatePage> {
                             ? state.selectSigner(dId: id)
                             : state.deselectSigner(dId: id)
                       : null,
-                  secondary: Icon(Icons.key),
-                  title: Text(name ?? '<unknown>'),
+                  title: DeviceNameWithArt.forId(
+                    id,
+                    name: Text(name ?? '<unknown>'),
+                  ),
                   subtitle: nonces == 0
                       ? Text(
                           'no nonces remaining or too many signing sessions',

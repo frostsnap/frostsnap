@@ -1102,9 +1102,7 @@ class KeysSettings extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
-        spacing: 16,
         children: [
-          Text("The ‘$keyName’ wallet can be unlocked with:"),
           StreamBuilder(
             stream: GlobalStreams.keyStateSubject,
             builder: (context, snap) {
@@ -1112,9 +1110,18 @@ class KeysSettings extends StatelessWidget {
               final frostKey = snap.data!.keys.firstWhereOrNull(
                 (frostkey) => frostkey.keyId() == keyId,
               );
-              final accessStructures = frostKey?.accessStructures();
-              return AccessStructureListWidget(
-                accessStructures: accessStructures ?? [],
+              final accessStructures = frostKey?.accessStructures() ?? [];
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                spacing: 12,
+                children: [
+                  AccessStructureListWidget(
+                    accessStructures: accessStructures,
+                    walletName: keyName,
+                  ),
+                  if (accessStructures.isNotEmpty)
+                    BackupStatusCard(accessStructure: accessStructures.first),
+                ],
               );
             },
           ),

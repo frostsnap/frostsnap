@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:frostsnap/device_identity_art.dart';
 import 'package:frostsnap/global.dart';
 import 'package:frostsnap/restoration/recovery_flow.dart';
 import 'package:frostsnap/dialog_content_with_actions.dart';
@@ -56,6 +57,11 @@ class CandidateReadyView extends StatelessWidget with TitledWidget {
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 16),
+          DeviceNameWithArt.forId(
+            candidate.heldBy,
+            name: Text(deviceName, style: theme.textTheme.titleMedium),
+          ),
+          const SizedBox(height: 12),
           Text(message, textAlign: TextAlign.center),
         ],
       ),

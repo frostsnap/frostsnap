@@ -7,6 +7,7 @@ import 'package:frostsnap/device_colors.dart';
 import 'package:frostsnap/genuine_badge.dart';
 import 'package:frostsnap/copy_feedback.dart';
 import 'package:frostsnap/device_action_fullscreen_dialog.dart';
+import 'package:frostsnap/device_identity_art.dart';
 import 'package:frostsnap/id_ext.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/coordinator.dart';
@@ -139,10 +140,13 @@ class _DeviceDetailsState extends State<DeviceDetails> {
         data: deviceName,
         contentPadding: EdgeInsets.symmetric(horizontal: 16),
         title: Text('Device Name'),
-        subtitle: Text(
-          deviceName ?? 'Unnamed',
-          style: monospaceTextStyle.copyWith(
-            color: device.name == null ? theme.disabledColor : null,
+        subtitle: DeviceNameWithArt.forId(
+          device.id,
+          name: Text(
+            deviceName ?? 'Unnamed',
+            style: monospaceTextStyle.copyWith(
+              color: device.name == null ? theme.disabledColor : null,
+            ),
           ),
         ),
         leading: Icon(Icons.label_rounded),

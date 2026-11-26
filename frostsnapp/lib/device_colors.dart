@@ -20,7 +20,7 @@ caseAccentSource = (
   recorded: (id) => coord.getDeviceCaseColor(id: id),
 );
 
-/// Builds with the accent colour for device [id], or `null` for none.
+/// Builds with the case colour to show for device [id], or `null` for none.
 ///
 /// While a device has announced that id, listed or not, the colour is
 /// [ConnectedDeviceCaseColor.caseColor]; the colour on file is shown only while none has, since it
@@ -30,7 +30,7 @@ class CaseAccent extends StatelessWidget {
   const CaseAccent({super.key, required this.id, required this.builder});
 
   final DeviceId id;
-  final Widget Function(BuildContext context, Color? accent) builder;
+  final Widget Function(BuildContext context, CaseColor? caseColor) builder;
 
   @override
   Widget build(BuildContext context) => StreamBuilder<DeviceListUpdate>(
@@ -46,7 +46,7 @@ class CaseAccent extends StatelessWidget {
             ? caseAccentSource.recorded(id)
             : device.caseColor;
       }
-      return builder(context, caseColor?.swatch?.color);
+      return builder(context, caseColor);
     },
   );
 }

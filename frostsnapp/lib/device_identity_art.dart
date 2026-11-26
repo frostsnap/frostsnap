@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:frostsnap/device_colors.dart';
 import 'package:frostsnap/genuine_badge.dart';
+import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/device_list.dart';
 import 'package:frostsnap/theme.dart';
 
@@ -11,6 +12,12 @@ const _badgeOverhang = 6.0;
 const _tileRadius = Radius.circular(12);
 const _silhouette = 'assets/devices/frostsnap-device.svg';
 const _unknownSilhouette = 'assets/devices/frostsnap-device-unknown.svg';
+
+// The silhouettes' viewBox, and the USB slot's span across it.
+const _silhouetteWidth = 80.0;
+const _silhouetteHeight = 96.0;
+const _slotLeft = 32.0;
+const _slotRight = 48.0;
 
 /// Paints [_silhouette], which is drawn in these colours, in a case's colours.
 class _CaseColorMapper extends ColorMapper {
@@ -130,44 +137,45 @@ class DeviceIdentityArt extends StatelessWidget {
 }
 
 class _Tile extends StatelessWidget {
-  const _Tile({required this.swatch});
+  const _Tile({required this.swatch, this.dimension = _tileSize});
 
   /// `null` when the case colour is unknown.
   final CaseSwatch? swatch;
+  final double dimension;
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final swatch = this.swatch;
-    final silhouette = SvgPicture.asset(
-      swatch == null ? _unknownSilhouette : _silhouette,
-      colorMapper: swatch == null ? null : _CaseColorMapper(swatch),
-      width: 36,
-      height: 43,
-      excludeFromSemantics: true,
+    final scale = dimension / _tileSize;
+    final radius = _tileRadius * scale;
+    final silhouette = _Silhouette(
+      swatch: swatch,
+      width: 36 * scale,
+      height: 43 * scale,
     );
 
     if (swatch == null) {
       return DottedBorder(
         borderType: BorderType.RRect,
-        radius: _tileRadius,
+        radius: radius,
         color: cs.outline,
         strokeWidth: 1,
         dashPattern: const [4, 3],
         padding: EdgeInsets.zero,
         child: SizedBox.square(
-          dimension: _tileSize,
+          dimension: dimension,
           child: Center(child: silhouette),
         ),
       );
     }
 
     return Container(
-      width: _tileSize,
-      height: _tileSize,
+      width: dimension,
+      height: dimension,
       alignment: Alignment.center,
       decoration: BoxDecoration(
-        borderRadius: const BorderRadius.all(_tileRadius),
+        borderRadius: BorderRadius.all(radius),
         border: Border.all(color: cs.onSurface.withValues(alpha: 0.08)),
         gradient: RadialGradient(
           center: const Alignment(0, -0.3),
@@ -176,6 +184,31 @@ class _Tile extends StatelessWidget {
         ),
       ),
       child: silhouette,
+    );
+  }
+}
+
+class _Silhouette extends StatelessWidget {
+  const _Silhouette({
+    required this.swatch,
+    required this.width,
+    required this.height,
+  });
+
+  /// `null` when the case colour is unknown.
+  final CaseSwatch? swatch;
+  final double width;
+  final double height;
+
+  @override
+  Widget build(BuildContext context) {
+    final swatch = this.swatch;
+    return SvgPicture.asset(
+      swatch == null ? _unknownSilhouette : _silhouette,
+      colorMapper: swatch == null ? null : _CaseColorMapper(swatch),
+      width: width,
+      height: height,
+      excludeFromSemantics: true,
     );
   }
 }
@@ -195,6 +228,257 @@ class _Badge extends StatelessWidget {
     shadows: const [
       Shadow(color: Color(0x73000000), blurRadius: 2),
       Shadow(color: Color(0x40000000), blurRadius: 3),
+    ],
+  );
+}
+
+/// A device's [name] beside a small picture of its case, for anywhere the app names a device.
+///
+/// Identity only: unlike [DeviceIdentityArt] it never carries the genuine-check result, so it must
+/// not grow a badge or anything that reads as one.
+class DeviceNameWithArt extends StatelessWidget {
+  const DeviceNameWithArt({
+    super.key,
+    required this.caseColor,
+    required this.name,
+  });
+
+  /// The colour [CaseAccent] gives device [id].
+  static Widget forId(DeviceId id, {Key? key, required Widget name}) =>
+      CaseAccent(
+        key: key,
+        id: id,
+        builder: (context, caseColor) =>
+            DeviceNameWithArt(caseColor: caseColor, name: name),
+      );
+
+  /// `null`, or a colour this build has no name for, draws the unknown-colour outline.
+  final CaseColor? caseColor;
+  final Widget name;
+
+  /// Icon-sized, since it takes the place of the generic key icon device rows used to show.
+  static const artSize = 24.0;
+
+  @override
+  Widget build(BuildContext context) => Row(
+    mainAxisSize: MainAxisSize.min,
+    spacing: 10,
+    children: [
+      ExcludeSemantics(
+        child: _Tile(swatch: caseColor?.swatch, dimension: artSize),
+      ),
+      Flexible(child: name),
+    ],
+  );
+}
+
+/// One device of a set, as a card for a [DeviceTileGrid]: its key index, its picture in the colour
+/// [CaseAccent] gives it, and its name beneath.
+class DeviceTile extends StatelessWidget {
+  const DeviceTile({
+    super.key,
+    required this.id,
+    required this.name,
+    this.shareIndex,
+    this.corner,
+    this.onCornerTap,
+    this.cornerTooltip,
+    this.footer,
+    this.color,
+    this.selected = false,
+    this.needsAction = false,
+    this.onTap,
+  });
+
+  final DeviceId id;
+  final String name;
+  final int? shareIndex;
+
+  /// The tile's state, an icon-sized glyph in its top-right corner.
+  final Widget? corner;
+
+  /// Makes [corner] a button of its own, with a full touch target named by [cornerTooltip].
+  final VoidCallback? onCornerTap;
+  final String? cornerTooltip;
+  final Widget? footer;
+
+  /// Defaults to a surface that stands off the page; a tile on a card passes a brighter one.
+  final Color? color;
+  final bool selected;
+
+  /// Outlines the tile a little brighter, for a device the user still has to deal with.
+  final bool needsAction;
+  final VoidCallback? onTap;
+
+  static const _cornerTarget = 48.0;
+  static const _artHeight = 56.0;
+  static const _artWidth = _artHeight * _silhouetteWidth / _silhouetteHeight;
+  static const _padding = 10.0;
+  static const _nameStyle = TextStyle(fontSize: 12, height: 16 / 12);
+
+  /// How wide a band down the tile's centre the index must stay out of: the picture's USB slot,
+  /// with its stroke and a little air.
+  static const _slotBand =
+      (_slotRight - _slotLeft) / _silhouetteWidth * _artWidth + 6;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final nameStyle = monospaceTextStyle.merge(_nameStyle);
+    final nameLines = MediaQuery.textScalerOf(context).scale(12) * 16 / 12;
+    final shareIndex = this.shareIndex;
+    final corner = this.corner;
+    final footer = this.footer;
+
+    final BorderSide side;
+    if (selected) {
+      side = BorderSide(color: cs.primary, width: 2);
+    } else if (needsAction) {
+      side = BorderSide(color: cs.outline);
+    } else {
+      side = BorderSide(color: cs.outlineVariant);
+    }
+
+    final body = Padding(
+      padding: const EdgeInsets.fromLTRB(_padding, _padding, _padding, 12),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        spacing: 6,
+        children: [
+          const SizedBox(height: 12),
+          CaseAccent(
+            id: id,
+            builder: (context, caseColor) => _Silhouette(
+              swatch: caseColor?.swatch,
+              width: _artWidth,
+              height: _artHeight,
+            ),
+          ),
+          ConstrainedBox(
+            constraints: BoxConstraints(minHeight: nameLines * 2),
+            child: Text(name, textAlign: TextAlign.center, style: nameStyle),
+          ),
+          ?footer,
+        ],
+      ),
+    );
+
+    // The index's row splits evenly either side of the slot band, so however the index scales it
+    // can never reach the USB slot, which is drawn at the top centre of the picture.
+    final indexRow = Row(
+      children: [
+        Expanded(
+          child: Align(
+            alignment: Alignment.topLeft,
+            child: shareIndex == null
+                ? null
+                : FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      '#$shareIndex',
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontSize: 18,
+                        color: cs.onSurfaceVariant,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+          ),
+        ),
+        const SizedBox(width: _slotBand),
+        const Spacer(),
+      ],
+    );
+
+    final tile = Card.outlined(
+      margin: EdgeInsets.zero,
+      color: color ?? cs.surfaceContainer,
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
+        borderRadius: const BorderRadius.all(Radius.circular(18)),
+        side: side,
+      ),
+      child: InkWell(
+        onTap: onTap,
+        child: Stack(
+          children: [
+            SizedBox(width: double.infinity, child: body),
+            Positioned(left: 11, right: 11, top: 4, child: indexRow),
+            if (corner != null)
+              Positioned(
+                top: 0,
+                right: 0,
+                child: _TileCorner(
+                  onTap: onCornerTap,
+                  tooltip: cornerTooltip,
+                  child: corner,
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+    // A corner with its own button must stay a separate node, or it would merge into the tile.
+    return onCornerTap == null ? MergeSemantics(child: tile) : tile;
+  }
+}
+
+class _TileCorner extends StatelessWidget {
+  const _TileCorner({required this.child, this.onTap, this.tooltip});
+
+  final Widget child;
+  final VoidCallback? onTap;
+  final String? tooltip;
+
+  @override
+  Widget build(BuildContext context) {
+    final glyph = Padding(padding: const EdgeInsets.all(6), child: child);
+    final onTap = this.onTap;
+    if (onTap == null) return glyph;
+    return Semantics(
+      container: true,
+      button: true,
+      child: Tooltip(
+        message: tooltip ?? '',
+        child: InkResponse(
+          onTap: onTap,
+          radius: DeviceTile._cornerTarget / 2,
+          child: SizedBox.square(
+            dimension: DeviceTile._cornerTarget,
+            child: Align(alignment: Alignment.topRight, child: glyph),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// [tiles] three to a row, each row as tall as its tallest tile.
+class DeviceTileGrid extends StatelessWidget {
+  const DeviceTileGrid({super.key, required this.tiles, this.spacing = 10});
+
+  final List<Widget> tiles;
+  final double spacing;
+
+  static const columns = 3;
+
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    spacing: spacing,
+    children: [
+      for (var start = 0; start < tiles.length; start += columns)
+        IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            spacing: spacing,
+            children: [
+              for (var i = start; i < start + columns; i++)
+                Expanded(child: i < tiles.length ? tiles[i] : const SizedBox()),
+            ],
+          ),
+        ),
     ],
   );
 }

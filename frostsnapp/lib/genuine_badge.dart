@@ -1,8 +1,6 @@
-import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:frostsnap/certificate_details.dart';
 import 'package:frostsnap/global.dart';
-import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/device_list.dart';
 import 'package:frostsnap/theme.dart';
 
@@ -127,64 +125,4 @@ void showGenuineExplanation(BuildContext context, GenuineStatus status) {
       );
     },
   );
-}
-
-/// Compact status pill. Tapping it explains the status.
-///
-/// Renders nothing at all when this build has no genuine certificate key compiled
-/// in: with no check attempted, any badge — even a neutral one — would imply we
-/// looked.
-class GenuineBadge extends StatelessWidget {
-  const GenuineBadge({super.key, required this.status});
-
-  /// Tracks a device by id, repainting as its status resolves. Use this on screens
-  /// that only hold a [DeviceId]: the status arrives asynchronously, so a one-shot
-  /// read in `build` would freeze on whatever was true at first paint.
-  static Widget forDeviceId(DeviceId id) => StreamBuilder<DeviceListUpdate>(
-    stream: GlobalStreams.deviceListSubject,
-    builder: (context, snapshot) {
-      final device = snapshot.data?.state.devices.firstWhereOrNull(
-        (device) => device.id == id,
-      );
-      if (device == null) return const SizedBox.shrink();
-      return GenuineBadge(status: device.genuine);
-    },
-  );
-
-  final GenuineStatus status;
-
-  @override
-  Widget build(BuildContext context) {
-    if (!genuineCheckEnabled) return const SizedBox.shrink();
-    final scheme = Theme.of(context).colorScheme;
-    final color = status.color(scheme);
-
-    return InkWell(
-      onTap: () => showGenuineExplanation(context, status),
-      borderRadius: BorderRadius.circular(20),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.12),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: color.withValues(alpha: 0.4)),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(status.icon, size: 14, color: color),
-            const SizedBox(width: 4),
-            Text(
-              status.label,
-              style: TextStyle(
-                color: color,
-                fontSize: 11,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 }
