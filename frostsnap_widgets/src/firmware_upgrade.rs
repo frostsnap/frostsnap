@@ -2,15 +2,13 @@ use crate::HOLD_TO_CONFIRM_TIME_SHORT_MS;
 use crate::{
     any_of::AnyOf, gray4_style::Gray4TextStyle, palette::PALETTE, prelude::*,
     super_draw_target::SuperDrawTarget, DynWidget, FadeConfig, FadeSwitcher, Frac, GrayToAlpha,
-    HoldToConfirm, IconWidget, Image, Instant, KeyTouch, Padding, ProgressIndicator, Sizing,
+    HoldToConfirm, Image, Instant, KeyTouch, Padding, ProgressIndicator, Sizing,
 };
 use alloc::{boxed::Box, format, string::String, string::ToString};
 use embedded_graphics::draw_target::DrawTarget;
 use embedded_graphics::geometry::{Point, Size};
 use embedded_graphics::pixelcolor::{Gray8, Rgb565};
 use embedded_graphics::primitives::Rectangle;
-use embedded_iconoir::prelude::*;
-use embedded_iconoir::{size24px::identity::Fingerprint, size48px::navigation::ArrowUpCircle};
 use frostsnap_fonts::{
     Gray4Font, NOTO_SANS_14_LIGHT, NOTO_SANS_17_REGULAR, NOTO_SANS_18_MEDIUM, NOTO_SANS_24_BOLD,
     NOTO_SANS_MONO_14_REGULAR, NOTO_SANS_MONO_17_REGULAR,
@@ -18,6 +16,8 @@ use frostsnap_fonts::{
 use tinybmp::Bmp;
 
 const WARNING_ICON_DATA: &[u8] = include_bytes!("../assets/warning-icon-24x24.bmp");
+const UPGRADE_ICON_DATA: &[u8] = include_bytes!("../assets/arrow-up-circle-48x48.bmp");
+const FINGERPRINT_ICON_DATA: &[u8] = include_bytes!("../assets/fingerprint-24x24.bmp");
 
 const BOX_SIZE: Size = Size::new(230, 146);
 const DIGEST_PANEL_SIZE: Size = Size::new(184, 90);
@@ -31,15 +31,22 @@ pub struct UpgradeTarget {
 }
 
 type Label = Text<Gray4TextStyle>;
-type Icon<I> = IconWidget<embedded_iconoir::Icon<Rgb565, I>>;
-type Chip = Container<Padding<Row<(Icon<Fingerprint>, Label)>>>;
+type Icon = Image<GrayToAlpha<Bmp<'static, Gray8>, Rgb565>>;
+type Chip = Container<Padding<Row<(Icon, Label)>>>;
 
-type TargetContent = Center<Column<(Icon<ArrowUpCircle>, Column<(Label, Option<Label>)>, Chip)>>;
+type TargetContent = Center<Column<(Icon, Column<(Label, Option<Label>)>, Chip)>>;
 
 type DigestContent = Center<Container<Center<Column<(Row<(Label, Label)>, Label, Label, Label)>>>>;
 
 fn label(text: impl Into<String>, font: &'static Gray4Font, color: Rgb565) -> Label {
     Text::new(text.into(), Gray4TextStyle::new(font, color))
+}
+
+fn icon(bmp: &'static [u8], color: Rgb565) -> Icon {
+    Image::new(GrayToAlpha::new(
+        Bmp::<Gray8>::from_slice(bmp).expect("icon BMP"),
+        color,
+    ))
 }
 
 fn hex(bytes: &[u8]) -> String {
@@ -51,7 +58,7 @@ fn target_content(target: &UpgradeTarget, firmware_digest: &[u8; 32]) -> TargetC
         8,
         3,
         Row::builder()
-            .push(IconWidget::new(Fingerprint::new(PALETTE.text_secondary)))
+            .push(icon(FINGERPRINT_ICON_DATA, PALETTE.text_secondary))
             .gap(6)
             .push(label(
                 hex(&firmware_digest[..FINGERPRINT_BYTES]),
@@ -64,7 +71,7 @@ fn target_content(target: &UpgradeTarget, firmware_digest: &[u8; 32]) -> TargetC
     .with_corner_radius(Size::new(11, 11));
     Center::new(
         Column::new((
-            IconWidget::new(ArrowUpCircle::new(PALETTE.primary)),
+            icon(UPGRADE_ICON_DATA, PALETTE.primary),
             Column::new((
                 label(
                     target.version.clone(),
@@ -334,9 +341,7 @@ impl FirmwareUpgradeProgress {
     /// red title, with the reason in primary text so it carries the information.
     /// The device parks on this screen, so it also says how to recover.
     pub fn rejected(status: &str) -> Self {
-        let warning_bmp =
-            Bmp::<Gray8>::from_slice(WARNING_ICON_DATA).expect("Failed to load warning icon BMP");
-        let icon = Image::new(GrayToAlpha::new(warning_bmp, PALETTE.error));
+        let icon = icon(WARNING_ICON_DATA, PALETTE.error);
 
         let title = Text::new(
             "Upgrade failed".to_string(),
