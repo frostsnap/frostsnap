@@ -1,5 +1,6 @@
 use common::TEST_ENCRYPTION_KEY;
 use frostsnap_core::bitcoin_transaction::{LocalSpk, TransactionTemplate};
+use frostsnap_core::coordinator::{signing::SigningMutation, Mutation};
 use frostsnap_core::device::KeyPurpose;
 use frostsnap_core::tweak::{BitcoinBip32Path, NormalIndex};
 use frostsnap_core::EnterPhysicalId;
@@ -919,4 +920,46 @@ fn deleting_a_key_mid_session_keeps_its_sent_nonces_used_across_a_restart() {
         run.run_until_finished(&mut env, &mut test_rng).unwrap();
     }
     assert_eq!(env.signatures.len(), 1);
+}
+
+#[test]
+fn a_log_from_before_consume_nonces_still_replays_its_nonces_as_used() {
+    let mut test_rng = ChaCha20Rng::from_seed([42u8; 32]);
+    let mut env = TestEnv::default();
+    let mut run =
+        Run::start_after_keygen_and_nonces(1, 1, &mut env, &mut test_rng, 1, KeyPurpose::Test);
+    let device_set = run.device_set();
+    let access_structure_ref = run
+        .coordinator
+        .iter_access_structures()
+        .next()
+        .unwrap()
+        .access_structure_ref();
+    let session_id = run
+        .coordinator
+        .start_sign(
+            access_structure_ref,
+            WireSignTask::Test {
+                message: "hello".into(),
+            },
+            &device_set,
+            &mut test_rng,
+        )
+        .unwrap();
+    let device_id = *device_set.iter().next().unwrap();
+    let sign_req = run
+        .coordinator
+        .request_device_sign(session_id, device_id, TEST_ENCRYPTION_KEY);
+    run.extend(sign_req);
+    run.run_until_finished(&mut env, &mut test_rng).unwrap();
+    run.check_mutations();
+
+    // Such a log records nonce usage only in `SentSignReq` rows, so replaying them must consume it.
+    run.coordinator_log.retain(|logged| {
+        !matches!(
+            logged.mutation,
+            Mutation::Signing(SigningMutation::ConsumeNonces { .. })
+        )
+    });
+    run.restart_coordinator();
 }
