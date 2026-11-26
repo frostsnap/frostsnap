@@ -5,6 +5,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:frostsnap/device_demo_playback.dart';
+import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/device_demo.dart';
 import 'package:frostsnap/src/rust/api/device_list.dart';
 
@@ -14,7 +15,7 @@ class DeviceActionHeroSpec {
     required this.demo,
     this.changes,
     this.maxHeight = 430,
-    this.showNext = false,
+    this.followChain = false,
   });
 
   /// The device's own screen for this action, played by a hand on the plugged-in device. It is
@@ -23,45 +24,99 @@ class DeviceActionHeroSpec {
 
   final Listenable? changes;
 
-  /// Draw the next needed device in the chain peeking out behind the first, still on the screen
-  /// it opened on: the hand only shows the first, and the rest are done the same way.
-  final bool showNext;
+  /// Draw the whole connected chain, and move the camera down it to each device still to act.
+  /// Without it, only the first device still to act is drawn.
+  final bool followChain;
 
   /// The hero never grows past this. It also shrinks to what the dialog's own content leaves
   /// free, so the content is never cut.
   final double maxHeight;
 }
 
-/// A device in [caseColor] plugged into this phone or computer, seen from straight above, playing
-/// [demo] with a hand, with [next] (if any) daisy-chained behind it.
+/// Where a device in the chain stands on the dialog's action.
+enum ChainRole { needed, done, notTakingPart }
+
+typedef ChainDevice = ({DeviceId id, CaseColor? caseColor, ChainRole role});
+
+/// A chain of devices plugged into this phone or computer, seen from straight above. The camera
+/// is on the first device still needed, which plays [demo] with a hand.
 class DeviceActionHero extends StatefulWidget {
   const DeviceActionHero({
     super.key,
-    required this.caseColor,
+    required this.chain,
     required this.demo,
     required this.maxHeight,
-    this.next,
   });
 
-  final CaseColor? caseColor;
+  /// The hero [spec] draws over the connected [chain], or null when there's no device for it.
+  ///
+  /// A chain-following hero stays up while any participant is connected, so it can show the last
+  /// confirmation while its dialog closes.
+  static DeviceActionHero? of(
+    DeviceActionHeroSpec spec,
+    List<ChainDevice> chain,
+  ) {
+    final List<ChainDevice> drawn;
+    if (spec.followChain) {
+      if (chain.every((device) => device.role == ChainRole.notTakingPart)) {
+        return null;
+      }
+      drawn = chain;
+    } else {
+      final needed = chain.where((device) => device.role == ChainRole.needed);
+      if (needed.isEmpty) return null;
+      drawn = [needed.first];
+    }
+    return DeviceActionHero(
+      chain: drawn,
+      demo: spec.demo(),
+      maxHeight: spec.maxHeight,
+    );
+  }
+
+  /// In chain order, the device plugged into the host first.
+  final List<ChainDevice> chain;
   final DeviceDemoKind? demo;
   final double maxHeight;
-  final ({CaseColor? caseColor})? next;
+
+  DeviceId? get _neededFirst =>
+      chain.where((device) => device.role == ChainRole.needed).firstOrNull?.id;
 
   @override
   State<DeviceActionHero> createState() => _DeviceActionHeroState();
 }
 
 class _DeviceActionHeroState extends State<DeviceActionHero>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   DeviceDemoPlayback? _playback;
   final _handTick = ValueNotifier(0);
   late final Ticker _ticker;
+
+  /// Kept once no device is needed, so the camera stays on the last confirmation while the
+  /// dialog closes.
+  DeviceId? _focus;
+
+  /// Where the camera is, in devices down the chain.
+  late final AnimationController _camera;
+  int _cameraTarget = 0;
+
+  @visibleForTesting
+  DeviceDemoPlayback? get playback => _playback;
+
+  int? _indexOf(DeviceId? id) {
+    final i = widget.chain.indexWhere((device) => device.id == id);
+    return i < 0 ? null : i;
+  }
 
   DeviceDemoPlayback? _play() {
     final demo = widget.demo;
     if (demo == null) return null;
     return DeviceDemoPlayback(demo)..addListener(_wakeHand);
+  }
+
+  void _replay() {
+    _playback?.dispose();
+    _playback = _play();
   }
 
   bool get _handMoving => _playback?.handMoving ?? false;
@@ -81,21 +136,49 @@ class _DeviceActionHeroState extends State<DeviceActionHero>
   void initState() {
     super.initState();
     _ticker = createTicker(_tickHand);
+    _focus = widget._neededFirst ?? widget.chain.firstOrNull?.id;
+    _cameraTarget = _indexOf(_focus) ?? 0;
+    _camera = AnimationController.unbounded(
+      vsync: this,
+      value: _cameraTarget.toDouble(),
+    );
     _playback = _play();
   }
 
   @override
   void didUpdateWidget(DeviceActionHero old) {
     super.didUpdateWidget(old);
-    if (old.demo != widget.demo) {
-      _playback?.dispose();
-      _playback = _play();
+    final focus = widget._neededFirst ?? _focus;
+    final confirmed =
+        focus != _focus &&
+        widget.chain.any(
+          (device) => device.id == _focus && device.role == ChainRole.done,
+        );
+    if (focus != _focus || old.demo != widget.demo) {
+      _focus = focus;
+      _replay();
+    }
+    final index = _indexOf(_focus);
+    if (index == null) return;
+    // Only a confirmation is a move along the chain. A device plugged or unplugged around the
+    // focus changes where it is drawn, not what the user is looking at, so the frame follows it.
+    if (confirmed) {
+      _cameraTarget = index;
+      _camera.animateTo(
+        index.toDouble(),
+        duration: const Duration(milliseconds: 600),
+        curve: Curves.easeInOutCubic,
+      );
+    } else if (index != _cameraTarget) {
+      _cameraTarget = index;
+      _camera.value = index.toDouble();
     }
   }
 
   @override
   void dispose() {
     _ticker.dispose();
+    _camera.dispose();
     _handTick.dispose();
     _playback?.dispose();
     super.dispose();
@@ -104,11 +187,10 @@ class _DeviceActionHeroState extends State<DeviceActionHero>
   @override
   Widget build(BuildContext context) {
     final playback = _playback;
-    final next = widget.next;
-    final chained = next != null;
+    final chain = widget.chain;
     final scene = Platform.isAndroid || Platform.isIOS
         ? _phoneScene()
-        : _computerScene(chained);
+        : _computerScene(chain.length > 1);
 
     Widget? screen(ui.Image? Function(DeviceDemoPlayback) image) =>
         playback == null
@@ -121,20 +203,34 @@ class _DeviceActionHeroState extends State<DeviceActionHero>
               filterQuality: FilterQuality.medium,
             ),
           );
-    final first = _TopDownDevice(
-      caseColor: widget.caseColor,
-      screen: screen((playback) => playback.screen),
-    );
-    final second = next == null
-        ? null
-        : _TopDownDevice(
-            caseColor: next.caseColor,
-            screen: screen((playback) => playback.firstScreen),
-            plugHidden: true,
-          );
-    final hand = playback == null
+    final devices = [
+      for (final (i, device) in chain.indexed)
+        _TopDownDevice(
+          key: ValueKey(device.id),
+          caseColor: device.caseColor,
+          plugHidden: i > 0,
+          screen: switch (device.role) {
+            ChainRole.needed when device.id == _focus => screen(
+              (playback) => playback.screen,
+            ),
+            ChainRole.needed => screen((playback) => playback.firstScreen),
+            ChainRole.done => _Confirmed(
+              screen: screen((playback) => playback.firstScreen),
+              uprightTurns: -scene.deviceTurns,
+            ),
+            ChainRole.notTakingPart => null,
+          },
+        ),
+    ];
+    final focusIndex = _indexOf(_focus);
+    final handOn =
+        focusIndex != null && chain[focusIndex].role == ChainRole.needed
+        ? focusIndex
+        : null;
+    final hand = playback == null || handOn == null
         ? const SizedBox()
         : CustomPaint(
+            key: const ValueKey('hand'),
             painter: _HandPainter(
               playback,
               repaint: Listenable.merge([_handTick, playback.handPlayer]),
@@ -167,10 +263,17 @@ class _DeviceActionHeroState extends State<DeviceActionHero>
               child: FittedBox(
                 child: SizedBox.fromSize(
                   size: crop.size,
-                  child: Stack(
-                    // The arm reaches past the crop where the hero is wider than it.
-                    clipBehavior: Clip.none,
-                    children: scene.layers(at, first, second, hand),
+                  child: AnimatedBuilder(
+                    animation: _camera,
+                    builder: (context, child) => Transform.translate(
+                      offset: -scene.step * _camera.value,
+                      child: child,
+                    ),
+                    child: Stack(
+                      // The arm reaches past the crop where the hero is wider than it.
+                      clipBehavior: Clip.none,
+                      children: scene.layers(at, devices, handOn ?? 0, hand),
+                    ),
                   ),
                 ),
               ),
@@ -228,14 +331,26 @@ const _handOnDevice = Rect.fromLTWH(135, 134, 549.5, 897.1);
 typedef _Place = Widget Function(Offset position, Widget child);
 
 class _Scene {
-  const _Scene({required this.crop, required this.fade, required this.layers});
+  const _Scene({
+    required this.crop,
+    required this.fade,
+    required this.step,
+    this.deviceTurns = 0,
+    required this.layers,
+  });
 
   final Rect crop;
   final Gradient fade;
+
+  /// From one device in the chain to the next.
+  final Offset step;
+
+  /// Quarter turns the devices are drawn at.
+  final int deviceTurns;
   final List<Widget> Function(
     _Place at,
-    Widget first,
-    Widget? second,
+    List<Widget> devices,
+    int focus,
     Widget hand,
   )
   layers;
@@ -254,8 +369,10 @@ _Scene _phoneScene() {
     279.5 * shellScale - 180,
     1011 * shellScale + 3 - _bodyTop,
   );
+  const step = Offset(0, _bodyLength);
   return _Scene(
     crop: const Rect.fromLTWH(200, 1560, 590, 860),
+    step: step,
     // The hand comes up from below, so the bottom fades as well as the phone above.
     fade: const LinearGradient(
       begin: Alignment.topCenter,
@@ -268,9 +385,9 @@ _Scene _phoneScene() {
       ],
       stops: [0, 0.16, 0.74, 1],
     ),
-    layers: (at, first, second, hand) => [
-      at(device, first),
-      if (second != null) at(device + const Offset(0, _bodyLength), second),
+    layers: (at, devices, focus, hand) => [
+      for (final (i, child) in devices.indexed)
+        at(device + step * i.toDouble(), child),
       // The shell's screen is transparent. Covering it also hides the plug inside the phone.
       at(
         screen.topLeft,
@@ -297,7 +414,7 @@ _Scene _phoneScene() {
         ),
       ),
       at(
-        device + _handOnDevice.topLeft,
+        device + step * focus.toDouble() + _handOnDevice.topLeft,
         SizedBox.fromSize(size: _handOnDevice.size, child: hand),
       ),
     ],
@@ -316,7 +433,11 @@ _Scene _computerScene(bool chained) {
   );
   Offset topLeft(Offset c) =>
       c - Offset(_deviceSize.height / 2, _deviceSize.width / 2);
+  const step = Offset(-_bodyLength, 0);
+  const deviceTurns = 1;
   return _Scene(
+    step: step,
+    deviceTurns: deviceTurns,
     crop: chained
         ? const Rect.fromLTWH(420, 330, 1240, 600)
         : const Rect.fromLTWH(560, 330, 1100, 600),
@@ -325,12 +446,11 @@ _Scene _computerScene(bool chained) {
       colors: const [Colors.transparent, Colors.black],
       stops: [0, chained ? 0.3 : 0.15],
     ),
-    layers: (at, first, second, hand) => [
-      at(topLeft(centre), RotatedBox(quarterTurns: 1, child: first)),
-      if (second != null)
+    layers: (at, devices, focus, hand) => [
+      for (final (i, child) in devices.indexed)
         at(
-          topLeft(centre - const Offset(_bodyLength, 0)),
-          RotatedBox(quarterTurns: 1, child: second),
+          topLeft(centre + step * i.toDouble()),
+          RotatedBox(quarterTurns: deviceTurns, child: child),
         ),
       // Seen from above, the plug runs into the laptop's side under its top deck.
       at(
@@ -345,7 +465,9 @@ _Scene _computerScene(bool chained) {
       // The clips are framed for the phone; turning them with the device keeps the finger on the
       // same part of its screen.
       at(
-        centre - Offset(_deviceSize.width / 2, _deviceSize.height / 2),
+        centre +
+            step * focus.toDouble() -
+            Offset(_deviceSize.width / 2, _deviceSize.height / 2),
         Transform.rotate(
           angle: math.pi / 2,
           child: SizedBox.fromSize(
@@ -375,6 +497,7 @@ String _deviceAsset(CaseColor? caseColor) {
 
 class _TopDownDevice extends StatelessWidget {
   const _TopDownDevice({
+    super.key,
     required this.caseColor,
     required this.screen,
     this.plugHidden = false,
@@ -425,4 +548,34 @@ class _BelowPlug extends CustomClipper<Rect> {
 
   @override
   bool shouldReclip(_BelowPlug oldClipper) => false;
+}
+
+/// A device that has done its part: its screen dimmed under a check.
+class _Confirmed extends StatelessWidget {
+  const _Confirmed({required this.screen, required this.uprightTurns});
+
+  final Widget? screen;
+
+  /// Undoes the device's turn, so the check reads the right way up to the viewer.
+  final int uprightTurns;
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        if (screen case final screen?) Opacity(opacity: 0.35, child: screen),
+        Center(
+          child: RotatedBox(
+            quarterTurns: uprightTurns,
+            child: Icon(
+              Icons.check_circle,
+              size: _deviceScreenSize.shortestSide * 0.4,
+              color: const Color(0xFF1E9E5A),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
 }

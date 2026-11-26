@@ -37,6 +37,10 @@ class FullscreenActionDialogController<T> extends ChangeNotifier {
   /// when none of its devices remain connected.
   final Set<DeviceId> _actionNeeded;
 
+  /// The devices seeded at construction. Leaving [_actionNeeded] means a participant is done; a
+  /// device that was never in it isn't taking part.
+  final Set<DeviceId> _participants;
+
   /// In connection order, which is the order of the chain.
   List<ConnectedDevice> _connected;
   NavigatorState? _navigator;
@@ -64,6 +68,7 @@ class FullscreenActionDialogController<T> extends ChangeNotifier {
     this.onDismissed,
     this.hero,
   }) : _actionNeeded = devices.toSet(),
+       _participants = devices.toSet(),
        _connected = coord.deviceListState().devices {
     _navigator = Navigator.of(context, rootNavigator: true);
     _deviceListSubscription = GlobalStreams.deviceListSubject.listen((update) {
@@ -106,9 +111,28 @@ class FullscreenActionDialogController<T> extends ChangeNotifier {
 
   Iterable<DeviceId> get actionsNeeded => _actionNeeded;
 
-  /// The connected devices that still have an action, in chain order.
-  List<ConnectedDevice> get connectedActionNeeded =>
-      _connected.where((dev) => _actionNeeded.contains(dev.id)).toList();
+  static ChainRole chainRole(
+    DeviceId device, {
+    required Set<DeviceId> participants,
+    required Set<DeviceId> actionNeeded,
+  }) {
+    if (!participants.contains(device)) return ChainRole.notTakingPart;
+    return actionNeeded.contains(device) ? ChainRole.needed : ChainRole.done;
+  }
+
+  /// Every connected device, in chain order, with where it stands on this action.
+  List<ChainDevice> get chain => [
+    for (final dev in _connected)
+      (
+        id: dev.id,
+        caseColor: dev.caseColor,
+        role: chainRole(
+          dev.id,
+          participants: _participants,
+          actionNeeded: _actionNeeded,
+        ),
+      ),
+  ];
 
   /// Master switch. When false, the dialog is hidden regardless of
   /// `_actionNeeded` and will not show on future reconciles. Flip it back to
@@ -222,28 +246,20 @@ Future<T?> showFullscreenActionDialog<T>(
 
   Widget picture(BuildContext context) {
     final hero = controller.hero;
-    final needed = controller.connectedActionNeeded;
-    if (hero == null || needed.isEmpty) {
-      return SvgPicture.string(
-        deviceSvg,
-        width: 162,
-        height: 134,
-        colorFilter: ColorFilter.mode(
-          theme.colorScheme.onSurface,
-          BlendMode.srcATop,
-        ),
-      );
-    }
+    final outline = SvgPicture.string(
+      deviceSvg,
+      width: 162,
+      height: 134,
+      colorFilter: ColorFilter.mode(
+        theme.colorScheme.onSurface,
+        BlendMode.srcATop,
+      ),
+    );
+    if (hero == null) return outline;
     return ListenableBuilder(
       listenable: Listenable.merge([hero.changes]),
-      builder: (context, _) => DeviceActionHero(
-        caseColor: needed.first.caseColor,
-        demo: hero.demo(),
-        next: hero.showNext && needed.length > 1
-            ? (caseColor: needed[1].caseColor)
-            : null,
-        maxHeight: hero.maxHeight,
-      ),
+      builder: (context, _) =>
+          DeviceActionHero.of(hero, controller.chain) ?? outline,
     );
   }
 
