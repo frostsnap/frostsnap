@@ -28,6 +28,38 @@ class RecoveryProtocol {
 
   Stream<EnterPhysicalBackupState> enterPhysicalBackup(DeviceId device) =>
       coord.tellDeviceToEnterPhysicalBackup(deviceId: device);
+
+  Future<RestorationId> startRestoringWallet({
+    required String name,
+    required int? threshold,
+    required BitcoinNetwork network,
+  }) => coord.startRestoringWallet(
+    name: name,
+    threshold: threshold,
+    network: network,
+  );
+
+  Future<RestorePhysicalBackupError?> checkPhysicalBackupForRestoration({
+    required RestorationId restorationId,
+    required PhysicalBackupPhase phase,
+  }) async => coord.checkPhysicalBackupForRestoration(
+    restorationId: restorationId,
+    phase: phase,
+    encryptionKey: await SecureKeyProvider.getEncryptionKey(),
+  );
+
+  Future<void> tellDeviceToSavePhysicalBackup({
+    required PhysicalBackupPhase phase,
+    required RestorationId restorationId,
+    required String deviceName,
+  }) => coord.tellDeviceToSavePhysicalBackup(
+    phase: phase,
+    restorationId: restorationId,
+    deviceName: deviceName,
+  );
+
+  Future<void> cancelRestoration(RestorationId restorationId) =>
+      coord.cancelRestoration(restorationId: restorationId);
 }
 
 /// Resolves the key of an existing wallet, or returns null once it has told
@@ -493,35 +525,39 @@ class RecoveryFlowController extends ChangeNotifier {
           :final network,
           :final threshold,
         ):
-          final restorationId = await coord.startRestoringWallet(
+          final restorationId = await _protocol.startRestoringWallet(
             name: walletName!,
             threshold: threshold,
             network: network!,
           );
-          final encryptionKey = await SecureKeyProvider.getEncryptionKey();
-          final error = await coord.checkPhysicalBackupForRestoration(
-            restorationId: restorationId,
-            phase: phase,
-            encryptionKey: encryptionKey,
-          );
-          if (error != null) {
-            // Even if the flow has been left meanwhile, so a refused backup
-            // never leaves an empty restoration behind.
-            await coord.cancelRestoration(restorationId: restorationId);
-            if (current()) {
-              _popOnError(
-                title: 'Cannot add backup',
-                message: error.toString(),
-              );
+          // The coordinator sends the save to the device before its future
+          // can fail, so once the save is invoked the device may hold a share
+          // in this restoration. Only an exit before that point cancels it.
+          var saveInvoked = false;
+          try {
+            final error = await _protocol.checkPhysicalBackupForRestoration(
+              restorationId: restorationId,
+              phase: phase,
+            );
+            if (error != null) {
+              if (current()) {
+                _popOnError(
+                  title: 'Cannot add backup',
+                  message: error.toString(),
+                );
+              }
+              return;
             }
-            return;
+            if (!current()) return;
+            saveInvoked = true;
+            await _protocol.tellDeviceToSavePhysicalBackup(
+              phase: phase,
+              restorationId: restorationId,
+              deviceName: deviceName,
+            );
+          } finally {
+            if (!saveInvoked) await _protocol.cancelRestoration(restorationId);
           }
-          if (!current()) return;
-          await coord.tellDeviceToSavePhysicalBackup(
-            phase: phase,
-            restorationId: restorationId,
-            deviceName: deviceName,
-          );
           if (!current()) return;
           _recoveryContext = (_recoveryContext as NewRestorationContext)
               .copyWith(restorationId: restorationId);
@@ -531,18 +567,16 @@ class RecoveryFlowController extends ChangeNotifier {
           );
 
         case ContinuingRestorationContext(:final restorationId):
-          final encryptionKey = await SecureKeyProvider.getEncryptionKey();
-          final error = await coord.checkPhysicalBackupForRestoration(
+          final error = await _protocol.checkPhysicalBackupForRestoration(
             restorationId: restorationId,
             phase: phase,
-            encryptionKey: encryptionKey,
           );
           if (!current()) return;
           if (error != null) {
             _popOnError(title: 'Cannot add backup', message: error.toString());
             return;
           }
-          await coord.tellDeviceToSavePhysicalBackup(
+          await _protocol.tellDeviceToSavePhysicalBackup(
             phase: phase,
             restorationId: restorationId,
             deviceName: deviceName,

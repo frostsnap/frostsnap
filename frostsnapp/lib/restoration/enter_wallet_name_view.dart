@@ -32,12 +32,12 @@ class EnterWalletNameViewState extends State<EnterWalletNameView> {
   @override
   void initState() {
     super.initState();
-    _walletNameController.addListener(_updateButtonState);
     final initialWalletName = widget.initialWalletName;
     if (initialWalletName != null) {
       _walletNameController.text = initialWalletName;
       _isButtonEnabled = initialWalletName.isNotEmpty;
     }
+    _walletNameController.addListener(_updateButtonState);
     final initialBitcoinNetwork = widget.initialBitcoinNetwork;
     if (initialBitcoinNetwork != null) {
       bitcoinNetwork = initialBitcoinNetwork;
