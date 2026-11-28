@@ -1,5 +1,4 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
-import 'package:frostsnap/restoration/target_device.dart';
 import 'package:frostsnap/src/rust/api.dart';
 import 'package:frostsnap/src/rust/api/bitcoin.dart';
 import 'package:frostsnap/src/rust/api/recovery.dart';
@@ -29,20 +28,6 @@ sealed class RecoveryContext with _$RecoveryContext {
   const factory RecoveryContext.addingToWallet({
     required AccessStructureRef accessStructureRef,
   }) = AddingToWalletContext;
-}
-
-/// Composite state representing the recovery flow
-/// Always has a targetDevice and a stage
-class RecoveryFlowState {
-  final TargetDevice targetDevice;
-  RecoveryFlowStage stage;
-
-  RecoveryFlowState({required this.targetDevice, required this.stage});
-
-  /// Dispose resources owned by this state
-  void dispose() {
-    targetDevice.dispose();
-  }
 }
 
 /// Represents the stage/step in the wallet recovery flow

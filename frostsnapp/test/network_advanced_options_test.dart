@@ -167,9 +167,7 @@ void main() {
       final entered = <BitcoinNetwork>[];
       await tester.pumpWidget(
         _app(
-          EnterWalletNameView(
-            onWalletNameEntered: (_, network) => entered.add(network),
-          ),
+          EnterWalletNameView(onSubmit: (_, network) => entered.add(network)),
           developerMode: developerMode,
         ),
       );
@@ -189,8 +187,7 @@ void main() {
       await _choose(tester, 'Regtest');
       expect(_chip('Regtest'), findsOneWidget);
       await tester.enterText(find.byType(TextFormField), 'Savings');
-      await tester.pump();
-      await tester.tap(find.text('Continue'));
+      await tester.testTextInput.receiveAction(TextInputAction.done);
       await tester.pump();
       expect(entered, [BitcoinNetwork.regtest]);
     });

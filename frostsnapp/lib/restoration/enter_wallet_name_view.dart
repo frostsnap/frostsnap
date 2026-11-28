@@ -1,32 +1,29 @@
 import 'package:flutter/material.dart';
 import 'package:frostsnap/global.dart';
-import 'package:frostsnap/restoration/recovery_flow.dart';
-import 'package:frostsnap/dialog_content_with_actions.dart';
 import 'package:frostsnap/network_advanced_options.dart';
 import 'package:frostsnap/settings.dart';
 import 'package:frostsnap/src/rust/api/bitcoin.dart';
 import 'package:frostsnap/src/rust/api/name.dart';
 
-class EnterWalletNameView extends StatefulWidget with TitledWidget {
+class EnterWalletNameView extends StatefulWidget {
   final String? initialWalletName;
   final BitcoinNetwork? initialBitcoinNetwork;
-  final Function(String walletName, BitcoinNetwork network) onWalletNameEntered;
+  final ValueChanged<bool>? onChanged;
+  final void Function(String walletName, BitcoinNetwork network) onSubmit;
 
   const EnterWalletNameView({
     super.key,
-    required this.onWalletNameEntered,
+    required this.onSubmit,
+    this.onChanged,
     this.initialWalletName,
     this.initialBitcoinNetwork,
   });
 
   @override
-  State<EnterWalletNameView> createState() => _EnterWalletNameViewState();
-
-  @override
-  String get titleText => 'Wallet name';
+  State<EnterWalletNameView> createState() => EnterWalletNameViewState();
 }
 
-class _EnterWalletNameViewState extends State<EnterWalletNameView> {
+class EnterWalletNameViewState extends State<EnterWalletNameView> {
   final _formKey = GlobalKey<FormState>();
   final _walletNameController = TextEditingController();
   BitcoinNetwork bitcoinNetwork = BitcoinNetwork.bitcoin;
@@ -35,29 +32,31 @@ class _EnterWalletNameViewState extends State<EnterWalletNameView> {
   @override
   void initState() {
     super.initState();
-    _walletNameController.addListener(_updateButtonState);
     final initialWalletName = widget.initialWalletName;
     if (initialWalletName != null) {
       _walletNameController.text = initialWalletName;
+      _isButtonEnabled = initialWalletName.isNotEmpty;
     }
+    _walletNameController.addListener(_updateButtonState);
     final initialBitcoinNetwork = widget.initialBitcoinNetwork;
     if (initialBitcoinNetwork != null) {
       bitcoinNetwork = initialBitcoinNetwork;
     }
-  }
-
-  void _updateButtonState() {
-    setState(() {
-      _isButtonEnabled = _walletNameController.text.isNotEmpty;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) widget.onChanged?.call(_isButtonEnabled);
     });
   }
 
-  void _submitForm() {
+  void _updateButtonState() {
+    final enabled = _walletNameController.text.isNotEmpty;
+    if (enabled == _isButtonEnabled) return;
+    _isButtonEnabled = enabled;
+    widget.onChanged?.call(enabled);
+  }
+
+  void submit() {
     if (_isButtonEnabled && _formKey.currentState!.validate()) {
-      widget.onWalletNameEntered(
-        _walletNameController.text.trim(),
-        bitcoinNetwork,
-      );
+      widget.onSubmit(_walletNameController.text.trim(), bitcoinNetwork);
     }
   }
 
@@ -75,56 +74,47 @@ class _EnterWalletNameViewState extends State<EnterWalletNameView> {
       context,
     )!.settings.isInDeveloperMode();
 
-    return DialogContentWithActions(
-      content: Form(
-        key: _formKey,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              "Enter the wallet name from your physical backup. If it\'s missing or unreadable, choose another name.",
-              style: theme.textTheme.bodyMedium,
+    return Form(
+      key: _formKey,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            "Enter the wallet name from your physical backup. If it\'s missing or unreadable, choose another name.",
+            style: theme.textTheme.bodyMedium,
+          ),
+          const SizedBox(height: 24),
+          TextFormField(
+            controller: _walletNameController,
+            maxLength: keyNameMaxLength(),
+            inputFormatters: [nameInputFormatter],
+            textCapitalization: TextCapitalization.words,
+            autofocus: true,
+            decoration: const InputDecoration(
+              labelText: 'Wallet Name',
+              border: OutlineInputBorder(),
+              hintText: 'The name of the wallet being restored',
             ),
-            const SizedBox(height: 24),
-            TextFormField(
-              controller: _walletNameController,
-              maxLength: keyNameMaxLength(),
-              inputFormatters: [nameInputFormatter],
-              textCapitalization: TextCapitalization.words,
-              autofocus: true,
-              decoration: const InputDecoration(
-                labelText: 'Wallet Name',
-                border: OutlineInputBorder(),
-                hintText: 'The name of the wallet being restored',
-              ),
-              onChanged: (_) => _updateButtonState(),
-              onFieldSubmitted: (_) => _submitForm(),
-              validator: (value) {
-                if (value == null || value.isEmpty) {
-                  return 'Please enter a wallet name';
-                }
-                return null;
+            onFieldSubmitted: (_) => submit(),
+            validator: (value) {
+              if (value == null || value.isEmpty) {
+                return 'Please enter a wallet name';
+              }
+              return null;
+            },
+          ),
+          if (developerMode) ...[
+            const SizedBox(height: 12),
+            NetworkAdvancedOptions(
+              selected: bitcoinNetwork,
+              onChanged: (network) {
+                setState(() => bitcoinNetwork = network);
               },
             ),
-            if (developerMode) ...[
-              const SizedBox(height: 12),
-              NetworkAdvancedOptions(
-                selected: bitcoinNetwork,
-                onChanged: (network) {
-                  setState(() => bitcoinNetwork = network);
-                },
-              ),
-            ],
           ],
-        ),
+        ],
       ),
-      actions: [
-        FilledButton(
-          child: const Text('Continue'),
-          onPressed: _isButtonEnabled ? _submitForm : null,
-        ),
-      ],
     );
   }
 }
