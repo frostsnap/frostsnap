@@ -13,7 +13,11 @@ use crate::settings::ElectrumEnabled;
 use super::{
     chain_sync::{ConnectionResult, ElectrumConfig, Message},
     status_tracker::{ConnPhase, StatusTracker},
-    tofu::{connection::Conn, trusted_certs::TrustedCertificates, verifier::TofuError},
+    tofu::{
+        connection::{is_onion_url, Conn},
+        trusted_certs::TrustedCertificates,
+        verifier::TofuError,
+    },
 };
 
 /// Identifies the server a live connection is on. Carried by the connection state so failover
@@ -22,6 +26,8 @@ use super::{
 pub(super) struct ConnectedTo {
     pub(super) url: String,
     pub(super) on_backup: bool,
+    /// The Tor setting the connection was opened with.
+    pub(super) use_tor: bool,
 }
 
 /// Outcome of [`HandlerState::establish`]: the connect attempt, raced ONLY against the config
@@ -141,10 +147,13 @@ impl HandlerState {
         }
     }
 
-    /// Whether a config change requires reconnecting the connection on `connected_url`, given
-    /// which server it's on (`on_backup`) — see [`reconnect_needed`].
-    pub(super) fn reconnect_needed(&self, on_backup: bool, connected_url: &str) -> bool {
-        reconnect_needed(on_backup, connected_url, &self.config_rx.borrow())
+    /// Whether a config change requires reconnecting the live connection: Tor was switched on
+    /// or off for a clearnet server (an onion uses Tor either way), or the change affects the
+    /// server it's on (see [`reconnect_needed`]).
+    pub(super) fn reconnect_needed(&self, connected: &ConnectedTo) -> bool {
+        let config = self.config_rx.borrow();
+        (connected.use_tor != config.use_tor && !is_onion_url(&connected.url))
+            || reconnect_needed(connected.on_backup, &connected.url, &config)
     }
 
     /// After the connection to the current server failed, prefer the OTHER server on the next
@@ -159,6 +168,7 @@ impl HandlerState {
         let prefer_backup = std::mem::take(&mut self.prefer_backup);
         // Copy the config out so we don't hold the watch borrow across awaits.
         let config = self.config_rx.borrow().clone();
+        let use_tor = config.use_tor;
 
         let urls_to_try: Vec<(bool, String)> = match config.enabled {
             ElectrumEnabled::All if prefer_backup => {
@@ -181,6 +191,7 @@ impl HandlerState {
                 self.genesis_hash,
                 &url,
                 Self::CONNECT_TIMEOUT,
+                use_tor,
                 &mut self.trusted_certificates,
             )
             .await
@@ -195,6 +206,7 @@ impl HandlerState {
                         ConnectedTo {
                             url,
                             on_backup: is_backup,
+                            use_tor,
                         },
                     ));
                 }
@@ -232,10 +244,12 @@ impl HandlerState {
                 // Probe-only: validate the candidate server here, but the api owns the
                 // config — on success it persists and writes the watch, which triggers a
                 // reconnect via the config-change path. So nothing to reconnect here.
+                let use_tor = self.config_rx.borrow().use_tor;
                 match Conn::new(
                     self.genesis_hash,
                     &request.url,
                     Self::CONNECT_TIMEOUT,
+                    use_tor,
                     &mut self.trusted_certificates,
                 )
                 .await
@@ -452,6 +466,7 @@ mod tests {
             enabled,
             primary: primary.into(),
             backup: backup.into(),
+            use_tor: false,
         }
     }
 
@@ -476,6 +491,28 @@ mod tests {
         assert!(reconnect_needed(true, b, &cfg(PrimaryOnly, p, b))); // backup disabled
         assert!(reconnect_needed(true, b, &cfg(All, p, "tcp://b:2"))); // backup url changed
         assert!(reconnect_needed(true, b, &cfg(None, p, b))); // all off
+    }
+
+    /// Switching Tor moves a clearnet connection to the new transport, but an onion connection
+    /// is on Tor either way, so it stays put.
+    #[test]
+    fn tor_switch_reconnects_only_clearnet() {
+        let onion = "ssl://abc.onion:50002";
+        let (handler, tx, _rx) = make_handler(cfg(ElectrumEnabled::All, "tcp://p:1", onion));
+        let on_primary = ConnectedTo {
+            url: "tcp://p:1".into(),
+            on_backup: false,
+            use_tor: false,
+        };
+        let on_onion = ConnectedTo {
+            url: onion.into(),
+            on_backup: true,
+            use_tor: false,
+        };
+        assert!(!handler.reconnect_needed(&on_primary));
+        tx.send_modify(|c| c.use_tor = true);
+        assert!(handler.reconnect_needed(&on_primary));
+        assert!(!handler.reconnect_needed(&on_onion));
     }
 
     /// The lazy/disabled invariant has a single home: `should_connect` (which `ConnLoop`'s
@@ -510,6 +547,7 @@ mod tests {
             enabled: ElectrumEnabled::All,
             primary,
             backup,
+            use_tor: false,
         });
 
         assert!(
@@ -531,6 +569,7 @@ mod tests {
             enabled: ElectrumEnabled::All,
             primary,
             backup,
+            use_tor: false,
         });
 
         // Disable mid-connect, well before either server's connect timeout.
@@ -563,6 +602,7 @@ mod tests {
             enabled: ElectrumEnabled::All,
             primary,
             backup: backup.clone(),
+            use_tor: false,
         });
 
         // We were connected to the primary (on_backup = false) and its session failed.

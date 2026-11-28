@@ -141,6 +141,8 @@ pub struct ElectrumConfig {
     pub enabled: ElectrumEnabled,
     pub primary: String,
     pub backup: String,
+    /// Send clearnet servers through Tor too. `.onion` servers always use Tor.
+    pub use_tor: bool,
 }
 
 /// Opaque API to the chain
@@ -305,6 +307,10 @@ impl ChainClient {
 
     pub fn set_enabled(&self, enabled: ElectrumEnabled) {
         self.config_tx.send_modify(|c| c.enabled = enabled);
+    }
+
+    pub fn set_use_tor(&self, use_tor: bool) {
+        self.config_tx.send_modify(|c| c.use_tor = use_tor);
     }
 
     pub fn connect_to(&self, use_backup: bool) {
@@ -630,7 +636,7 @@ impl ConnLoop {
                         // change to the other slot (e.g. toggling the backup while on the
                         // primary) leaves it untouched.
                         handler.on_config_changed();
-                        if handler.reconnect_needed(info.on_backup, &info.url) {
+                        if handler.reconnect_needed(&info) {
                             tracing::info!("Breaking connection loop: config change affects the current server");
                             break Next::Connect;
                         }

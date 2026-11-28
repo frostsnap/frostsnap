@@ -710,6 +710,7 @@ pub(crate) mod test {
                 enabled: ElectrumEnabled::None,
                 primary: String::new(),
                 backup: String::new(),
+                use_tor: false,
             },
             trusted,
             db.clone(),

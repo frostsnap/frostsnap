@@ -46,6 +46,7 @@ pub struct Settings {
     pub electrum_enabled: BTreeMap<bitcoin::Network, ElectrumEnabled>,
     pub developer_mode: bool,
     pub hide_balance: bool,
+    pub use_tor: bool,
 }
 
 impl Settings {
@@ -55,6 +56,10 @@ impl Settings {
 
     pub fn set_hide_balance(&mut self, value: bool, mutations: &mut Vec<Mutation>) {
         self.mutate(Mutation::SetHideBalance { value }, mutations);
+    }
+
+    pub fn set_use_tor(&mut self, value: bool, mutations: &mut Vec<Mutation>) {
+        self.mutate(Mutation::SetUseTor { value }, mutations);
     }
 
     pub fn get_electrum_server(&self, network: bitcoin::Network) -> String {
@@ -131,6 +136,9 @@ impl Settings {
             Mutation::SetElectrumEnabled { network, enabled } => {
                 self.electrum_enabled.insert(network, enabled);
             }
+            Mutation::SetUseTor { value } => {
+                self.use_tor = value;
+            }
         }
     }
 }
@@ -154,6 +162,9 @@ pub enum Mutation {
     SetElectrumEnabled {
         network: bitcoin::Network,
         enabled: ElectrumEnabled,
+    },
+    SetUseTor {
+        value: bool,
     },
 }
 
@@ -201,6 +212,9 @@ impl Persist<rusqlite::Connection> for Settings {
                         value: bool::from_str(value.as_str())?,
                     },
                     "hide_balance" => Mutation::SetHideBalance {
+                        value: bool::from_str(value.as_str())?,
+                    },
+                    "use_tor" => Mutation::SetUseTor {
                         value: bool::from_str(value.as_str())?,
                     },
                     electrum_server if electrum_server.starts_with("electrum_server_") => {
@@ -330,6 +344,13 @@ impl Persist<rusqlite::Connection> for Settings {
                     conn.execute(
                         "INSERT OR REPLACE INTO fs_app_global_settings (key, value) VALUES (?1, ?2)",
                         params![format!("electrum_enabled_{}", network), enabled.to_string()],
+                    )?;
+                }
+                Mutation::SetUseTor { value } => {
+                    event!(Level::DEBUG, value = value, "changed use tor");
+                    conn.execute(
+                        "INSERT OR REPLACE INTO fs_app_global_settings (key, value) VALUES (?1, ?2)",
+                        params!["use_tor", value.to_string()],
                     )?;
                 }
             }
