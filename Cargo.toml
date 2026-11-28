@@ -18,6 +18,7 @@ members = [
     "frostsnapp/desktop_camera",
     "frostsnapp/macros",
     "macros",
+    "secp256k1_sys_pure",
 ]
 
 # device, cst816s require riscv32; widget_simulator needs SDL2.
@@ -37,6 +38,7 @@ default-members = [
     "frostsnapp/macros",
     "macros",
     "tools/stack_check",
+    "secp256k1_sys_pure",
 ]
 resolver = "2"
 
@@ -88,6 +90,12 @@ image = { version = "0.25", default-features = false }
 tracing-subscriber = { version = "0.3" }
 rsa = { version = "0.9" }
 crc = "3"
+
+# The firmware has no C compiler, so secp256k1-sys, which is all of libsecp256k1
+# in C, is swapped for a stand-in. On the host the stand-in re-exports the real
+# crate and nothing changes. See secp256k1_sys_pure/src/lib.rs.
+[patch.crates-io]
+secp256k1-sys = { path = "secp256k1_sys_pure" }
 
 [profile.dev]
 # Rust debug is too slow.
