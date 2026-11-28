@@ -19,6 +19,8 @@ use frostsnap_core::{DeviceId, Gist};
 use std::collections::BTreeSet;
 use std::collections::HashMap;
 use std::collections::HashSet;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 use tracing::{event, span, Level};
 
@@ -36,6 +38,8 @@ pub struct UsbSerialManager {
     ready: HashMap<String, FramedSerialPort>,
     /// ports that seems to be busy
     ignored: HashSet<String>,
+    /// When each busy port is next tried
+    busy_retry_at: HashMap<String, std::time::Instant>,
     /// Devices who Announce'd, mappings to port serial numbers
     device_ports: HashMap<DeviceId, DevicePort>,
     /// Reverse lookup from ports to devices (daisy chaining)
@@ -50,6 +54,7 @@ pub struct UsbSerialManager {
     outbox_sender: std::sync::mpsc::Sender<CoordinatorSendMessage>,
     /// The firmware binary provided to devices who are doing an upgrade
     firmware_bin: Option<ValidatedFirmwareBin>,
+    usb_enabled: Arc<AtomicBool>,
 }
 
 pub struct DevicePort {
@@ -59,6 +64,10 @@ pub struct DevicePort {
 
 const COORDINATOR_MAGIC_BYTES_PERDIOD: std::time::Duration =
     std::time::Duration::from_millis(MAGIC_BYTES_PERIOD);
+
+/// How often a port held by another process is retried. Every poll would mean a failed open per
+/// poll for as long as the other process holds it.
+pub const BUSY_PORT_RETRY_PERIOD: std::time::Duration = std::time::Duration::from_secs(2);
 
 struct AwaitingMagic {
     port: FramedSerialPort,
@@ -76,6 +85,7 @@ impl UsbSerialManager {
             awaiting_magic: Default::default(),
             ready: Default::default(),
             ignored: Default::default(),
+            busy_retry_at: Default::default(),
             device_ports: Default::default(),
             reverse_device_ports: Default::default(),
             registered_devices: Default::default(),
@@ -83,6 +93,7 @@ impl UsbSerialManager {
             port_outbox: receiver,
             outbox_sender: sender,
             firmware_bin: None,
+            usb_enabled: Arc::new(AtomicBool::new(true)),
         }
     }
 
@@ -94,6 +105,7 @@ impl UsbSerialManager {
     pub fn usb_sender(&self) -> UsbSender {
         UsbSender {
             sender: self.outbox_sender.clone(),
+            usb_enabled: self.usb_enabled.clone(),
         }
     }
 
@@ -104,6 +116,7 @@ impl UsbSerialManager {
         self.awaiting_magic.remove(port);
         self.ready.remove(port);
         self.ignored.remove(port);
+        self.busy_retry_at.remove(port);
         if let Some(device_ids) = self.reverse_device_ports.remove(port) {
             for device_id in device_ids {
                 if self.device_ports.remove(&device_id).is_some() {
@@ -137,13 +150,18 @@ impl UsbSerialManager {
         let _enter = span.enter();
         let mut device_changes = vec![];
 
-        let connected_now: HashSet<String> = self
-            .serial_impl
-            .available_ports()
-            .into_iter()
-            .filter(|desc| desc.vid == USB_VID && desc.pid == USB_PID)
-            .map(|desc| desc.id)
-            .collect();
+        // Disabled USB looks like every port was unplugged so the ports get closed and another
+        // process on this host can open them.
+        let connected_now: HashSet<String> = if self.usb_enabled.load(Ordering::Relaxed) {
+            self.serial_impl
+                .available_ports()
+                .into_iter()
+                .filter(|desc| desc.vid == USB_VID && desc.pid == USB_PID)
+                .map(|desc| desc.id)
+                .collect()
+        } else {
+            HashSet::new()
+        };
 
         let newly_connected_ports = connected_now
             .difference(&self.connected)
@@ -169,6 +187,18 @@ impl UsbSerialManager {
             self.disconnect(&port, &mut device_changes);
         }
 
+        let now = std::time::Instant::now();
+        let busy_ports_due = self
+            .busy_retry_at
+            .iter()
+            .filter(|(_, retry_at)| **retry_at <= now)
+            .map(|(port, _)| port.clone())
+            .collect::<Vec<_>>();
+        for port in busy_ports_due {
+            self.busy_retry_at.remove(&port);
+            self.pending.insert(port);
+        }
+
         for port_name in self.pending.drain().collect::<Vec<_>>() {
             let device_port = self
                 .serial_impl
@@ -185,6 +215,10 @@ impl UsbSerialManager {
                             );
                             self.ignored.insert(port_name.clone());
                         }
+                        self.busy_retry_at.insert(
+                            port_name,
+                            std::time::Instant::now() + BUSY_PORT_RETRY_PERIOD,
+                        );
                     }
                     PortOpenError::PermissionDenied => {
                         if !self.ignored.contains(&port_name) {
@@ -687,9 +721,18 @@ impl UsbSerialManager {
 #[derive(Clone)]
 pub struct UsbSender {
     sender: std::sync::mpsc::Sender<CoordinatorSendMessage>,
+    usb_enabled: Arc<AtomicBool>,
 }
 
 impl UsbSender {
+    pub fn set_usb_enabled(&self, enabled: bool) {
+        self.usb_enabled.store(enabled, Ordering::Relaxed);
+    }
+
+    pub fn usb_enabled(&self) -> bool {
+        self.usb_enabled.load(Ordering::Relaxed)
+    }
+
     pub fn send_cancel_all(&self) {
         self.sender
             .send(CoordinatorSendMessage {

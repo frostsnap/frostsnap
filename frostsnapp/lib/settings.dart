@@ -232,12 +232,48 @@ class SettingsPage extends StatelessWidget {
                           child: SwitchListTile(
                             title: title,
                             onChanged: (value) async {
+                              // The USB switch is hidden outside developer
+                              // mode, so leaving it off would strand the app
+                              // without devices.
+                              if (!value) coord.setUsbEnabled(enabled: true);
                               await settingsCtx.settings.setDeveloperMode(
                                 value: value,
                               );
                             },
                             value: snap.data?.developerMode ?? false,
                           ),
+                        );
+                      },
+                    );
+                  },
+                ),
+                SettingsItem(
+                  title: Text("USB"),
+                  icon: Icons.usb,
+                  builder: (context, title, icon) {
+                    final settingsCtx = SettingsContext.of(context)!;
+                    return StreamBuilder(
+                      stream: settingsCtx.developerSettings,
+                      builder: (context, snap) {
+                        return StatefulBuilder(
+                          builder: (context, setState) {
+                            if (!(snap.data?.developerMode ?? false)) {
+                              return SizedBox.shrink();
+                            }
+                            final usbEnabled = coord.usbEnabled();
+                            return Tooltip(
+                              message:
+                                  "lets another app instance on this computer use the devices",
+                              child: SwitchListTile(
+                                title: title,
+                                value: usbEnabled,
+                                onChanged: (value) {
+                                  coord.setUsbEnabled(enabled: value);
+                                  setState(() {});
+                                },
+                              ),
+                            );
+                          },
                         );
                       },
                     );

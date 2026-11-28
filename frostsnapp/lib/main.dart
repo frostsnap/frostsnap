@@ -27,7 +27,7 @@ import 'package:frostsnap/src/rust/api/init.dart';
 import 'package:frostsnap/src/rust/api/log.dart';
 import 'package:frostsnap/src/rust/frb_generated.dart';
 
-Future<void> main() async {
+Future<void> main(List<String> args) async {
   // enable this if you're trying to figure out why things are displaying in
   // certain positions/sizes
   debugPaintSizeEnabled = false;
@@ -57,8 +57,17 @@ Future<void> main() async {
   AppCtx? appCtx;
 
   try {
-    final appDir = await getApplicationSupportDirectory();
-    final appDirPath = appDir.path;
+    // Lets `just run-dual` start two instances with separate wallets on one host.
+    final dataDirArg = args
+        .where((arg) => arg.startsWith('--data-dir='))
+        .firstOrNull;
+    final String appDirPath;
+    if (dataDirArg != null) {
+      appDirPath = dataDirArg.substring('--data-dir='.length);
+      await Directory(appDirPath).create(recursive: true);
+    } else {
+      appDirPath = (await getApplicationSupportDirectory()).path;
+    }
     if (Platform.isAndroid) {
       final (coord_, appCtx_, ffiserial) = await api.loadHostHandlesSerial(
         appDir: appDirPath,
