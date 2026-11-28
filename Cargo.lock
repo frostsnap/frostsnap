@@ -2061,6 +2061,7 @@ name = "frostsnap_embedded"
 version = "0.1.0"
 dependencies = [
  "bincode",
+ "crc",
  "embedded-storage",
  "frostsnap_comms",
  "frostsnap_core",
