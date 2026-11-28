@@ -1,5 +1,11 @@
 #![cfg(not(target_arch = "riscv32"))]
 
+use embedded_graphics::{
+    Drawable,
+    pixelcolor::{Rgb565, RgbColor},
+    prelude::{Point, Primitive},
+    primitives::{Circle, PrimitiveStyle},
+};
 use embedded_graphics_simulator::{
     OutputSettingsBuilder, SimulatorDisplay, SimulatorEvent, Window,
 };
@@ -90,6 +96,24 @@ fn parse_command(line: &str) -> Option<Command> {
         _ => {}
     }
     None
+}
+
+// The widgets only redraw what changes, so a marker drawn into their framebuffer would
+// stay behind wherever the widget underneath doesn't redraw.
+fn with_touch_markers(
+    display: &SimulatorDisplay<Rgb565>,
+    markers: &[(Point, u8)],
+) -> SimulatorDisplay<Rgb565> {
+    let mut frame = display.clone();
+    for (point, _) in markers {
+        let Ok(()) = Circle::new(*point - Point::new(10, 10), 20)
+            .into_styled(PrimitiveStyle::with_stroke(Rgb565::GREEN, 3))
+            .draw(&mut frame);
+        let Ok(()) = Circle::new(*point - Point::new(2, 2), 4)
+            .into_styled(PrimitiveStyle::with_fill(Rgb565::GREEN))
+            .draw(&mut frame);
+    }
+    frame
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -212,28 +236,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 last_touch = Some(Point::new(x2, y2));
                             }
                             Command::Screenshot { filename } => {
-                                // First draw any pending touch feedback circles
-                                use embedded_graphics::{
-                                    primitives::{Circle, PrimitiveStyle},
-                                    pixelcolor::RgbColor,
-                                };
+                                let frame = with_touch_markers(&display.borrow(), &touch_feedback);
+                                window.update(&frame);
 
-                                for (point, _) in &touch_feedback {
-                                    // Draw green circle at touch point
-                                    let _ = Circle::new(*point - Point::new(10, 10), 20)
-                                        .into_styled(PrimitiveStyle::with_stroke(Rgb565::GREEN, 3))
-                                        .draw(&mut *display.borrow_mut());
-                                    // Also draw a filled circle in the center
-                                    let _ = Circle::new(*point - Point::new(2, 2), 4)
-                                        .into_styled(PrimitiveStyle::with_fill(Rgb565::GREEN))
-                                        .draw(&mut *display.borrow_mut());
-                                }
-
-                                // Update window to show the circles
-                                window.update(&display.borrow());
-
-                                // Save screenshot using the display's output image
-                                let output_image = display.borrow().to_rgb_output_image(&output_settings);
+                                let output_image = frame.to_rgb_output_image(&output_settings);
                                 if let Err(e) = output_image.save_png(&filename) {
                                     eprintln!("Failed to save screenshot: {}", e);
                                 } else {
@@ -299,32 +305,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let mut target = SuperDrawTarget::from_shared(display.clone(), PALETTE.background);
                 let _ = widget.draw(&mut target, current_time);
 
-                // Draw touch feedback circles
-                use embedded_graphics::{
-                    primitives::{Circle, PrimitiveStyle},
-                    pixelcolor::RgbColor,
-                };
-
-                // Update and draw touch feedback
-                touch_feedback.retain_mut(|(point, frames)| {
-                    if *frames > 0 {
-                        // Draw green circle at touch point
-                        let _ = Circle::new(*point - Point::new(10, 10), 20)
-                            .into_styled(PrimitiveStyle::with_stroke(Rgb565::GREEN, 3))
-                            .draw(&mut *display.borrow_mut());
-                        // Also draw a filled circle in the center
-                        let _ = Circle::new(*point - Point::new(2, 2), 4)
-                            .into_styled(PrimitiveStyle::with_fill(Rgb565::GREEN))
-                            .draw(&mut *display.borrow_mut());
-                        *frames -= 1;
-                        true
-                    } else {
-                        false
-                    }
+                window.update(&with_touch_markers(&display.borrow(), &touch_feedback));
+                touch_feedback.retain_mut(|(_, frames)| {
+                    *frames = frames.saturating_sub(1);
+                    *frames > 0
                 });
-
-                // Update window
-                window.update(&display.borrow());
 
             }
 
