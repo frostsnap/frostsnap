@@ -58,6 +58,7 @@ const N_NONCE_STREAMS: usize = 4;
 /// The worker thread in [`FfiCoordinator::start`] holds them in that order on every
 /// poll, so taking them in any other order from an API call can deadlock it (#652).
 /// `backup_state` goes before `db` and is never taken while holding `coordinator`.
+/// `key_event_stream` goes after `coordinator` (and `db` if held), as in `emit_key_state` (#660).
 pub struct FfiCoordinator {
     usb_manager: Mutex<Option<UsbSerialManager>>,
     key_event_stream: Arc<Mutex<Option<Box<dyn Sink<KeyState>>>>>,
@@ -431,9 +432,12 @@ impl FfiCoordinator {
     }
 
     pub fn sub_key_events(&self, stream: impl Sink<api::coordinator::KeyState>) {
+        // `coordinator` before `key_event_stream`, as every sender takes them (#660). Senders
+        // also hold `coordinator` while they send, so no update can land between reading this
+        // state and installing the stream: the subscriber always ends with the latest state.
+        let coordinator = self.coordinator.lock().unwrap();
         let mut key_event_stream = self.key_event_stream.lock().unwrap();
-        let state = self.key_state();
-        stream.send(state);
+        stream.send(key_state(&coordinator));
         key_event_stream.replace(Box::new(stream));
     }
 
@@ -1537,6 +1541,7 @@ mod test {
 
         let db_free = ffi.db.try_lock().is_ok();
         let ui_stack_free = ffi.ui_stack.try_lock().is_ok();
+        let key_event_stream_free = ffi.key_event_stream.try_lock().is_ok();
         drop(coordinator);
         // `call` may fail or panic once it gets `coordinator`: the ids are made up. Only the
         // locks it held while waiting matter here.
@@ -1544,6 +1549,42 @@ mod test {
 
         assert!(db_free, "held db while waiting for coordinator");
         assert!(ui_stack_free, "held ui_stack while waiting for coordinator");
+        assert!(
+            key_event_stream_free,
+            "held key_event_stream while waiting for coordinator"
+        );
+    }
+
+    /// `emit_key_state` takes `coordinator` then `key_event_stream`, so subscribing must not
+    /// hold `key_event_stream` while it waits for `coordinator` (#660).
+    #[test]
+    fn sub_key_events_takes_coordinator_first() {
+        let ffi = ffi_coordinator();
+        assert_takes_coordinator_first(&ffi, |ffi| ffi.sub_key_events(()));
+    }
+
+    /// A subscriber gets the current state straight away and every update after it.
+    #[test]
+    fn sub_key_events_delivers_current_and_later_states() {
+        #[derive(Clone, Default)]
+        struct Collect(Arc<Mutex<Vec<api::coordinator::KeyState>>>);
+        impl Sink<api::coordinator::KeyState> for Collect {
+            fn send(&self, state: api::coordinator::KeyState) {
+                self.0.lock().unwrap().push(state);
+            }
+        }
+
+        let ffi = ffi_coordinator();
+        let states = Collect::default();
+        ffi.sub_key_events(states.clone());
+        assert_eq!(states.0.lock().unwrap().len(), 1);
+        assert!(states.0.lock().unwrap()[0].restoring.is_empty());
+
+        ffi.start_restoring_wallet("w".into(), Some(2), KeyPurpose::Test)
+            .unwrap();
+        let states = states.0.lock().unwrap();
+        assert_eq!(states.len(), 2);
+        assert_eq!(states[1].restoring.len(), 1);
     }
 
     #[test]
