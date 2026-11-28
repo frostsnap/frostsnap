@@ -2,7 +2,12 @@
 
 <img alt="Frostsnap daisy chain" src="https://frostsnap.com/frostypede_landscape.png" width=360>
 
-[<img alt="Frostsnap" src="https://frostsnap.com/assets/frostsnap-logo.svg" width=360>](https://frostsnap.com)
+<a href="https://frostsnap.com">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/frostsnap-logo-ice.svg">
+    <img alt="Frostsnap" src="docs/images/frostsnap-logo-ink.svg" width=360>
+  </picture>
+</a>
 
 _Frostsnap is the ultimate bitcoin self-custody system using the latest advancements in cryptography on distributed multisignature devices._
 

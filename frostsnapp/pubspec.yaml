@@ -124,7 +124,7 @@ icons_launcher:
   image_path: "assets/icons/frostsnap-icon.png"
   platforms:
     android:
-      adaptive_background_color: "#90ebff"
+      adaptive_background_color: "#111517"
       adaptive_foreground_image: "assets/icons/frostsnap-icon.png"
       enable: true
     linux:
