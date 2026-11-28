@@ -1,7 +1,8 @@
-use super::super_wallet::SuperWallet;
+use super::signer_selection::SignerSelection;
+use super::super_wallet::{PsbtValidationError, SuperWallet};
 use super::{
     bitcoin::{Psbt, RTransaction, Transaction, TxOutInfo},
-    coordinator::Coordinator,
+    coordinator::{AccessStructure, Coordinator},
 };
 use crate::{
     frb_generated::StreamSink,
@@ -124,11 +125,34 @@ impl UnsignedTx {
             })
     }
 
+    #[frb(ignore)]
+    pub(crate) fn from_psbt(
+        psbt: &Psbt,
+        master_appkey: MasterAppkey,
+        signers: &mut SignerSelection,
+    ) -> Result<Self, PsbtValidationError> {
+        let template = TransactionTemplate::from_psbt(psbt, &[master_appkey])?;
+
+        // Unreachable while one key goes in: `from_psbt` returning `Ok` already means that key
+        // owns an input. It is the guard for the day more than one does.
+        let unsigned_tx = Self::new(template, master_appkey).ok_or_else(|| {
+            PsbtValidationError::Other("no input in this PSBT belongs to this key".into())
+        })?;
+        signers.require_nonces(unsigned_tx.owned_input_count());
+        Ok(unsigned_tx)
+    }
+
     /// This transaction as its own key sees it. Cheap enough for the handful of UI-rate
     /// reads below, and it keeps the sendable form the only one stored.
     #[frb(ignore)]
     fn scoped(&self) -> TransactionTemplate<ScopedTo> {
         self.template_tx.as_seen_by(self.master_appkey)
+    }
+
+    /// How many inputs this key signs, and so how many nonces each signer spends on it.
+    #[frb(sync)]
+    pub fn owned_input_count(&self) -> u32 {
+        self.scoped().iter_our_inputs().count() as u32
     }
 
     /// Whether we alone can produce something broadcastable.
@@ -292,6 +316,11 @@ impl Coordinator {
     #[frb(sync)]
     pub fn nonces_available(&self, id: DeviceId) -> u32 {
         self.0.nonces_available(id)
+    }
+
+    #[frb(sync)]
+    pub fn signer_selection(&self, access_structure: &AccessStructure) -> SignerSelection {
+        SignerSelection::new(self.0.signers(access_structure))
     }
 
     pub fn try_restore_signing_session(
