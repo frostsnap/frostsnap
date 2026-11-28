@@ -105,12 +105,19 @@ impl AmountType {
 pub struct Recipient {
     pub address: Option<Address>,
     pub amount: Option<AmountType>,
+    pub label: Option<String>,
+    pub message: Option<String>,
 }
 
 impl Recipient {
     #[frb(sync)]
     pub fn new(address: Option<Address>, amount: Option<AmountType>) -> Self {
-        Self { address, amount }
+        Self {
+            address,
+            amount,
+            label: None,
+            message: None,
+        }
     }
 }
 
@@ -427,6 +434,15 @@ impl BuildTxState {
         }
         if r.amount != info.amount.map(AmountType::Value) {
             r.amount = info.amount.map(AmountType::Value);
+            changed = true;
+        }
+        // Overwrite even with None, so a plain address clears an earlier URI's label.
+        if r.label != info.label {
+            r.label = info.label;
+            changed = true;
+        }
+        if r.message != info.message {
+            r.message = info.message;
             changed = true;
         }
         if changed {
