@@ -3,7 +3,10 @@
 use alloc::boxed::Box;
 use core::cell::RefCell;
 use esp_storage::FlashStorage;
-use frostsnap_comms::{Downstream, Upstream};
+use frostsnap_comms::{
+    firmware_version::{Environment, FirmwareLabel},
+    genuine_certificate, Downstream, Sha256Digest, Upstream,
+};
 use frostsnap_core::device::DevicePrf;
 use rand_chacha::ChaCha20Rng;
 
@@ -13,7 +16,7 @@ use crate::{
     frosty_ui::FrostyUi,
     io::SerialInterface,
     ota::OtaPartitions,
-    partitions::{EspFlashPartition, Partitions},
+    partitions::{EspFlashPartition, PartitionExt, Partitions},
     peripherals::DevicePeripherals,
 };
 
@@ -35,6 +38,11 @@ pub struct Resources<'a> {
     /// OTA partitions for firmware updates
     pub ota: OtaPartitions<'a>,
 
+    /// Body digest of the running firmware
+    pub active_firmware_digest: Sha256Digest,
+
+    pub environment: Environment,
+
     /// User interface. Boxed because it's ~2.3KB — by far the largest field —
     /// and keeping it inline makes `Box::new(Self { .. })` in the init fns
     /// materialize the whole struct on the stack, blowing their stack frames
@@ -48,6 +56,15 @@ pub struct Resources<'a> {
 }
 
 impl<'a> Resources<'a> {
+    fn active_firmware_digest(crypto: &mut EspCrypto<'a>, ota: &OtaPartitions<'a>) -> Sha256Digest {
+        let active_partition = ota.active_partition();
+        let (firmware_size, _firmware_and_signature_block_size) =
+            active_partition.firmware_size().unwrap();
+        crypto
+            .force_normal_mode()
+            .digest(&active_partition, Some(firmware_size))
+    }
+
     /// Create serial interfaces from UARTs and JTAG
     fn create_serial_interfaces(
         uart_upstream: Option<Uart<'static, Blocking>>,
@@ -114,7 +131,17 @@ impl<'a> Resources<'a> {
             &mut initial_rng,
         );
 
-        let ui = Box::new(FrostyUi::new(display, touch_receiver));
+        let active_firmware_digest = Self::active_firmware_digest(&mut crypto, &partitions.ota);
+        let environment = genuine_certificate::device_environment(crypto.certificate().as_ref());
+        let ui = Box::new(FrostyUi::new(
+            display,
+            touch_receiver,
+            FirmwareLabel {
+                version: crate::firmware_version(),
+                digest: active_firmware_digest,
+                environment,
+            },
+        ));
 
         // Create serial interfaces
         let (upstream_serial, downstream_serial) =
@@ -125,6 +152,8 @@ impl<'a> Resources<'a> {
             crypto,
             nvs: partitions.nvs,
             ota: partitions.ota,
+            active_firmware_digest,
+            environment,
             ui,
             upstream_serial,
             downstream_serial,
@@ -180,7 +209,17 @@ impl<'a> Resources<'a> {
             &mut initial_rng,
         );
 
-        let ui = Box::new(FrostyUi::new(display, touch_receiver));
+        let active_firmware_digest = Self::active_firmware_digest(&mut crypto, &partitions.ota);
+        let environment = genuine_certificate::device_environment(crypto.certificate().as_ref());
+        let ui = Box::new(FrostyUi::new(
+            display,
+            touch_receiver,
+            FirmwareLabel {
+                version: crate::firmware_version(),
+                digest: active_firmware_digest,
+                environment,
+            },
+        ));
 
         // Create serial interfaces
         let (upstream_serial, downstream_serial) =
@@ -191,6 +230,8 @@ impl<'a> Resources<'a> {
             crypto,
             nvs: partitions.nvs,
             ota: partitions.ota,
+            active_firmware_digest,
+            environment,
             ui,
             upstream_serial,
             downstream_serial,

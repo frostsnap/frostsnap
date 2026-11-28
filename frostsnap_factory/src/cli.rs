@@ -61,10 +61,16 @@ pub enum Commands {
         /// Path to signed binary
         #[arg(short, long)]
         input: PathBuf,
-        /// Require the firmware digest to be a registered release. Use in release CI
-        /// to block shipping a release whose firmware version hasn't been registered.
+        /// Require the firmware to embed this release tag's version (e.g. `v0.5.0`), so release CI
+        /// can't ship an image built for a different release.
         #[arg(long)]
-        require_known_version: bool,
+        release_tag: Option<String>,
+    },
+    /// Show the version, size and digest of a firmware image, signed or not
+    FirmwareInfo {
+        /// Path to firmware binary
+        #[arg(short, long)]
+        input: PathBuf,
     },
     /// Provision a single device (no database required)
     Provision {

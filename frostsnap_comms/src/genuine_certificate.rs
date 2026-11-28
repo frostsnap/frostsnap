@@ -1,3 +1,4 @@
+use crate::firmware_version::Environment;
 use alloc::{string::String, vec::Vec};
 use frostsnap_core::{
     schnorr_fun::{
@@ -96,7 +97,39 @@ pub struct Certificate {
     factory_signature: Versioned<FrostsnapFactorySignature>,
 }
 
+/// The key of the factory that certifies devices for `environment`.
+pub fn factory_key(environment: Environment) -> Point<EvenY> {
+    let hex = match environment {
+        Environment::Production => {
+            include_str!("../../frostsnap_factory/genuine/prod/public_key.hex")
+        }
+        Environment::Dev => include_str!("../../frostsnap_factory/genuine/dev/public_key.hex"),
+    };
+    let bytes: [u8; 32] = frostsnap_core::hex::decode(hex.trim())
+        .ok()
+        .and_then(|bytes| bytes.try_into().ok())
+        .expect("factory public keys are 32 hex bytes");
+    Point::from_xonly_bytes(bytes).expect("factory public keys are valid points")
+}
+
+/// A device is production only when certified by the production factory. The certificate isn't
+/// verified here, so this decides what the device calls itself, never what it may do.
+pub fn device_environment(certificate: Option<&Certificate>) -> Environment {
+    match certificate {
+        Some(certificate) if certificate.factory_key() == factory_key(Environment::Production) => {
+            Environment::Production
+        }
+        _ => Environment::Dev,
+    }
+}
+
 impl Certificate {
+    pub fn factory_key(&self) -> Point<EvenY> {
+        match &self.factory_signature {
+            Versioned::V0(signature) => signature.factory_key,
+        }
+    }
+
     /// Should not be trusted, but useful in logging factory failures
     pub fn unverified_raw_serial(&self) -> String {
         self.body.raw_serial()

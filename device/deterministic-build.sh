@@ -20,5 +20,7 @@ cd "${BUILD_DIR}"
 nix develop --command just build-firmware frontier --locked
 nix develop --command just save-image frontier
 
-echo "Build complete - $(stat -c%s "${BUILD_DIR}/${FIRMWARE_PATH}") bytes"
-echo "$(sha256sum "${BUILD_DIR}/${FIRMWARE_PATH}")"
+# The image embeds CARGO_PKG_VERSION, so the built tree's Cargo.toml names it without compiling a reader.
+echo "Version: v$(awk -F'"' '/^version = /{print $2; exit}' device/Cargo.toml)"
+echo "Build complete - $(wc -c < "${FIRMWARE_PATH}" | tr -d ' ') bytes"
+echo "$(shasum -a 256 "${BUILD_DIR}/${FIRMWARE_PATH}")"

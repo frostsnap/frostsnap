@@ -5,7 +5,7 @@ use flutter_rust_bridge::frb;
 pub use frostsnap_coordinator::firmware::*;
 pub use frostsnap_coordinator::firmware_upgrade::FirmwareUpgradeConfirmState;
 pub use frostsnap_coordinator::frostsnap_comms::Sha256Digest;
-pub use frostsnap_coordinator::VersionNumber;
+pub use frostsnap_coordinator::{DeviceFirmware, DeviceVersion, Environment, VersionNumber};
 use frostsnap_core::DeviceId;
 
 impl Coordinator {
@@ -50,10 +50,32 @@ pub struct _VersionNumber {
     pub patch: u8,
 }
 
+#[frb(mirror(Environment))]
+pub enum _Environment {
+    Production,
+    Dev,
+}
+
 #[frb(mirror(FirmwareVersion))]
 pub struct _FirmwareVersion {
     pub digest: Sha256Digest,
-    pub version: Option<VersionNumber>,
+    pub version: VersionNumber,
+    pub environment: Environment,
+}
+
+#[frb(mirror(DeviceVersion))]
+pub enum _DeviceVersion {
+    Reported {
+        version: VersionNumber,
+        environment: Environment,
+    },
+    Unreported,
+}
+
+#[frb(mirror(DeviceFirmware))]
+pub struct _DeviceFirmware {
+    pub digest: Sha256Digest,
+    pub version: DeviceVersion,
 }
 
 #[frb(mirror(FirmwareUpgradeEligibility))]
@@ -77,9 +99,15 @@ impl FirmwareVersion {
     #[frb(sync)]
     pub fn check_upgrade_eligibility(
         &self,
-        _device_digest: &Sha256Digest,
+        _device: &DeviceFirmware,
     ) -> FirmwareUpgradeEligibility {
     }
+}
+
+#[frb(external)]
+impl DeviceFirmware {
+    #[frb(sync)]
+    pub fn version_name(&self) -> String {}
 }
 
 #[frb(mirror(Sha256Digest))]

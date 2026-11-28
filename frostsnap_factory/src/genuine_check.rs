@@ -4,7 +4,7 @@ use frostsnap_comms::{
     Downstream, ReceiveSerial, Sha256Digest, MAGIC_BYTES_PERIOD,
 };
 use frostsnap_coordinator::genuine_check::{GenuineCheck, GenuineStatus};
-use frostsnap_coordinator::{DesktopSerial, FirmwareVersion, FramedSerialPort, Serial};
+use frostsnap_coordinator::{DesktopSerial, DeviceFirmware, FramedSerialPort, Serial};
 use frostsnap_core::schnorr_fun::fun::{marker::EvenY, Point};
 use frostsnap_core::DeviceId;
 use rand::RngCore;
@@ -80,18 +80,17 @@ pub fn poll_genuine_check(
         GenuineCheckState::WaitingForAnnounce => {
             match port.try_read_message() {
                 Ok(Some(ReceiveSerial::Message(msg))) => {
-                    if let Ok(DeviceSendBody::Announce { firmware_digest }) = msg.body.decode() {
+                    let announced = msg.body.decode().ok();
+                    if let Some(firmware) = announced.as_ref().and_then(DeviceFirmware::announced) {
                         port.queue_send(
                             CoordinatorSendMessage::to(msg.from, CoordinatorSendBody::AnnounceAck)
                                 .into(),
                         );
 
                         let mut check = GenuineCheck::new(genuine_key);
-                        let Some(request) = check.connected(
-                            msg.from,
-                            FirmwareVersion::new(firmware_digest),
-                            &mut rand::thread_rng(),
-                        ) else {
+                        let Some(request) =
+                            check.connected(msg.from, firmware, &mut rand::thread_rng())
+                        else {
                             return GenuineCheckPollResult::Failed(
                                 None,
                                 "Device firmware does not support the genuine check".to_string(),
@@ -101,7 +100,7 @@ pub fn poll_genuine_check(
                             CoordinatorSendMessage::to(msg.from, request.into()).into(),
                         );
                         *state = GenuineCheckState::Checking {
-                            firmware_digest,
+                            firmware_digest: firmware.digest,
                             check: Box::new(check),
                             serial: None,
                         };
@@ -213,12 +212,13 @@ fn wait_for_magic(
 
 fn wait_for_announce(
     port: &mut FramedSerialPort<Downstream>,
-) -> Result<(frostsnap_core::DeviceId, Sha256Digest), Box<dyn std::error::Error>> {
+) -> Result<(frostsnap_core::DeviceId, DeviceFirmware), Box<dyn std::error::Error>> {
     loop {
         match port.try_read_message() {
             Ok(Some(ReceiveSerial::Message(msg))) => {
-                if let Ok(DeviceSendBody::Announce { firmware_digest }) = msg.body.decode() {
-                    return Ok((msg.from, firmware_digest));
+                let announced = msg.body.decode().ok();
+                if let Some(firmware) = announced.as_ref().and_then(DeviceFirmware::announced) {
+                    return Ok((msg.from, firmware));
                 }
             }
             Ok(_) => {}
@@ -254,7 +254,7 @@ fn check_under_known_keys<'a>(
     port: &mut FramedSerialPort<Downstream>,
     known_keys: &[(&'a str, Point<EvenY>)],
     device_id: DeviceId,
-    firmware: FirmwareVersion,
+    firmware: DeviceFirmware,
     rng: &mut impl RngCore,
 ) -> Result<(&'a str, Box<CertificateBody>), Box<dyn std::error::Error>> {
     for &(env, key) in known_keys {
@@ -311,7 +311,7 @@ pub fn run_genuine_check(
     wait_for_magic(&mut port)?;
 
     println!("Waiting for device announce...");
-    let (device_id, firmware_digest) = wait_for_announce(&mut port)?;
+    let (device_id, firmware) = wait_for_announce(&mut port)?;
 
     println!("Running genuine check...");
     port.queue_send(CoordinatorSendMessage::to(device_id, CoordinatorSendBody::AnnounceAck).into());
@@ -319,7 +319,7 @@ pub fn run_genuine_check(
         &mut port,
         known_keys,
         device_id,
-        FirmwareVersion::new(firmware_digest),
+        firmware,
         &mut rand::thread_rng(),
     )?;
 
@@ -336,7 +336,7 @@ pub fn run_genuine_check(
         color: *case_color,
         revision: revision.clone(),
         timestamp: *timestamp,
-        firmware_digest,
+        firmware_digest: firmware.digest,
         env: env_name.to_string(),
     })
 }

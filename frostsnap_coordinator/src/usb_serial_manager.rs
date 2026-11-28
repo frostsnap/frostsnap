@@ -2,7 +2,7 @@
 const USB_VID: u16 = 12346;
 const USB_PID: u16 = 4097;
 
-use crate::firmware::ValidatedFirmwareBin;
+use crate::firmware::{DeviceFirmware, FirmwareVersion, ValidatedFirmwareBin};
 use crate::PortOpenError;
 use crate::{FramedSerialPort, Serial};
 use anyhow::anyhow;
@@ -350,11 +350,14 @@ impl UsbSerialManager {
                                         });
                                     }
                                 }
-                                DeviceSendBody::Announce { firmware_digest } => {
+                                announcement @ (DeviceSendBody::Announce { .. }
+                                | DeviceSendBody::Announce2 { .. }) => {
+                                    let firmware = DeviceFirmware::announced(&announcement)
+                                        .expect("matched an announcement");
                                     self.handle_announce(
                                         &port_name,
                                         message.from,
-                                        firmware_digest,
+                                        firmware,
                                         &mut device_changes,
                                     );
                                 }
@@ -523,7 +526,7 @@ impl UsbSerialManager {
         &mut self,
         port_name: &str,
         from: DeviceId,
-        firmware_digest: Sha256Digest,
+        firmware: DeviceFirmware,
         device_changes: &mut Vec<DeviceChange>,
     ) {
         // A device announces once per handshake, so this is a new connection even under a known
@@ -532,7 +535,7 @@ impl UsbSerialManager {
             from,
             DevicePort {
                 port: port_name.to_string(),
-                firmware_digest,
+                firmware_digest: firmware.digest,
             },
         ) {
             self.reverse_device_ports
@@ -544,8 +547,10 @@ impl UsbSerialManager {
         }
         device_changes.push(DeviceChange::Connected {
             id: from,
-            firmware_digest,
-            latest_firmware_digest: self.firmware_bin.map(|firmware_bin| firmware_bin.digest()),
+            firmware,
+            latest_firmware: self
+                .firmware_bin
+                .map(|firmware_bin| firmware_bin.firmware_version()),
         });
 
         self.outbox_sender
@@ -769,8 +774,8 @@ impl UsbSender {
 pub enum DeviceChange {
     Connected {
         id: DeviceId,
-        firmware_digest: Sha256Digest,
-        latest_firmware_digest: Option<Sha256Digest>,
+        firmware: DeviceFirmware,
+        latest_firmware: Option<FirmwareVersion>,
     },
     NeedsName {
         id: DeviceId,
@@ -808,7 +813,6 @@ pub enum AppMessageBody {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::firmware::FirmwareVersion;
     use crate::genuine_check::test::{self as genuine_test, TestDevice, FACTORY};
     use crate::genuine_check::GenuineCheck;
     use crate::PortDesc;
@@ -836,12 +840,8 @@ mod test {
     ) {
         for change in changes {
             match change {
-                DeviceChange::Connected {
-                    id,
-                    firmware_digest,
-                    ..
-                } => {
-                    let mut next = check.connected(id, FirmwareVersion::new(firmware_digest), rng);
+                DeviceChange::Connected { id, firmware, .. } => {
+                    let mut next = check.connected(id, firmware, rng);
                     while let (Some(request), Some(device)) = (next, device) {
                         next = check
                             .recv(id, device.answer(&request), &mut VecDeque::new(), rng)
@@ -860,15 +860,22 @@ mod test {
         let mut manager = UsbSerialManager::new(Box::new(NoPorts));
         let mut check = GenuineCheck::new(FACTORY.public_key());
         let mut rng = StdRng::seed_from_u64(0);
-        let digest = genuine_test::supported().digest;
+        let firmware = genuine_test::supported();
 
         let mut changes = vec![];
-        manager.handle_announce("port-1", device.id, digest, &mut changes);
+        manager.handle_announce("port-1", device.id, firmware, &mut changes);
+        assert!(matches!(
+            changes.as_slice(),
+            [DeviceChange::Connected { firmware: connected, .. }] if *connected == firmware
+        ));
         apply(&mut check, changes, Some(&device), &mut rng);
-        assert!(genuine_test::is_genuine(&check, device.id));
+        assert!(
+            genuine_test::is_genuine(&check, device.id),
+            "a device that reports a version is checked as it connects"
+        );
 
         let mut changes = vec![];
-        manager.handle_announce("port-2", device.id, digest, &mut changes);
+        manager.handle_announce("port-2", device.id, firmware, &mut changes);
         assert!(matches!(
             changes.as_slice(),
             [
