@@ -363,6 +363,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32637268377fc7b10a8c6d51de3e7fba1ce5dd371a96e342b34e6078db558e7f"
 
 [[package]]
+name = "bech32"
+version = "0.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "efbd3e1070bbdf4cd88a75264e18e8a26f7cb5c6949eadf0ceb85fb159cf08f8"
+
+[[package]]
 name = "bincode"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -443,7 +449,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1e499f9fc0407f50fe98af744ab44fa67d409f76b6772e1689ec8485eb0c0f66"
 dependencies = [
  "base58ck",
- "bech32",
+ "bech32 0.11.1",
  "bitcoin-internals",
  "bitcoin-io",
  "bitcoin-units",
@@ -1960,7 +1966,9 @@ dependencies = [
  "bdk_chain",
  "bdk_coin_select",
  "bdk_electrum_streaming",
+ "bech32 0.12.0",
  "bincode",
+ "bip21",
  "frostsnap_comms",
  "frostsnap_core",
  "frostsnap_macros",
@@ -3040,7 +3048,7 @@ version = "12.3.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "487906208f38448e186e3deb02f2b8ef046a9078b0de00bdb28bf4fb9b76951c"
 dependencies = [
- "bech32",
+ "bech32 0.11.1",
  "bitcoin",
  "serde",
 ]
@@ -4252,7 +4260,7 @@ version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b92126e202853794199f04edf02851e17963c95e1d2308dccecf92a6857359d5"
 dependencies = [
- "bech32",
+ "bech32 0.11.1",
  "bincode",
  "secp256kfun",
  "vrf_fun",

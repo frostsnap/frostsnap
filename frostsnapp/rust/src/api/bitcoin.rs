@@ -25,6 +25,9 @@ use std::{
 };
 
 use super::super_wallet::TxState;
+pub use frostsnap_coordinator::bitcoin::address_input::{
+    AddressInput, AddressInputStatus, AddressNetwork,
+};
 
 // Teach FRB where to get `Network`
 #[frb(mirror(BitcoinNetwork))]
@@ -67,6 +70,9 @@ pub trait BitcoinNetworkExt {
     fn validate_destination_address(&self, uri: &str) -> Result<SendToRecipient, String>;
 
     #[frb(sync)]
+    fn check_address_input(&self, text: String) -> AddressInput;
+
+    #[frb(sync)]
     fn default_electrum_server(&self) -> String;
 
     #[frb(sync)]
@@ -103,6 +109,11 @@ impl BitcoinNetworkExt for BitcoinNetwork {
             (*self).into(),
         );
         descriptor.to_string()
+    }
+
+    #[frb(sync)]
+    fn check_address_input(&self, text: String) -> AddressInput {
+        AddressInput::parse(&text, *self)
     }
 
     #[frb(sync)]
@@ -458,6 +469,32 @@ impl From<WalletTransaction> for Transaction {
 
 #[frb(mirror(Address), opaque)]
 pub struct _Address {}
+
+#[frb(mirror(AddressInput), non_opaque)]
+pub struct _AddressInput {
+    pub status: AddressInputStatus,
+    pub bad_chars: Vec<u32>,
+}
+
+#[frb(mirror(AddressInputStatus), non_opaque)]
+pub enum _AddressInputStatus {
+    Empty,
+    Valid(Address),
+    NotTaproot,
+    WrongNetwork { address_network: AddressNetwork },
+    InvalidCharacters,
+    MixedCase,
+    WrongLength,
+    BadChecksum,
+    NotAnAddress,
+}
+
+#[frb(mirror(AddressNetwork))]
+pub enum _AddressNetwork {
+    Mainnet,
+    Testnet,
+    Regtest,
+}
 
 pub trait AddressExt {
     #[frb(sync)]

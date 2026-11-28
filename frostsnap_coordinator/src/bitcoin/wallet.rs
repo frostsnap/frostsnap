@@ -1,4 +1,4 @@
-use super::{chain_sync::ChainClient, multi_x_descriptor_for_account};
+use super::chain_sync::ChainClient;
 use crate::persist::Persisted;
 use anyhow::{anyhow, Context, Result};
 use bdk_chain::{
@@ -16,7 +16,6 @@ use frostsnap_core::{
 use std::{
     collections::{BTreeSet, HashMap},
     ops::RangeBounds,
-    str::FromStr,
     sync::{Arc, Mutex},
 };
 use tracing::{event, Level};
@@ -365,53 +364,13 @@ impl CoordSuperWallet {
         Ok(already_shared)
     }
 
-    pub fn search_for_address(
-        &self,
+    pub fn address_info_for_path(
+        &mut self,
         master_appkey: MasterAppkey,
-        address_str: String,
-        start: u32,
-        stop: u32,
-    ) -> Option<AddressInfo> {
-        let account_descriptors = multi_x_descriptor_for_account(
-            master_appkey,
-            BitcoinAccount::default(),
-            self.network.into(),
-        )
-        .into_single_descriptors()
-        .ok()?;
-        let target_address = bitcoin::Address::from_str(&address_str)
-            .ok()?
-            .require_network(self.network)
-            .ok()?;
-
-        let found_address_derivation = {
-            (start..stop).find_map(|i| {
-                account_descriptors.iter().find_map(|descriptor| {
-                    let derived = descriptor.at_derivation_index(i).ok()?;
-                    let address = derived.address(self.network).ok()?;
-                    if address == target_address {
-                        // FIXME: this should get the derivation path from the descriptor itself
-                        let external = account_descriptors[0] == *descriptor;
-                        let keychain = if external {
-                            BitcoinAccountKeychain::external()
-                        } else {
-                            BitcoinAccountKeychain::internal()
-                        };
-
-                        Some(self.address_info(
-                            master_appkey,
-                            BitcoinBip32Path {
-                                account_keychain: keychain,
-                                index: NormalIndex::new(i)?,
-                            },
-                        ))
-                    } else {
-                        None
-                    }
-                })
-            })
-        };
-        found_address_derivation
+        path: BitcoinBip32Path,
+    ) -> AddressInfo {
+        self.lazily_initialize_key(master_appkey);
+        self.address_info(master_appkey, path)
     }
 
     pub(super) fn master_appkeys(&self) -> BTreeSet<MasterAppkey> {

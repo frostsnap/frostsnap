@@ -1,3 +1,4 @@
+pub mod address_search;
 pub mod backup_run;
 pub mod bitcoin;
 pub mod broadcast;
